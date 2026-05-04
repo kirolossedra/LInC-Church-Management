@@ -51,7 +51,7 @@ export async function createMeeting(meeting) {
   const newRef = push(meetingsRef);
   await set(newRef, {
     ...meeting,
-    createdAt: Date.now(),
+    createdAt: serverTimestamp(),
   });
   return newRef.key;
 }
@@ -63,7 +63,7 @@ export async function createMeeting(meeting) {
  */
 export async function updateMeeting(id, updates) {
   const meetingRef = ref(database, `meetings/${id}`);
-  await set(meetingRef, { ...updates, updatedAt: Date.now() });
+  await set(meetingRef, { ...updates, updatedAt: serverTimestamp() });
 }
 
 /**

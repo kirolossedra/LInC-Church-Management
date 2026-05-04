@@ -1,14 +1,14 @@
 // Firebase configuration
-// Replace these values with your actual Firebase project credentials
-// (provide your firebase-config.json file and paste values here)
+// Copy admin/.env.example to admin/.env and fill in your credentials.
+// Never commit the .env file — it is listed in .gitignore.
 const firebaseConfig = {
-  apiKey: "AIzaSyAjBbnm8F76BCb9C5fluUyoZ2QnMSXlHOo",
-  authDomain: "test-c7bf3.firebaseapp.com",
-  databaseURL: "https://test-c7bf3-default-rtdb.firebaseio.com",
-  projectId: "test-c7bf3",
-  storageBucket: "test-c7bf3.firebasestorage.app",
-  messagingSenderId: "573697013702",
-  appId: "1:573697013702:web:fe132fc4d796c06bdbe4c7",
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL:       import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 export default firebaseConfig;
