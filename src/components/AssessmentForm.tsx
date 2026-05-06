@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { database } from '../firebase';
-import { ref, push } from 'firebase/database';
+import { ref, push, get } from 'firebase/database';
 import { motion } from 'motion/react';
 import { sendEmailViaEmailJS } from '../services/gmail';
 import PageTitle from './PageTitle';
@@ -56,6 +56,17 @@ export default function AssessmentForm() {
   const [visionAnswers, setVisionAnswers] = useState<Record<string, string>>({});
   const [giftScores, setGiftScores] = useState<Record<string, number>>({});
   const [ministryScores, setMinistryScores] = useState<Record<string, number>>({});
+  const [adminEmails, setAdminEmails] = useState<string[]>([]);
+
+  useEffect(() => {
+    get(ref(database, 'admins/')).then((snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const emails: string[] = Object.keys(data).map(k => k.replace(/,/g, '.').toLowerCase().trim());
+        setAdminEmails(emails);
+      }
+    });
+  }, []);
 
   const calculateGiftScores = (): GiftScores => {
     const scores = {} as GiftScores;
@@ -195,107 +206,93 @@ export default function AssessmentForm() {
 
       await push(ref(database, 'form/'), record);
 
+      const isAr = dir === 'rtl';
+      const lang = isAr ? 'Arabic' : 'English';
+      const rl: Record<string, Record<string, string>> = {
+        English: { title: 'LINC SPIRITUAL GIFTS ASSESSMENT RESPONSE', submittedAt: 'Submitted At', interfaceLanguageUsed: 'Interface Language Used', traineeInfo: 'TRAINEE INFORMATION', assessmentResults: 'ASSESSMENT RESULTS', primaryGift: 'Primary Gift', secondaryGift: 'Secondary Gift', recommendedMinistry: 'Recommended Ministry', summary: 'Summary', faithJourney: 'FAITH JOURNEY AND WALK WITH GOD', personalGifts: 'PERSONAL GIFTS ASSESSMENT', totalScore: 'Total Score', score: 'Score', answer: 'Answer', ministryAlignment: 'MINISTRY ALIGNMENT AND EXPERIENCE', callingVision: 'CALLING AND VISION QUESTIONS', notAvailable: 'N/A' },
+        Arabic: { title: 'نتيجة تقييم المواهب الروحية والدعوة الشخصية', submittedAt: 'وقت الإرسال', interfaceLanguageUsed: 'لغة النموذج المستخدمة', traineeInfo: 'معلومات المتدرب', assessmentResults: 'نتائج التقييم', primaryGift: 'الموهبة الأساسية', secondaryGift: 'الموهبة الثانوية', recommendedMinistry: 'مجال الخدمة المقترح', summary: 'الملخص', faithJourney: 'الرحلة الإيمانية والمسيرة مع الله', personalGifts: 'تقييم المواهب الشخصية', totalScore: 'الدرجة الإجمالية', score: 'الدرجة', answer: 'الإجابة', ministryAlignment: 'التوافق والخبرة نحو الخدمة', callingVision: 'أسئلة الدعوة والرؤية', notAvailable: 'غير متوفر' },
+      };
+      const l = rl[lang];
+      const sep = '=========================================';
+      const ssep = '-------------------------------';
+
+      const langResult = results[lang];
+      const pg = giftRecMap[primaryGiftKey]?.[isAr ? 'ar' : 'en'] || primaryGiftKey;
+      const sg = giftRecMap[secondaryGiftKey]?.[isAr ? 'ar' : 'en'] || secondaryGiftKey;
+      const rm = ministryMap[topMinistryKey]?.[isAr ? 'ar' : 'en'] || topMinistryKey;
+
+      const traineeLines = TRAINEE_IDS.map(id => {
+        const f = fields.trainee[id];
+        return `${f.fieldEnglish}: ${f.value || l.notAvailable}`;
+      });
+
+      const faithLines = FAITH_IDS.map(qId => {
+        const q = fields.faith[qId];
+        return `${q.questionEnglish}\n${l.answer}: ${q.answer || l.notAvailable}`;
+      });
+
+      const giftLines = GIFT_SECTIONS.map(key => {
+        const gs = fields.gifts[key];
+        const qLines = Object.keys(gs.questions).map(qKey => {
+          const q = gs.questions[qKey];
+          return `  ${qKey}. ${q.questionEnglish}\n  ${l.score}: ${q.score}/5`;
+        });
+        return `${gs.sectionEnglish}\n${l.totalScore}: ${giftTotals[key]}/25\n${qLines.join('\n\n')}`;
+      });
+
+      const ministryLines = MINISTRY_IDS.map(mId => {
+        const m = fields.ministry[mId];
+        return `${m.areaEnglish}: ${m.score}/5`;
+      });
+
+      const visionLines = VISION_IDS.map(vId => {
+        const v = fields.vision[vId];
+        return `${v.questionEnglish}\n${l.answer}: ${v.answer || l.notAvailable}`;
+      });
+
+      const fullReport = [
+        l.title, sep, '',
+        `${l.submittedAt}: ${submittedAt}`,
+        `${l.interfaceLanguageUsed}: ${lang}`, '',
+        l.traineeInfo, ssep, traineeLines.join('\n'), '',
+        l.assessmentResults, ssep,
+        `${l.primaryGift}: ${pg}`,
+        `${l.secondaryGift}: ${sg}`,
+        `${l.recommendedMinistry}: ${rm}`, '',
+        `${l.summary}:`, langResult.summary, '',
+        l.faithJourney, ssep, faithLines.join('\n\n'), '',
+        l.personalGifts, ssep, giftLines.join('\n\n'), '',
+        l.ministryAlignment, ssep, ministryLines.join('\n'), '',
+        l.callingVision, ssep, visionLines.join('\n\n'),
+      ].join('\n');
+
+      const emailParams = {
+        fullName: trainee.fullName,
+        surveyDate: trainee.surveyDate,
+        age: trainee.age,
+        interfaceLanguageUsed: lang,
+        submittedAt,
+        primaryGift: pg,
+        secondaryGift: sg,
+        recommendedMinistry: rm,
+        fullReport,
+      };
+
       if (trainee.email?.trim()) {
-        const isAr = dir === 'rtl';
-        const lang = isAr ? 'Arabic' : 'English';
-        const rl: Record<string, Record<string, string>> = {
-          English: { title: 'LINC SPIRITUAL GIFTS ASSESSMENT RESPONSE', submittedAt: 'Submitted At', interfaceLanguageUsed: 'Interface Language Used', traineeInfo: 'TRAINEE INFORMATION', assessmentResults: 'ASSESSMENT RESULTS', primaryGift: 'Primary Gift', secondaryGift: 'Secondary Gift', recommendedMinistry: 'Recommended Ministry', summary: 'Summary', faithJourney: 'FAITH JOURNEY AND WALK WITH GOD', personalGifts: 'PERSONAL GIFTS ASSESSMENT', totalScore: 'Total Score', score: 'Score', answer: 'Answer', ministryAlignment: 'MINISTRY ALIGNMENT AND EXPERIENCE', callingVision: 'CALLING AND VISION QUESTIONS', notAvailable: 'N/A' },
-          Arabic: { title: 'نتيجة تقييم المواهب الروحية والدعوة الشخصية', submittedAt: 'وقت الإرسال', interfaceLanguageUsed: 'لغة النموذج المستخدمة', traineeInfo: 'معلومات المتدرب', assessmentResults: 'نتائج التقييم', primaryGift: 'الموهبة الأساسية', secondaryGift: 'الموهبة الثانوية', recommendedMinistry: 'مجال الخدمة المقترح', summary: 'الملخص', faithJourney: 'الرحلة الإيمانية والمسيرة مع الله', personalGifts: 'تقييم المواهب الشخصية', totalScore: 'الدرجة الإجمالية', score: 'الدرجة', answer: 'الإجابة', ministryAlignment: 'التوافق والخبرة نحو الخدمة', callingVision: 'أسئلة الدعوة والرؤية', notAvailable: 'غير متوفر' },
-        };
-        const l = rl[lang];
-        const sep = '=========================================';
-        const ssep = '-------------------------------';
-
-        const primaryGiftKey = sortedGifts[0][0];
-        const secondaryGiftKey = sortedGifts[1][0];
-        const topMinistryKey = sortedMinistry[0][0];
-
-        const giftRecMap: Record<string, { en: string; ar: string }> = {
-          A: { en: 'Apostolic / Pioneering Leadership', ar: 'قيادة رسولية / خدمة رائدة' },
-          B: { en: 'Prophetic / Intercession Ministry', ar: 'خدمة نبوية / شفاعة' },
-          C: { en: 'Evangelism and Outreach', ar: 'التبشير والكرازة' },
-          D: { en: 'Pastoral Care and Shepherding', ar: 'الرعاية الروحية وقلب الراعي' },
-          E: { en: 'Teaching, Training, and Discipleship', ar: 'التعليم والتدريب والتلمذة' },
-        };
-        const ministryMap: Record<string, { en: string; ar: string }> = {
-          F1: { en: 'Prayer and Intercession', ar: 'الصلاة والشفاعة' },
-          F2: { en: 'Evangelism and Outreach', ar: 'التبشير والتواصل' },
-          F3: { en: 'Bible Teaching and Discipleship', ar: 'تعليم الكتاب المقدس والتلمذة' },
-          F4: { en: 'Spiritual Care and Follow-up', ar: 'الرعاية الروحية والمتابعة' },
-          F5: { en: 'Worship', ar: 'العبادة' },
-          F6: { en: "Children's Ministry", ar: 'خدمة الأطفال' },
-          F7: { en: 'Youth Ministry', ar: 'خدمة الشباب' },
-          F8: { en: 'Media and Technology', ar: 'الإعلام والتكنولوجيا' },
-          F9: { en: 'Administration and Oversight', ar: 'الإدارة والإشراف' },
-          F10: { en: 'Hospitality and Welcome', ar: 'الضيافة والترحيب' },
-        };
-
-        const langResult = results[lang];
-        const pg = giftRecMap[primaryGiftKey]?.[isAr ? 'ar' : 'en'] || primaryGiftKey;
-        const sg = giftRecMap[secondaryGiftKey]?.[isAr ? 'ar' : 'en'] || secondaryGiftKey;
-        const rm = ministryMap[topMinistryKey]?.[isAr ? 'ar' : 'en'] || topMinistryKey;
-
-        const traineeLines = TRAINEE_IDS.map(id => {
-          const f = fields.trainee[id];
-          return `${f.fieldEnglish}: ${f.value || l.notAvailable}`;
-        });
-
-        const faithLines = FAITH_IDS.map(qId => {
-          const q = fields.faith[qId];
-          return `${q.questionEnglish}\n${l.answer}: ${q.answer || l.notAvailable}`;
-        });
-
-        const giftLines = GIFT_SECTIONS.map(key => {
-          const gs = fields.gifts[key];
-          const qLines = Object.keys(gs.questions).map(qKey => {
-            const q = gs.questions[qKey];
-            return `  ${qKey}. ${q.questionEnglish}\n  ${l.score}: ${q.score}/5`;
-          });
-          return `${gs.sectionEnglish}\n${l.totalScore}: ${giftTotals[key]}/25\n${qLines.join('\n\n')}`;
-        });
-
-        const ministryLines = MINISTRY_IDS.map(mId => {
-          const m = fields.ministry[mId];
-          return `${m.areaEnglish}: ${m.score}/5`;
-        });
-
-        const visionLines = VISION_IDS.map(vId => {
-          const v = fields.vision[vId];
-          return `${v.questionEnglish}\n${l.answer}: ${v.answer || l.notAvailable}`;
-        });
-
-        const fullReport = [
-          l.title, sep, '',
-          `${l.submittedAt}: ${submittedAt}`,
-          `${l.interfaceLanguageUsed}: ${lang}`, '',
-          l.traineeInfo, ssep, traineeLines.join('\n'), '',
-          l.assessmentResults, ssep,
-          `${l.primaryGift}: ${pg}`,
-          `${l.secondaryGift}: ${sg}`,
-          `${l.recommendedMinistry}: ${rm}`, '',
-          `${l.summary}:`, langResult.summary, '',
-          l.faithJourney, ssep, faithLines.join('\n\n'), '',
-          l.personalGifts, ssep, giftLines.join('\n\n'), '',
-          l.ministryAlignment, ssep, ministryLines.join('\n'), '',
-          l.callingVision, ssep, visionLines.join('\n\n'),
-        ].join('\n');
-
         try {
-          await sendEmailViaEmailJS(trainee.email.trim(), {
-            fullName: trainee.fullName,
-            surveyDate: trainee.surveyDate,
-            age: trainee.age,
-            interfaceLanguageUsed: lang,
-            submittedAt,
-            primaryGift: pg,
-            secondaryGift: sg,
-            recommendedMinistry: rm,
-            fullReport,
-          });
+          await sendEmailViaEmailJS(trainee.email.trim(), emailParams);
         } catch (emailErr) {
           console.error('Email send failed:', emailErr);
         }
       }
+
+      await Promise.allSettled(
+        adminEmails.map(adminEmail =>
+          sendEmailViaEmailJS(adminEmail, emailParams).catch(adminEmailErr => {
+            console.error(`Admin email send failed for ${adminEmail}:`, adminEmailErr);
+          })
+        )
+      );
 
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
