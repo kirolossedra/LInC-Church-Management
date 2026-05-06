@@ -13,7 +13,7 @@ import {
   getStoredTokens,
   storeTokens,
   clearTokens,
-  sendGmailEmail,
+  sendEmailUnified,
   type GmailTokens,
 } from '../services/gmail';
 import PageTitle from './PageTitle';
@@ -381,12 +381,21 @@ export default function Calendar() {
   };
 
   const sendEmails = async (meetingData: { title: string; date: string; startTime: string; endTime: string; location: string; meetLink: string }) => {
-    if (selectedParticipants.length === 0 || !googleTokens) return true;
+    if (selectedParticipants.length === 0) return true;
 
     const selected = participants.filter(p => selectedParticipants.includes(p.id));
 
     for (const p of selected) {
       if (!p.email) continue;
+
+      const subject = `Meeting Invitation: ${meetingData.title}`;
+      const textBody = [
+        `Meeting: ${meetingData.title}`,
+        `Date: ${format(parseISO(meetingData.date), 'EEEE, MMMM d, yyyy')}`,
+        `Time: ${timeRangeToLabel(meetingData.startTime, meetingData.endTime, displayLocale)}`,
+        `Location: ${meetingData.location || 'TBA'}`,
+        meetingData.meetLink ? `Google Meet: ${meetingData.meetLink}` : '',
+      ].filter(Boolean).join('\n');
 
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #f5f4f0; border-radius: 22px;">
@@ -407,7 +416,7 @@ export default function Calendar() {
       `.trim();
 
       try {
-        await sendGmailEmail(googleTokens, p.email, `Meeting Invitation: ${meetingData.title}`, htmlBody);
+        await sendEmailUnified(p.email, subject, htmlBody, { fullReport: textBody });
       } catch (err) {
         console.error(`Failed to send email to ${p.email}:`, err);
       }
@@ -765,28 +774,31 @@ Otherwise, provide a helpful response about their calendar.`;
           });
 
           try {
-            const tokens = googleTokens || getStoredTokens();
-            if (tokens) {
-              const emailHtml = `
-                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f4f0;border-radius:22px;">
-                  <div style="background:#8b1e1e;color:white;padding:16px;border-radius:14px;text-align:center;margin-bottom:20px;">
-                    <h1 style="margin:0;font-size:20px;">${t('booking.acceptedEmailTitle')}</h1>
-                  </div>
-                  <p style="color:#333;font-size:15px;">Dear ${req.name},</p>
-                  <p style="color:#555;font-size:14px;">${t('booking.acceptedEmailBody')}</p>
-                  <div style="background:white;padding:16px;border-radius:14px;border:1px solid #e5e5e5;margin-bottom:16px;">
-                    <p style="margin:4px 0;font-size:14px;"><strong>Meeting:</strong> Meeting with Pastor</p>
-                    <p style="margin:4px 0;font-size:14px;"><strong>Date:</strong> ${format(parseISO(req.date), 'EEEE, MMMM d, yyyy')}</p>
-                    <p style="margin:4px 0;font-size:14px;"><strong>Time:</strong> ${timeRangeToLabel(req.startTime, req.endTime, displayLocale)}</p>
-                    ${req.reason ? `<p style="margin:4px 0;font-size:14px;"><strong>Reason:</strong> ${req.reason}</p>` : ''}
-                    ${meetLink ? `<p style="margin:8px 0;font-size:14px;"><strong>Google Meet:</strong> <a href="${meetLink}" style="color:#8b1e1e;font-weight:bold;">Join Meeting</a></p>` : ''}
-                  </div>
-                  <p style="color:#999;font-size:12px;margin-top:24px;">God bless.</p>
+            const emailHtml = `
+              <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f4f0;border-radius:22px;">
+                <div style="background:#8b1e1e;color:white;padding:16px;border-radius:14px;text-align:center;margin-bottom:20px;">
+                  <h1 style="margin:0;font-size:20px;">${t('booking.acceptedEmailTitle')}</h1>
                 </div>
-              `.trim();
-
-              await sendGmailEmail(tokens, req.email, t('booking.acceptedEmailSubject'), emailHtml);
-            }
+                <p style="color:#333;font-size:15px;">Dear ${req.name},</p>
+                <p style="color:#555;font-size:14px;">${t('booking.acceptedEmailBody')}</p>
+                <div style="background:white;padding:16px;border-radius:14px;border:1px solid #e5e5e5;margin-bottom:16px;">
+                  <p style="margin:4px 0;font-size:14px;"><strong>Meeting:</strong> Meeting with Pastor</p>
+                  <p style="margin:4px 0;font-size:14px;"><strong>Date:</strong> ${format(parseISO(req.date), 'EEEE, MMMM d, yyyy')}</p>
+                  <p style="margin:4px 0;font-size:14px;"><strong>Time:</strong> ${timeRangeToLabel(req.startTime, req.endTime, displayLocale)}</p>
+                  ${req.reason ? `<p style="margin:4px 0;font-size:14px;"><strong>Reason:</strong> ${req.reason}</p>` : ''}
+                  ${meetLink ? `<p style="margin:8px 0;font-size:14px;"><strong>Google Meet:</strong> <a href="${meetLink}" style="color:#8b1e1e;font-weight:bold;">Join Meeting</a></p>` : ''}
+                </div>
+                <p style="color:#999;font-size:12px;margin-top:24px;">God bless.</p>
+              </div>
+            `.trim();
+            const textBody = [
+              `Meeting with Pastor`,
+              `Date: ${format(parseISO(req.date), 'EEEE, MMMM d, yyyy')}`,
+              `Time: ${timeRangeToLabel(req.startTime, req.endTime, displayLocale)}`,
+              req.reason ? `Reason: ${req.reason}` : '',
+              meetLink ? `Google Meet: ${meetLink}` : '',
+            ].filter(Boolean).join('\n');
+            await sendEmailUnified(req.email, t('booking.acceptedEmailSubject'), emailHtml, { fullReport: textBody });
           } catch (emailErr) {
             console.error('Failed to send acceptance email:', emailErr);
           }

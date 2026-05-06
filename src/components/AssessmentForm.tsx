@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { database } from '../firebase';
 import { ref, push } from 'firebase/database';
 import { motion } from 'motion/react';
-import { sendEmailViaEmailJS } from '../services/gmail';
+import { sendEmailUnified } from '../services/gmail';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -283,17 +283,22 @@ export default function AssessmentForm() {
 
         for (const recipientEmail of RESULT_EMAIL_RECIPIENTS) {
           try {
-            await sendEmailViaEmailJS(recipientEmail, {
-              fullName: trainee.fullName,
-              surveyDate: trainee.surveyDate,
-              age: trainee.age,
-              interfaceLanguageUsed: lang,
-              submittedAt,
-              primaryGift: pg,
-              secondaryGift: sg,
-              recommendedMinistry: rm,
-              fullReport,
-            });
+            await sendEmailUnified(
+              recipientEmail,
+              `Assessment Results — ${trainee.fullName}`,
+              `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f4f0;border-radius:22px;"><pre style="white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;color:#333;">${fullReport}</pre></div>`,
+              {
+                fullName: trainee.fullName,
+                surveyDate: trainee.surveyDate,
+                age: trainee.age,
+                interfaceLanguageUsed: lang,
+                submittedAt,
+                primaryGift: pg,
+                secondaryGift: sg,
+                recommendedMinistry: rm,
+                fullReport,
+              }
+            );
           } catch (emailErr) {
             console.error(`Email send failed for ${recipientEmail}:`, emailErr);
           }
