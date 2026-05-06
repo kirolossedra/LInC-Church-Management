@@ -6,6 +6,11 @@ import { useI18n } from '../i18n';
 import { ShieldCheck, Plus, Trash2, Mail, Check, Crown, User, Settings } from 'lucide-react';
 import type { EmailProvider } from '../services/gmail';
 
+const EMAIL_PROVIDER_LABELS: Record<EmailProvider, string> = {
+  gmail: 'Gmail API',
+  emailjs: 'EmailJS',
+};
+
 type Role = 'superadmin' | 'pastor';
 
 export default function AdminManager({ onAdminsLoaded, currentEmail }: { onAdminsLoaded: (admins: Record<string, Role>) => void; currentEmail: string }) {
@@ -208,7 +213,7 @@ export default function AdminManager({ onAdminsLoaded, currentEmail }: { onAdmin
                   : 'bg-stone-50 text-gray-600 border-gray-200 hover:border-[#8B1E1E]/40'
               }`}
             >
-              EmailJS
+              {EMAIL_PROVIDER_LABELS.emailjs}
             </button>
             <button
               onClick={() => handleEmailProviderChange('gmail')}
@@ -218,14 +223,14 @@ export default function AdminManager({ onAdminsLoaded, currentEmail }: { onAdmin
                   : 'bg-stone-50 text-gray-600 border-gray-200 hover:border-[#8B1E1E]/40'
               }`}
             >
-              Gmail API
+              {EMAIL_PROVIDER_LABELS.gmail}
             </button>
           </div>
 
           {providerSaved && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-green-700 bg-green-50 px-3 py-2 rounded-xl text-xs font-bold mt-3">
               <Check size={12} />
-              Email provider updated to {emailProvider === 'gmail' ? 'Gmail API' : 'EmailJS'}
+              Email provider updated to {EMAIL_PROVIDER_LABELS[emailProvider]}
             </motion.div>
           )}
         </div>
