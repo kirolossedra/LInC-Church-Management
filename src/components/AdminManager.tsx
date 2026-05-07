@@ -3,7 +3,13 @@ import { database } from '../firebase';
 import { ref, onValue, set, remove } from 'firebase/database';
 import { motion } from 'motion/react';
 import { useI18n } from '../i18n';
-import { ShieldCheck, Plus, Trash2, Mail, Check, Crown, User } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Mail, Check, Crown, User, Settings } from 'lucide-react';
+import type { EmailProvider } from '../services/gmail';
+
+const EMAIL_PROVIDER_LABELS: Record<EmailProvider, string> = {
+  gmail: 'Gmail API',
+  emailjs: 'EmailJS',
+};
 
 type Role = 'superadmin' | 'pastor';
 
@@ -16,6 +22,28 @@ export default function AdminManager({ onAdminsLoaded, currentEmail }: { onAdmin
   const [success, setSuccess] = useState('');
 
   const isSuperAdmin = admins[currentEmail?.toLowerCase().trim()] === 'superadmin';
+
+  const [emailProvider, setEmailProvider] = useState<EmailProvider>('emailjs');
+  const [providerSaved, setProviderSaved] = useState(false);
+
+  useEffect(() => {
+    const providerRef = ref(database, 'settings/emailProvider');
+    const unsubscribe = onValue(providerRef, (snapshot) => {
+      const p = snapshot.val() as EmailProvider | null;
+      setEmailProvider(p === 'gmail' ? 'gmail' : 'emailjs');
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleEmailProviderChange = async (provider: EmailProvider) => {
+    try {
+      await set(ref(database, 'settings/emailProvider'), provider);
+      setProviderSaved(true);
+      setTimeout(() => setProviderSaved(false), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     const adminsRef = ref(database, 'admins/');
@@ -163,6 +191,50 @@ export default function AdminManager({ onAdminsLoaded, currentEmail }: { onAdmin
           </div>
         ))}
       </div>
+
+      {isSuperAdmin && (
+        <div className="mt-6 pt-6 border-t border-gray-100">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 bg-[#8B1E1E]/10 rounded-xl flex items-center justify-center">
+              <Settings size={16} className="text-[#8B1E1E]" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-[#1A1A1A]">Email Provider</h4>
+              <p className="text-xs text-gray-400">Choose how outgoing emails are sent</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => handleEmailProviderChange('emailjs')}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-colors border ${
+                emailProvider === 'emailjs'
+                  ? 'bg-[#8B1E1E] text-white border-[#8B1E1E]'
+                  : 'bg-stone-50 text-gray-600 border-gray-200 hover:border-[#8B1E1E]/40'
+              }`}
+            >
+              {EMAIL_PROVIDER_LABELS.emailjs}
+            </button>
+            <button
+              onClick={() => handleEmailProviderChange('gmail')}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-colors border ${
+                emailProvider === 'gmail'
+                  ? 'bg-[#8B1E1E] text-white border-[#8B1E1E]'
+                  : 'bg-stone-50 text-gray-600 border-gray-200 hover:border-[#8B1E1E]/40'
+              }`}
+            >
+              {EMAIL_PROVIDER_LABELS.gmail}
+            </button>
+          </div>
+
+          {providerSaved && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-green-700 bg-green-50 px-3 py-2 rounded-xl text-xs font-bold mt-3">
+              <Check size={12} />
+              Email provider updated to {EMAIL_PROVIDER_LABELS[emailProvider]}
+            </motion.div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

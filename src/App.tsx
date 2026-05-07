@@ -14,7 +14,7 @@ import { ref, onValue, set } from 'firebase/database';
 import { database } from './firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { LogIn, ShieldCheck, Mail, Lock, AlertCircle } from 'lucide-react';
-import { handleOAuthCallback, storeTokens } from './services/gmail';
+import { handleOAuthCallback, storeTokens, setEmailProviderLocally, type EmailProvider } from './services/gmail';
 import { I18nProvider, useI18n } from './i18n';
 
 type Role = 'superadmin' | 'pastor';
@@ -163,6 +163,15 @@ function AppRoutes() {
     import('@emailjs/browser').then(emailjs => {
       emailjs.init({ publicKey: 'x_Xx3UHe3-yE1I13_' });
     });
+
+    const providerRef = ref(database, 'settings/emailProvider');
+    const unsubscribeProvider = onValue(providerRef, (snapshot) => {
+      const p = snapshot.val() as EmailProvider | null;
+      if (p === 'gmail' || p === 'emailjs') {
+        setEmailProviderLocally(p);
+      }
+    });
+    return () => unsubscribeProvider();
   }, []);
 
   useEffect(() => {

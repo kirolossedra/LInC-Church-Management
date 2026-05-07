@@ -7,7 +7,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMont
 import { ar, enUS } from 'date-fns/locale';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Ban, Bot, X } from 'lucide-react';
 import AIBookingAssistant from '../components/AIBookingAssistant';
-import { sendEmailViaEmailJS } from '../services/gmail';
+import { sendEmailUnified } from '../services/gmail';
 
 const BUSINESS_START = 9;
 const BUSINESS_END = 20; // don't change this 
@@ -259,10 +259,14 @@ export default function BookingCalendar() {
 
       for (const pastorEmail of pastors) {
         try {
-          await sendEmailViaEmailJS(pastorEmail, {
-            subject: `${t('booking.newMeetingRequestSubject')} ${name}`,
-            fullReport: `${t('booking.newMeetingRequestBody')}\n\n${t('booking.name')}: ${name}\n${t('booking.emailLabel')}: ${email}\n${t('booking.date')}: ${dateStr}\n${t('booking.timeLabel')}: ${hourToLabel(selectedSlot, displayLocale)} - ${hourToLabel(selectedSlot + SLOT_DURATION, displayLocale)}\n${t('booking.reason')}: ${reason}\n\n${t('booking.adminInstructions')}`,
-          });
+          const subject = `${t('booking.newMeetingRequestSubject')} ${name}`;
+          const body = `${t('booking.newMeetingRequestBody')}\n\n${t('booking.name')}: ${name}\n${t('booking.emailLabel')}: ${email}\n${t('booking.date')}: ${dateStr}\n${t('booking.timeLabel')}: ${hourToLabel(selectedSlot, displayLocale)} - ${hourToLabel(selectedSlot + SLOT_DURATION, displayLocale)}\n${t('booking.reason')}: ${reason}\n\n${t('booking.adminInstructions')}`;
+          await sendEmailUnified(
+            pastorEmail,
+            subject,
+            `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f4f0;border-radius:22px;"><pre style="white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;color:#333;">${body}</pre></div>`,
+            { fullReport: body }
+          );
         } catch (err) {
           console.error(`Failed to notify pastor ${pastorEmail}:`, err);
         }

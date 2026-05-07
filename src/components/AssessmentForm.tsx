@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { database } from '../firebase';
 import { ref, push, get } from 'firebase/database';
 import { motion } from 'motion/react';
-import { sendEmailViaEmailJS } from '../services/gmail';
+import { sendEmailUnified } from '../services/gmail';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -281,7 +281,12 @@ export default function AssessmentForm() {
 
       if (trainee.email?.trim()) {
         try {
-          await sendEmailViaEmailJS(trainee.email.trim(), emailParams);
+          await sendEmailUnified(
+            trainee.email.trim(),
+            `Assessment Results — ${trainee.fullName}`,
+            `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f4f0;border-radius:22px;"><pre style="white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;color:#333;">${fullReport}</pre></div>`,
+            emailParams
+          );
         } catch (emailErr) {
           console.error('Email send failed:', emailErr);
         }
@@ -289,7 +294,12 @@ export default function AssessmentForm() {
 
       await Promise.allSettled(
         [...RESULT_EMAIL_RECIPIENTS, ...adminEmails].map(recipientEmail =>
-          sendEmailViaEmailJS(recipientEmail, emailParams).catch(err => {
+          sendEmailUnified(
+            recipientEmail,
+            `Assessment Results — ${trainee.fullName}`,
+            `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f4f0;border-radius:22px;"><pre style="white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;color:#333;">${fullReport}</pre></div>`,
+            emailParams
+          ).catch(err => {
             console.error(`Email send failed for ${recipientEmail}:`, err);
           })
         )

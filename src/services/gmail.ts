@@ -167,3 +167,41 @@ export async function sendEmailViaEmailJS(
     EMAILJS_PUBLIC_KEY
   );
 }
+
+export type EmailProvider = 'gmail' | 'emailjs';
+
+export function getEmailProvider(): EmailProvider {
+  return (localStorage.getItem('email_provider') as EmailProvider) || 'emailjs';
+}
+
+export function setEmailProviderLocally(provider: EmailProvider): void {
+  localStorage.setItem('email_provider', provider);
+}
+
+/**
+ * Unified email sender that routes to Gmail API or EmailJS based on the
+ * superadmin-configured provider. Falls back to EmailJS when Gmail is
+ * selected but OAuth tokens are not available.
+ *
+ * @param to           Recipient email address
+ * @param subject      Email subject line
+ * @param htmlBody     HTML body (used for Gmail API)
+ * @param emailjsParams Additional EmailJS template params merged with {subject}
+ */
+export async function sendEmailUnified(
+  to: string,
+  subject: string,
+  htmlBody: string,
+  emailjsParams: Record<string, string> = {}
+): Promise<void> {
+  const provider = getEmailProvider();
+  if (provider === 'gmail') {
+    const tokens = getStoredTokens();
+    if (tokens) {
+      await sendGmailEmail(tokens, to, subject, htmlBody);
+      return;
+    }
+  }
+  // EmailJS path (default or fallback when Gmail tokens are absent)
+  await sendEmailViaEmailJS(to, { subject, ...emailjsParams });
+}
