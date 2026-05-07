@@ -46,6 +46,11 @@ interface ScheduleBlock {
   slotDurationMinutes?: number;
 }
 
+function sortBlocksByTime(a: ScheduleBlock, b: ScheduleBlock): number {
+  if (a.startHour !== b.startHour) return a.startHour - b.startHour;
+  return a.endHour - b.endHour;
+}
+
 export default function BookingCalendar() {
   const { t, dir, locale } = useI18n();
   const dateLocale = locale === 'ar' ? ar : enUS;
@@ -165,7 +170,9 @@ export default function BookingCalendar() {
 
   const getDayBlocks = (day: Date): ScheduleBlock[] => {
     const dayStr = format(day, 'yyyy-MM-dd');
-    return scheduleBlocks.filter(b => b.date === dayStr);
+    return scheduleBlocks
+      .filter(b => b.date === dayStr)
+      .sort(sortBlocksByTime);
   };
 
   const getDaySlotDuration = (day: Date): number => {
@@ -309,7 +316,7 @@ export default function BookingCalendar() {
     return 'available';
   };
 
-  const daySlots = selectedDay ? scheduleBlocks.filter(b => b.date === format(selectedDay, 'yyyy-MM-dd')) : [];
+  const daySlots = selectedDay ? getDayBlocks(selectedDay) : [];
 
   const selectedDaySlotDuration = selectedDay ? getDaySlotDuration(selectedDay) : DEFAULT_SLOT_DURATION;
   const selectedDaySlotDurationMinutes = Math.max(1, Math.round(selectedDaySlotDuration * 60));
