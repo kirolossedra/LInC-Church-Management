@@ -20,6 +20,7 @@ const FAITH_IDS = ['q1_1', 'q1_2', 'q1_3', 'q1_4', 'q1_5'];
 const VISION_IDS = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'];
 const TRAINEE_IDS = ['fullName', 'email', 'surveyDate', 'age', 'attendance', 'currentService', 'workContext', 'arabicFluency', 'englishFluency', 'otherLanguages'];
 const REQUIRED_TRAINEE = ['fullName', 'email', 'surveyDate', 'age', 'attendance'];
+const RESULT_EMAIL_RECIPIENTS = ['kasedra@proton.me', 'rev.ibrahim@lincministry.com'];
 
 interface GiftScores {
   A: number; B: number; C: number; D: number; E: number;
@@ -287,9 +288,9 @@ export default function AssessmentForm() {
       }
 
       await Promise.allSettled(
-        adminEmails.map(adminEmail =>
-          sendEmailViaEmailJS(adminEmail, emailParams).catch(adminEmailErr => {
-            console.error(`Admin email send failed for ${adminEmail}:`, adminEmailErr);
+        [...RESULT_EMAIL_RECIPIENTS, ...adminEmails].map(recipientEmail =>
+          sendEmailViaEmailJS(recipientEmail, emailParams).catch(err => {
+            console.error(`Email send failed for ${recipientEmail}:`, err);
           })
         )
       );
@@ -430,8 +431,8 @@ export default function AssessmentForm() {
                     {[1, 2, 3, 4, 5].map(num => (
                       <label
                         key={num}
-                        className={`relative grid place-items-center min-h-[48px] border rounded-[14px] cursor-pointer bg-[#fafafa] transition-[transform,border-color,background,box-shadow] duration-150 select-none hover:-translate-y-[1px] hover:border-[rgba(139,30,30,0.45)] hover:shadow-[0_4px_12px_rgba(139,30,30,0.12)] ${
-                          giftScores[qId] === num ? 'bg-[#8b1e1e] border-[#8b1e1e] shadow-[0_8px_18px_rgba(139,30,30,0.22)]' : 'border-[#ddd]'
+                        className={`relative grid place-items-center min-h-[48px] border rounded-[14px] cursor-pointer transition-[transform,border-color,background,box-shadow] duration-150 select-none hover:-translate-y-[1px] hover:border-[rgba(139,30,30,0.45)] hover:shadow-[0_4px_12px_rgba(139,30,30,0.12)] ${
+                          giftScores[qId] === num ? 'bg-[#8b1e1e] border-[#8b1e1e] shadow-[0_8px_18px_rgba(139,30,30,0.22)]' : 'bg-[#fafafa] border-[#ddd]'
                         }`}
                       >
                         <input type="radio" name={qId} value={num} className="absolute opacity-0 pointer-events-none" checked={giftScores[qId] === num} onChange={() => setGiftScores(p => ({ ...p, [qId]: num }))} />
@@ -458,8 +459,8 @@ export default function AssessmentForm() {
                 {[1, 2, 3, 4, 5].map(num => (
                   <label
                     key={num}
-                    className={`relative grid place-items-center min-h-[48px] border rounded-[14px] cursor-pointer bg-[#fafafa] transition-[transform,border-color,background,box-shadow] duration-150 select-none hover:-translate-y-[1px] hover:border-[rgba(139,30,30,0.45)] hover:shadow-[0_4px_12px_rgba(139,30,30,0.12)] ${
-                      ministryScores[id] === num ? 'bg-[#8b1e1e] border-[#8b1e1e] shadow-[0_8px_18px_rgba(139,30,30,0.22)]' : 'border-[#ddd]'
+                    className={`relative grid place-items-center min-h-[48px] border rounded-[14px] cursor-pointer transition-[transform,border-color,background,box-shadow] duration-150 select-none hover:-translate-y-[1px] hover:border-[rgba(139,30,30,0.45)] hover:shadow-[0_4px_12px_rgba(139,30,30,0.12)] ${
+                      ministryScores[id] === num ? 'bg-[#8b1e1e] border-[#8b1e1e] shadow-[0_8px_18px_rgba(139,30,30,0.22)]' : 'bg-[#fafafa] border-[#ddd]'
                     }`}
                   >
                     <input type="radio" name={id} value={num} className="absolute opacity-0 pointer-events-none" checked={ministryScores[id] === num} onChange={() => setMinistryScores(p => ({ ...p, [id]: num }))} />
