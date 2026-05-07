@@ -11,7 +11,7 @@ import { sendEmailUnified } from '../services/gmail';
 
 const BUSINESS_START = 9;
 const BUSINESS_END = 20; // don't change this 
-const SLOT_DURATION = 0.5;
+const DEFAULT_SLOT_DURATION = 0.25;
 
 function timeToHour(t: string): number {
   const [hours, minutes] = t.split(':').map(Number);
@@ -43,6 +43,7 @@ interface ScheduleBlock {
   endHour: number;
   title: string;
   type: 'meeting' | 'available' | 'unavailable';
+  slotDurationMinutes?: number;
 }
 
 export default function BookingCalendar() {
@@ -75,13 +76,14 @@ export default function BookingCalendar() {
             const startTime = val.startTime || '09:00';
             const endTime = val.endTime || '20:00';
 
-            blocks.push({
-              date: val.date,
-              startHour: timeToHour(startTime),
-              endHour: timeToHour(endTime),
-              title: val.reason || t('booking.slotAvailable'),
-              type: 'available',
-            });
+              blocks.push({
+                date: val.date,
+                startHour: timeToHour(startTime),
+                endHour: timeToHour(endTime),
+                title: val.reason || t('booking.slotAvailable'),
+                type: 'available',
+                slotDurationMinutes: val.slotDurationMinutes || 15,
+              });
           }
         });
       }
@@ -166,14 +168,26 @@ export default function BookingCalendar() {
     return scheduleBlocks.filter(b => b.date === dayStr);
   };
 
-  const isSlotInsideAvailability = (day: Date, hour: number): boolean => {
+  const getDaySlotDuration = (day: Date): number => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    const durations = scheduleBlocks
+      .filter(b => b.date === dayStr && b.type === 'available')
+      .map(b => (b.slotDurationMinutes || 15) / 60)
+      .filter(duration => duration > 0);
+
+    if (durations.length === 0) return DEFAULT_SLOT_DURATION;
+
+    return Math.min(...durations);
+  };
+
+  const isSlotInsideAvailability = (day: Date, hour: number, slotDuration: number): boolean => {
     const dayStr = format(day, 'yyyy-MM-dd');
 
     return scheduleBlocks.some(b =>
       b.date === dayStr &&
       b.type === 'available' &&
       hour >= b.startHour &&
-      hour + SLOT_DURATION <= b.endHour
+      hour + slotDuration <= b.endHour
     );
   };
 
@@ -199,10 +213,10 @@ export default function BookingCalendar() {
     );
   };
 
-  const isSlotInfeasible = (day: Date, hour: number): boolean => {
+  const isSlotInfeasible = (day: Date, hour: number, slotDuration: number): boolean => {
     if (hour < BUSINESS_START || hour >= BUSINESS_END) return true;
 
-    if (!isSlotInsideAvailability(day, hour)) return true;
+    if (!isSlotInsideAvailability(day, hour, slotDuration)) return true;
 
     if (isSlotUnavailable(day, hour)) return true;
 
@@ -229,7 +243,9 @@ export default function BookingCalendar() {
   };
 
   const handleSlotClick = (hour: number) => {
-    if (!selectedDay || isSlotBooked(selectedDay, hour) || isSlotInfeasible(selectedDay, hour)) return;
+    if (!selectedDay) return;
+    const slotDuration = getDaySlotDuration(selectedDay);
+    if (isSlotBooked(selectedDay, hour) || isSlotInfeasible(selectedDay, hour, slotDuration)) return;
     setSelectedSlot(hour);
     setSuccess(false);
   };
@@ -238,7 +254,9 @@ export default function BookingCalendar() {
     e.preventDefault();
     if (!selectedDay || selectedSlot === null) return;
 
-    if (isSlotBooked(selectedDay, selectedSlot) || isSlotInfeasible(selectedDay, selectedSlot)) return;
+    const slotDuration = getDaySlotDuration(selectedDay);
+
+    if (isSlotBooked(selectedDay, selectedSlot) || isSlotInfeasible(selectedDay, selectedSlot, slotDuration)) return;
 
     setLoading(true);
 
@@ -249,7 +267,7 @@ export default function BookingCalendar() {
         email,
         date: dateStr,
         startTime: hourToTime(selectedSlot),
-        endTime: hourToTime(selectedSlot + SLOT_DURATION),
+        endTime: hourToTime(selectedSlot + slotDuration),
         reason,
         status: 'pending',
         createdAt: Date.now(),
@@ -260,7 +278,7 @@ export default function BookingCalendar() {
       for (const pastorEmail of pastors) {
         try {
           const subject = `${t('booking.newMeetingRequestSubject')} ${name}`;
-          const body = `${t('booking.newMeetingRequestBody')}\n\n${t('booking.name')}: ${name}\n${t('booking.emailLabel')}: ${email}\n${t('booking.date')}: ${dateStr}\n${t('booking.timeLabel')}: ${hourToLabel(selectedSlot, displayLocale)} - ${hourToLabel(selectedSlot + SLOT_DURATION, displayLocale)}\n${t('booking.reason')}: ${reason}\n\n${t('booking.adminInstructions')}`;
+          const body = `${t('booking.newMeetingRequestBody')}\n\n${t('booking.name')}: ${name}\n${t('booking.emailLabel')}: ${email}\n${t('booking.date')}: ${dateStr}\n${t('booking.timeLabel')}: ${hourToLabel(selectedSlot, displayLocale)} - ${hourToLabel(selectedSlot + slotDuration, displayLocale)}\n${t('booking.reason')}: ${reason}\n\n${t('booking.adminInstructions')}`;
           await sendEmailUnified(
             pastorEmail,
             subject,
@@ -285,15 +303,17 @@ export default function BookingCalendar() {
     }
   };
 
-  const slotStatus = (day: Date, hour: number): 'booked' | 'infeasible' | 'available' => {
+  const slotStatus = (day: Date, hour: number, slotDuration: number): 'booked' | 'infeasible' | 'available' => {
     if (isSlotBooked(day, hour)) return 'booked';
-    if (isSlotInfeasible(day, hour)) return 'infeasible';
+    if (isSlotInfeasible(day, hour, slotDuration)) return 'infeasible';
     return 'available';
   };
 
   const daySlots = selectedDay ? scheduleBlocks.filter(b => b.date === format(selectedDay, 'yyyy-MM-dd')) : [];
 
-  const numberOfSlots = Math.floor((BUSINESS_END - BUSINESS_START) / SLOT_DURATION);
+  const selectedDaySlotDuration = selectedDay ? getDaySlotDuration(selectedDay) : DEFAULT_SLOT_DURATION;
+  const selectedDaySlotDurationMinutes = Math.max(1, Math.round(selectedDaySlotDuration * 60));
+  const numberOfSlots = Math.floor(((BUSINESS_END - BUSINESS_START) * 60) / selectedDaySlotDurationMinutes);
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto px-4 py-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -442,8 +462,8 @@ export default function BookingCalendar() {
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
               {Array.from({ length: numberOfSlots }).map((_, i) => {
-                const hour = BUSINESS_START + i * SLOT_DURATION;
-                const status = slotStatus(selectedDay, hour);
+                const hour = (BUSINESS_START * 60 + i * selectedDaySlotDurationMinutes) / 60;
+                const status = slotStatus(selectedDay, hour, selectedDaySlotDuration);
                 const isSel = selectedSlot === hour;
                 return (
                   <button

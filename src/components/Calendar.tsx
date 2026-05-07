@@ -22,7 +22,8 @@ import OpenAI from 'openai';
 
 const SLOT_BLOCK_START = 9;
 const SLOT_BLOCK_END = 20;
-const SLOT_BLOCK_DURATION = 0.5;
+const DEFAULT_SLOT_DURATION = 0.25;
+const DEFAULT_SLOT_DURATION_MINUTES = 15;
 
 function timeToHour(time?: string): number {
   if (!time) return 0;
@@ -55,7 +56,7 @@ function timeRangeToLabel(startTime: string | undefined, endTime: string | undef
 }
 
 
-function buildTimeOptions(startHour: number, endHour: number, step: number = 0.5): { value: string; hour: number }[] {
+function buildTimeOptions(startHour: number, endHour: number, step: number = 0.25): { value: string; hour: number }[] {
   const options: { value: string; hour: number }[] = [];
 
   for (let hour = startHour; hour <= endHour; hour += step) {
@@ -66,9 +67,10 @@ function buildTimeOptions(startHour: number, endHour: number, step: number = 0.5
   return options;
 }
 
-const MEETING_TIME_OPTIONS = buildTimeOptions(0, 23.5);
+const MEETING_TIME_OPTIONS = buildTimeOptions(0, 23.75);
 const BOOKING_WINDOW_TIME_OPTIONS = buildTimeOptions(SLOT_BLOCK_START, SLOT_BLOCK_END);
-const FULL_DAY_TIME_OPTIONS = buildTimeOptions(0, 23.5);
+const FULL_DAY_TIME_OPTIONS = buildTimeOptions(0, 23.75);
+const SLOT_DURATION_OPTIONS = [15, 30, 45, 60];
 
 function slotOverlaps(startA: number, endA: number, startB: number, endB: number): boolean {
   return startA < endB && endA > startB;
@@ -88,6 +90,7 @@ interface Availability {
   endTime?: string;
   reason?: string;
   allDay?: boolean;
+  slotDurationMinutes?: number;
 }
 
 interface Unavailability {
@@ -109,6 +112,7 @@ interface AvailabilityForm {
   endTime: string;
   reason: string;
   allDay: boolean;
+  slotDurationMinutes: number;
 }
 
 interface UnavailabilityForm {
@@ -152,6 +156,7 @@ export default function Calendar() {
     endTime: '20:00',
     reason: '',
     allDay: true,
+    slotDurationMinutes: DEFAULT_SLOT_DURATION_MINUTES,
   });
 
   const [showUnavailabilityModal, setShowUnavailabilityModal] = useState(false);
@@ -252,6 +257,7 @@ export default function Calendar() {
           endTime: val.endTime,
           reason: val.reason || '',
           allDay: val.allDay || false,
+          slotDurationMinutes: val.slotDurationMinutes || DEFAULT_SLOT_DURATION_MINUTES,
         }));
         parsed.sort((a, b) => a.date.localeCompare(b.date));
         setAvailability(parsed);
@@ -312,6 +318,7 @@ export default function Calendar() {
       endTime: '20:00',
       reason: '',
       allDay: true,
+      slotDurationMinutes: DEFAULT_SLOT_DURATION_MINUTES,
     });
   };
 
@@ -506,6 +513,7 @@ export default function Calendar() {
         endTime: availabilityForm.allDay ? '20:00' : availabilityForm.endTime,
         reason: availabilityForm.reason || '',
         allDay: availabilityForm.allDay,
+        slotDurationMinutes: availabilityForm.slotDurationMinutes,
         updatedAt: Date.now(),
       };
 
@@ -701,6 +709,7 @@ Otherwise, provide a helpful response about their calendar.`;
             endTime,
             reason,
             allDay: startTime === '09:00' && endTime === '20:00',
+            slotDurationMinutes: DEFAULT_SLOT_DURATION_MINUTES,
             updatedAt: Date.now(),
           });
           setAiMessages(prev => [...prev, { role: 'assistant', content: `✅ Added availability for ${date}${reason ? ` (${reason})` : ''}.`, timestamp: new Date() }]);
@@ -870,9 +879,20 @@ Otherwise, provide a helpful response about their calendar.`;
     return meetingBooked || requestBooked;
   };
 
+  const getPastorSlotDurationHoursForDate = (dateStr: string): number => {
+    const durations = getAvailabilityBlocksForDate(dateStr)
+      .map(block => (block.slotDurationMinutes || DEFAULT_SLOT_DURATION_MINUTES) / 60)
+      .filter(duration => duration > 0);
+
+    if (durations.length === 0) return DEFAULT_SLOT_DURATION;
+
+    return Math.min(...durations);
+  };
+
   const getPastorSlotStatus = (day: Date, startHour: number): 'available' | 'blocked' | 'booked' | 'closed' => {
     const dateStr = getDateString(day);
-    const endHour = startHour + SLOT_BLOCK_DURATION;
+    const slotDurationHours = getPastorSlotDurationHoursForDate(dateStr);
+    const endHour = startHour + slotDurationHours;
 
     if (isPastorSlotBooked(dateStr, startHour, endHour)) return 'booked';
     if (getBlockingUnavailabilityForSlot(dateStr, startHour, endHour)) return 'blocked';
@@ -889,7 +909,8 @@ Otherwise, provide a helpful response about their calendar.`;
 
   const handleToggleSlotBlock = async (day: Date, startHour: number) => {
     const dateStr = getDateString(day);
-    const endHour = startHour + SLOT_BLOCK_DURATION;
+    const slotDurationHours = getPastorSlotDurationHoursForDate(dateStr);
+    const endHour = startHour + slotDurationHours;
 
     if (isPastorSlotBooked(dateStr, startHour, endHour)) return;
     if (!isPastorSlotInsideAvailability(dateStr, startHour, endHour) && !getBlockingUnavailabilityForSlot(dateStr, startHour, endHour)) return;
@@ -944,9 +965,14 @@ Otherwise, provide a helpful response about their calendar.`;
     }
   };
 
+  const selectedSlotDurationHours = selectedSlotDay
+    ? getPastorSlotDurationHoursForDate(getDateString(selectedSlotDay))
+    : DEFAULT_SLOT_DURATION;
+  const selectedSlotDurationMinutes = Math.max(1, Math.round(selectedSlotDurationHours * 60));
+
   const slotBlockHours = Array.from(
-    { length: Math.floor((SLOT_BLOCK_END - SLOT_BLOCK_START) / SLOT_BLOCK_DURATION) },
-    (_, index) => SLOT_BLOCK_START + index * SLOT_BLOCK_DURATION
+    { length: Math.floor(((SLOT_BLOCK_END - SLOT_BLOCK_START) * 60) / selectedSlotDurationMinutes) },
+    (_, index) => (SLOT_BLOCK_START * 60 + index * selectedSlotDurationMinutes) / 60
   );
 
   const selectedCount = selectedParticipants.length;
@@ -1171,6 +1197,7 @@ Otherwise, provide a helpful response about their calendar.`;
                         endTime: a.endTime || '20:00',
                         reason: a.reason || '',
                         allDay: a.allDay || false,
+                        slotDurationMinutes: a.slotDurationMinutes || DEFAULT_SLOT_DURATION_MINUTES,
                       });
                       setShowAvailabilityModal(true);
                     }}
@@ -1288,7 +1315,7 @@ Otherwise, provide a helpful response about their calendar.`;
                       : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-70'
                   }`}
                 >
-                  <div>{hourToLabel(hour, displayLocale)} - {hourToLabel(hour + SLOT_BLOCK_DURATION, displayLocale)}</div>
+                  <div>{hourToLabel(hour, displayLocale)} - {hourToLabel(hour + selectedSlotDurationHours, displayLocale)}</div>
                   <div className="text-[10px] mt-1 uppercase tracking-widest">{slotLabel}</div>
                 </button>
               );
@@ -1679,6 +1706,21 @@ Otherwise, provide a helpful response about their calendar.`;
                   className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
                 />
                 <label htmlFor="allDayAvailability" className="text-sm font-bold text-gray-700">{t('calendar.allBookableHours')}</label>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.slotSize')}</label>
+                <select
+                  className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-green-300 outline-none"
+                  value={availabilityForm.slotDurationMinutes}
+                  onChange={e => setAvailabilityForm(p => ({ ...p, slotDurationMinutes: Number(e.target.value) }))}
+                >
+                  {SLOT_DURATION_OPTIONS.map(minutes => (
+                    <option key={`slot-duration-${minutes}`} value={minutes}>
+                      {t(`calendar.slotSize${minutes}`)}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {!availabilityForm.allDay && (
