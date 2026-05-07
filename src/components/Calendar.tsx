@@ -23,6 +23,7 @@ import OpenAI from 'openai';
 const SLOT_BLOCK_START = 9;
 const SLOT_BLOCK_END = 20;
 const DEFAULT_SLOT_DURATION = 0.25;
+const DEFAULT_SLOT_DURATION_MINUTES = 15;
 
 function timeToHour(time?: string): number {
   if (!time) return 0;
@@ -155,7 +156,7 @@ export default function Calendar() {
     endTime: '20:00',
     reason: '',
     allDay: true,
-    slotDurationMinutes: 15,
+    slotDurationMinutes: DEFAULT_SLOT_DURATION_MINUTES,
   });
 
   const [showUnavailabilityModal, setShowUnavailabilityModal] = useState(false);
@@ -256,7 +257,7 @@ export default function Calendar() {
           endTime: val.endTime,
           reason: val.reason || '',
           allDay: val.allDay || false,
-          slotDurationMinutes: val.slotDurationMinutes || 15,
+          slotDurationMinutes: val.slotDurationMinutes || DEFAULT_SLOT_DURATION_MINUTES,
         }));
         parsed.sort((a, b) => a.date.localeCompare(b.date));
         setAvailability(parsed);
@@ -317,7 +318,7 @@ export default function Calendar() {
       endTime: '20:00',
       reason: '',
       allDay: true,
-      slotDurationMinutes: 15,
+      slotDurationMinutes: DEFAULT_SLOT_DURATION_MINUTES,
     });
   };
 
@@ -708,7 +709,7 @@ Otherwise, provide a helpful response about their calendar.`;
             endTime,
             reason,
             allDay: startTime === '09:00' && endTime === '20:00',
-            slotDurationMinutes: 15,
+            slotDurationMinutes: DEFAULT_SLOT_DURATION_MINUTES,
             updatedAt: Date.now(),
           });
           setAiMessages(prev => [...prev, { role: 'assistant', content: `✅ Added availability for ${date}${reason ? ` (${reason})` : ''}.`, timestamp: new Date() }]);
@@ -880,7 +881,7 @@ Otherwise, provide a helpful response about their calendar.`;
 
   const getPastorSlotDurationHoursForDate = (dateStr: string): number => {
     const durations = getAvailabilityBlocksForDate(dateStr)
-      .map(block => (block.slotDurationMinutes || 15) / 60)
+      .map(block => (block.slotDurationMinutes || DEFAULT_SLOT_DURATION_MINUTES) / 60)
       .filter(duration => duration > 0);
 
     if (durations.length === 0) return DEFAULT_SLOT_DURATION;
@@ -967,10 +968,11 @@ Otherwise, provide a helpful response about their calendar.`;
   const selectedSlotDurationHours = selectedSlotDay
     ? getPastorSlotDurationHoursForDate(getDateString(selectedSlotDay))
     : DEFAULT_SLOT_DURATION;
+  const selectedSlotDurationMinutes = Math.max(1, Math.round(selectedSlotDurationHours * 60));
 
   const slotBlockHours = Array.from(
-    { length: Math.floor((SLOT_BLOCK_END - SLOT_BLOCK_START) / selectedSlotDurationHours) },
-    (_, index) => Math.round((SLOT_BLOCK_START + index * selectedSlotDurationHours) * 100) / 100
+    { length: Math.floor(((SLOT_BLOCK_END - SLOT_BLOCK_START) * 60) / selectedSlotDurationMinutes) },
+    (_, index) => (SLOT_BLOCK_START * 60 + index * selectedSlotDurationMinutes) / 60
   );
 
   const selectedCount = selectedParticipants.length;
@@ -1195,7 +1197,7 @@ Otherwise, provide a helpful response about their calendar.`;
                         endTime: a.endTime || '20:00',
                         reason: a.reason || '',
                         allDay: a.allDay || false,
-                        slotDurationMinutes: a.slotDurationMinutes || 15,
+                        slotDurationMinutes: a.slotDurationMinutes || DEFAULT_SLOT_DURATION_MINUTES,
                       });
                       setShowAvailabilityModal(true);
                     }}

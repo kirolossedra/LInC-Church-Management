@@ -312,7 +312,8 @@ export default function BookingCalendar() {
   const daySlots = selectedDay ? scheduleBlocks.filter(b => b.date === format(selectedDay, 'yyyy-MM-dd')) : [];
 
   const selectedDaySlotDuration = selectedDay ? getDaySlotDuration(selectedDay) : DEFAULT_SLOT_DURATION;
-  const numberOfSlots = Math.floor((BUSINESS_END - BUSINESS_START) / selectedDaySlotDuration);
+  const selectedDaySlotDurationMinutes = Math.max(1, Math.round(selectedDaySlotDuration * 60));
+  const numberOfSlots = Math.floor(((BUSINESS_END - BUSINESS_START) * 60) / selectedDaySlotDurationMinutes);
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto px-4 py-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -461,7 +462,7 @@ export default function BookingCalendar() {
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
               {Array.from({ length: numberOfSlots }).map((_, i) => {
-                const hour = Math.round((BUSINESS_START + i * selectedDaySlotDuration) * 100) / 100;
+                const hour = (BUSINESS_START * 60 + i * selectedDaySlotDurationMinutes) / 60;
                 const status = slotStatus(selectedDay, hour, selectedDaySlotDuration);
                 const isSel = selectedSlot === hour;
                 return (
