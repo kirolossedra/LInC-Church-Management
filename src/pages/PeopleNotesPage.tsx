@@ -5,7 +5,6 @@ import {
   BookOpenText,
   CalendarDays,
   CheckCircle,
-  
   MessageSquareText,
   Plus,
   Search,
@@ -65,6 +64,7 @@ function getErrorMessage(error: unknown): string {
 
 function formatDateLabel(dateValue: string, isArabic: boolean): string {
   if (!dateValue) return isArabic ? 'غير محدد' : 'Not set';
+
   try {
     return new Intl.DateTimeFormat(isArabic ? 'ar' : 'en', {
       year: 'numeric',
@@ -78,6 +78,7 @@ function formatDateLabel(dateValue: string, isArabic: boolean): string {
 
 function formatDateTimeLabel(timestamp: number, isArabic: boolean): string {
   if (!timestamp) return isArabic ? 'غير محدد' : 'Not set';
+
   try {
     return new Intl.DateTimeFormat(isArabic ? 'ar' : 'en', {
       year: 'numeric',
@@ -93,12 +94,15 @@ function formatDateTimeLabel(timestamp: number, isArabic: boolean): string {
 
 function normalizePeopleSnapshot(data: any): PersonRecord[] {
   if (!data) return [];
+
   return Object.entries(data)
     .map(([personId, personValue]: [string, any]) => {
       const rawItems = personValue.items || {};
+
       const items: DevelopmentItem[] = Object.entries(rawItems)
         .map(([itemId, itemValue]: [string, any]) => {
           const rawComments = itemValue.comments || {};
+
           const comments: DevelopmentComment[] = Object.entries(rawComments)
             .map(([commentId, commentValue]: [string, any]) => ({
               id: commentId,
@@ -107,9 +111,12 @@ function normalizePeopleSnapshot(data: any): PersonRecord[] {
               createdBy: commentValue.createdBy || '',
             }))
             .sort((a, b) => b.createdAt - a.createdAt);
+
+          const itemType: DevelopmentType = itemValue.type === 'growth' ? 'growth' : 'strength';
+
           return {
             id: itemId,
-            type: itemValue.type === 'growth' ? 'growth' : 'strength',
+            type: itemType,
             title: itemValue.title || '',
             description: itemValue.description || '',
             dateAdded: itemValue.dateAdded || '',
@@ -121,6 +128,7 @@ function normalizePeopleSnapshot(data: any): PersonRecord[] {
           };
         })
         .sort((a, b) => b.updatedAt - a.updatedAt);
+
       return {
         id: personId,
         fullName: personValue.fullName || '',
@@ -138,11 +146,9 @@ export default function PeopleNotesPage() {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
 
-  // Auth — reactive, never null on first render
   const [firebaseUser] = useAuthState(auth);
   const currentUserEmail = firebaseUser?.email?.toLowerCase().trim() || '';
 
-  // Role — loaded directly from Firebase, same pattern as App.tsx
   const [userRole, setUserRole] = useState<Role | undefined>(undefined);
   const [roleLoaded, setRoleLoaded] = useState(false);
 
@@ -150,19 +156,21 @@ export default function PeopleNotesPage() {
     const unsubscribe = onValue(ref(database, 'admins/'), snapshot => {
       const data = snapshot.val() || {};
       const parsed: Record<string, Role> = {};
+
       Object.keys(data).forEach(k => {
         const email = k.replace(/,/g, '.').toLowerCase().trim();
         parsed[email] = data[k] === 'superadmin' ? 'superadmin' : 'pastor';
       });
+
       setUserRole(parsed[currentUserEmail]);
       setRoleLoaded(true);
     });
+
     return () => unsubscribe();
   }, [currentUserEmail]);
 
   const hasPastorAccess = roleLoaded && (userRole === 'pastor' || userRole === 'superadmin');
 
-  // People data
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [searchText, setSearchText] = useState('');
@@ -184,51 +192,92 @@ export default function PeopleNotesPage() {
 
   const actionsDisabled = saving || !hasPastorAccess;
 
-  const showSuccess = (msg: string) => { setPageError(''); setPageSuccess(msg); };
-  const showError = (msg: string) => { setPageSuccess(''); setPageError(msg); };
-  const clearMessages = () => { setPageError(''); setPageSuccess(''); };
+  const showSuccess = (msg: string) => {
+    setPageError('');
+    setPageSuccess(msg);
+  };
+
+  const showError = (msg: string) => {
+    setPageSuccess('');
+    setPageError(msg);
+  };
+
+  const clearMessages = () => {
+    setPageError('');
+    setPageSuccess('');
+  };
 
   useEffect(() => {
     const unsubscribe = onValue(
       ref(database, 'peopleNotes/'),
       snapshot => {
         const parsed = normalizePeopleSnapshot(snapshot.val());
+
         setPeople(parsed);
+
         setSelectedPersonId(prev => {
           if (!prev && parsed.length > 0) return parsed[0].id;
           if (prev && parsed.length > 0 && !parsed.some(p => p.id === prev)) return parsed[0].id;
           if (parsed.length === 0) return '';
           return prev;
         });
+
         setLoadingPeople(false);
       },
       error => {
         console.error(error);
         setLoadingPeople(false);
-        showError(isArabic ? `فشل تحميل السجلات: ${getErrorMessage(error)}` : `Failed to load records: ${getErrorMessage(error)}`);
+        showError(
+          isArabic
+            ? `فشل تحميل السجلات: ${getErrorMessage(error)}`
+            : `Failed to load records: ${getErrorMessage(error)}`
+        );
       }
     );
+
     return () => unsubscribe();
   }, [isArabic]);
 
   const filteredPeople = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     if (!q) return people;
-    return people.filter(p => p.fullName.toLowerCase().includes(q) || p.contact.toLowerCase().includes(q));
+
+    return people.filter(
+      p => p.fullName.toLowerCase().includes(q) || p.contact.toLowerCase().includes(q)
+    );
   }, [people, searchText]);
 
-  const selectedPerson = useMemo(() => people.find(p => p.id === selectedPersonId) || null, [people, selectedPersonId]);
-  const strengths = useMemo(() => selectedPerson?.items.filter(i => i.type === 'strength') || [], [selectedPerson]);
-  const growthAreas = useMemo(() => selectedPerson?.items.filter(i => i.type === 'growth') || [], [selectedPerson]);
+  const selectedPerson = useMemo(
+    () => people.find(p => p.id === selectedPersonId) || null,
+    [people, selectedPersonId]
+  );
+
+  const strengths = useMemo(
+    () => selectedPerson?.items.filter(i => i.type === 'strength') || [],
+    [selectedPerson]
+  );
+
+  const growthAreas = useMemo(
+    () => selectedPerson?.items.filter(i => i.type === 'growth') || [],
+    [selectedPerson]
+  );
 
   const handleAddPerson = async (event: React.FormEvent) => {
     event.preventDefault();
     clearMessages();
+
     const fullName = personForm.fullName.trim();
-    if (!fullName) { showError(isArabic ? 'يرجى إدخال اسم الشخص.' : 'Please enter the person name.'); return; }
+
+    if (!fullName) {
+      showError(isArabic ? 'يرجى إدخال اسم الشخص.' : 'Please enter the person name.');
+      return;
+    }
+
     setSaving(true);
+
     try {
       const now = Date.now();
+
       const newRef = await push(ref(database, 'peopleNotes/'), {
         fullName,
         contact: personForm.contact.trim(),
@@ -236,12 +285,17 @@ export default function PeopleNotesPage() {
         updatedAt: now,
         createdBy: currentUserEmail,
       });
+
       setSelectedPersonId(newRef.key || '');
       setPersonForm({ fullName: '', contact: '' });
       showSuccess(isArabic ? 'تمت إضافة الشخص بنجاح.' : 'Person added successfully.');
     } catch (error) {
       console.error(error);
-      showError(isArabic ? `فشل حفظ الشخص: ${getErrorMessage(error)}` : `Failed to save person: ${getErrorMessage(error)}`);
+      showError(
+        isArabic
+          ? `فشل حفظ الشخص: ${getErrorMessage(error)}`
+          : `Failed to save person: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -250,12 +304,24 @@ export default function PeopleNotesPage() {
   const handleAddItem = async (event: React.FormEvent) => {
     event.preventDefault();
     clearMessages();
-    if (!selectedPerson) { showError(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.'); return; }
+
+    if (!selectedPerson) {
+      showError(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.');
+      return;
+    }
+
     const title = itemForm.title.trim();
-    if (!title) { showError(isArabic ? 'يرجى إدخال عنوان.' : 'Please enter a title.'); return; }
+
+    if (!title) {
+      showError(isArabic ? 'يرجى إدخال عنوان.' : 'Please enter a title.');
+      return;
+    }
+
     setSaving(true);
+
     try {
       const now = Date.now();
+
       await push(ref(database, `peopleNotes/${selectedPerson.id}/items/`), {
         type: itemForm.type,
         title,
@@ -266,14 +332,33 @@ export default function PeopleNotesPage() {
         updatedAt: now,
         createdBy: currentUserEmail,
       });
+
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
-      setItemForm({ type: itemForm.type, title: '', description: '', dateAdded: todayDateString(), latestFollowUpDate: '' });
-      showSuccess(itemForm.type === 'strength'
-        ? isArabic ? 'تمت إضافة نقطة القوة بنجاح.' : 'Strength added successfully.'
-        : isArabic ? 'تمت إضافة مجال النمو بنجاح.' : 'Growth area added successfully.');
+
+      setItemForm({
+        type: itemForm.type,
+        title: '',
+        description: '',
+        dateAdded: todayDateString(),
+        latestFollowUpDate: '',
+      });
+
+      showSuccess(
+        itemForm.type === 'strength'
+          ? isArabic
+            ? 'تمت إضافة نقطة القوة بنجاح.'
+            : 'Strength added successfully.'
+          : isArabic
+            ? 'تمت إضافة مجال النمو بنجاح.'
+            : 'Growth area added successfully.'
+      );
     } catch (error) {
       console.error(error);
-      showError(isArabic ? `فشل حفظ العنصر: ${getErrorMessage(error)}` : `Failed to save item: ${getErrorMessage(error)}`);
+      showError(
+        isArabic
+          ? `فشل حفظ العنصر: ${getErrorMessage(error)}`
+          : `Failed to save item: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -281,22 +366,42 @@ export default function PeopleNotesPage() {
 
   const handleAddComment = async (item: DevelopmentItem) => {
     clearMessages();
+
     if (!selectedPerson) return;
+
     const text = (commentInputs[item.id] || '').trim();
-    if (!text) { showError(isArabic ? 'يرجى كتابة الملاحظة أولاً.' : 'Please write a note first.'); return; }
+
+    if (!text) {
+      showError(isArabic ? 'يرجى كتابة الملاحظة أولاً.' : 'Please write a note first.');
+      return;
+    }
+
     setSaving(true);
+
     try {
       const now = Date.now();
+
       await push(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}/comments/`), {
-        text, createdAt: now, createdBy: currentUserEmail,
+        text,
+        createdAt: now,
+        createdBy: currentUserEmail,
       });
-      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), { updatedAt: now });
+
+      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
+        updatedAt: now,
+      });
+
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+
       setCommentInputs(prev => ({ ...prev, [item.id]: '' }));
       showSuccess(isArabic ? 'تمت إضافة الملاحظة بنجاح.' : 'Note added successfully.');
     } catch (error) {
       console.error(error);
-      showError(isArabic ? `فشل حفظ الملاحظة: ${getErrorMessage(error)}` : `Failed to save note: ${getErrorMessage(error)}`);
+      showError(
+        isArabic
+          ? `فشل حفظ الملاحظة: ${getErrorMessage(error)}`
+          : `Failed to save note: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -304,19 +409,37 @@ export default function PeopleNotesPage() {
 
   const handleUpdateFollowUpDate = async (item: DevelopmentItem) => {
     clearMessages();
+
     if (!selectedPerson) return;
+
     const followUpDate = followUpInputs[item.id] || item.latestFollowUpDate || '';
-    if (!followUpDate) { showError(isArabic ? 'يرجى اختيار تاريخ المتابعة.' : 'Please select a follow-up date.'); return; }
+
+    if (!followUpDate) {
+      showError(isArabic ? 'يرجى اختيار تاريخ المتابعة.' : 'Please select a follow-up date.');
+      return;
+    }
+
     setSaving(true);
+
     try {
       const now = Date.now();
-      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), { latestFollowUpDate: followUpDate, updatedAt: now });
+
+      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
+        latestFollowUpDate: followUpDate,
+        updatedAt: now,
+      });
+
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+
       setFollowUpInputs(prev => ({ ...prev, [item.id]: followUpDate }));
       showSuccess(isArabic ? 'تم تحديث تاريخ المتابعة بنجاح.' : 'Follow-up date updated successfully.');
     } catch (error) {
       console.error(error);
-      showError(isArabic ? `فشل تحديث تاريخ المتابعة: ${getErrorMessage(error)}` : `Failed to update follow-up date: ${getErrorMessage(error)}`);
+      showError(
+        isArabic
+          ? `فشل تحديث تاريخ المتابعة: ${getErrorMessage(error)}`
+          : `Failed to update follow-up date: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -324,14 +447,29 @@ export default function PeopleNotesPage() {
 
   const handleDeletePerson = async (person: PersonRecord) => {
     clearMessages();
-    if (!confirm(isArabic ? `هل تريد حذف سجل ${person.fullName} بالكامل؟` : `Delete the full record for ${person.fullName}?`)) return;
+
+    if (
+      !confirm(
+        isArabic
+          ? `هل تريد حذف سجل ${person.fullName} بالكامل؟`
+          : `Delete the full record for ${person.fullName}?`
+      )
+    ) {
+      return;
+    }
+
     setSaving(true);
+
     try {
       await remove(ref(database, `peopleNotes/${person.id}`));
       showSuccess(isArabic ? 'تم حذف السجل بنجاح.' : 'Record deleted successfully.');
     } catch (error) {
       console.error(error);
-      showError(isArabic ? `فشل حذف الشخص: ${getErrorMessage(error)}` : `Failed to delete person: ${getErrorMessage(error)}`);
+      showError(
+        isArabic
+          ? `فشل حذف الشخص: ${getErrorMessage(error)}`
+          : `Failed to delete person: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -339,17 +477,33 @@ export default function PeopleNotesPage() {
 
   const handleDeleteItem = async (item: DevelopmentItem) => {
     clearMessages();
+
     if (!selectedPerson) return;
-    if (!confirm(isArabic ? 'هل تريد حذف هذا العنصر وكل ملاحظاته؟' : 'Delete this item and all of its notes?')) return;
+
+    if (
+      !confirm(
+        isArabic ? 'هل تريد حذف هذا العنصر وكل ملاحظاته؟' : 'Delete this item and all of its notes?'
+      )
+    ) {
+      return;
+    }
+
     setSaving(true);
+
     try {
       const now = Date.now();
+
       await remove(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`));
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+
       showSuccess(isArabic ? 'تم حذف العنصر بنجاح.' : 'Item deleted successfully.');
     } catch (error) {
       console.error(error);
-      showError(isArabic ? `فشل حذف العنصر: ${getErrorMessage(error)}` : `Failed to delete item: ${getErrorMessage(error)}`);
+      showError(
+        isArabic
+          ? `فشل حذف العنصر: ${getErrorMessage(error)}`
+          : `Failed to delete item: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -357,27 +511,48 @@ export default function PeopleNotesPage() {
 
   const handleDeleteComment = async (item: DevelopmentItem, comment: DevelopmentComment) => {
     clearMessages();
+
     if (!selectedPerson) return;
+
     if (!confirm(isArabic ? 'هل تريد حذف هذه الملاحظة؟' : 'Delete this note?')) return;
+
     setSaving(true);
+
     try {
       const now = Date.now();
-      await remove(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}/comments/${comment.id}`));
-      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), { updatedAt: now });
+
+      await remove(
+        ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}/comments/${comment.id}`)
+      );
+
+      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
+        updatedAt: now,
+      });
+
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+
       showSuccess(isArabic ? 'تم حذف الملاحظة بنجاح.' : 'Note deleted successfully.');
     } catch (error) {
       console.error(error);
-      showError(isArabic ? `فشل حذف الملاحظة: ${getErrorMessage(error)}` : `Failed to delete note: ${getErrorMessage(error)}`);
+      showError(
+        isArabic
+          ? `فشل حذف الملاحظة: ${getErrorMessage(error)}`
+          : `Failed to delete note: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const renderDevelopmentItem = (item: DevelopmentItem) => {
-    const itemLabel = item.type === 'strength'
-      ? isArabic ? 'نقطة قوة' : 'Strength'
-      : isArabic ? 'مجال نمو' : 'Growth Area';
+    const itemLabel =
+      item.type === 'strength'
+        ? isArabic
+          ? 'نقطة قوة'
+          : 'Strength'
+        : isArabic
+          ? 'مجال نمو'
+          : 'Growth Area';
 
     return (
       <div key={item.id} className="rounded-2xl border border-gray-100 bg-stone-50 p-5 space-y-4">
@@ -391,19 +566,26 @@ export default function PeopleNotesPage() {
                 {isArabic ? 'أضيف في' : 'Added'}: {formatDateLabel(item.dateAdded, isArabic)}
               </span>
               <span className="text-[11px] text-gray-400">
-                {isArabic ? 'آخر متابعة' : 'Latest follow-up'}: {formatDateLabel(item.latestFollowUpDate, isArabic)}
+                {isArabic ? 'آخر متابعة' : 'Latest follow-up'}:{' '}
+                {formatDateLabel(item.latestFollowUpDate, isArabic)}
               </span>
             </div>
+
             <h4 className="text-lg font-bold text-gray-900">{item.title}</h4>
+
             {item.description && (
-              <p className="text-sm leading-6 text-gray-600 whitespace-pre-wrap">{item.description}</p>
+              <p className="text-sm leading-6 text-gray-600 whitespace-pre-wrap">
+                {item.description}
+              </p>
             )}
+
             {item.createdBy && (
               <p className="text-[11px] text-gray-400">
                 {isArabic ? 'أضيف بواسطة' : 'Added by'}: {item.createdBy}
               </p>
             )}
           </div>
+
           <button
             type="button"
             onClick={() => handleDeleteItem(item)}
@@ -428,6 +610,7 @@ export default function PeopleNotesPage() {
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
           </div>
+
           <button
             type="button"
             onClick={() => handleUpdateFollowUpDate(item)}
@@ -443,6 +626,7 @@ export default function PeopleNotesPage() {
             <MessageSquareText size={16} className="text-[#8B1E1E]" />
             {isArabic ? 'الملاحظات' : 'Notes'}
           </h5>
+
           <div className="space-y-2">
             {item.comments.length === 0 ? (
               <div className="text-sm text-gray-400 bg-white border border-dashed border-gray-200 rounded-xl p-4">
@@ -453,12 +637,15 @@ export default function PeopleNotesPage() {
                 <div key={comment.id} className="bg-white border border-gray-100 rounded-xl p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap leading-6">{comment.text}</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap leading-6">
+                        {comment.text}
+                      </p>
                       <p className="text-[11px] text-gray-400 mt-2">
                         {formatDateTimeLabel(comment.createdAt, isArabic)}
                         {comment.createdBy ? ` • ${comment.createdBy}` : ''}
                       </p>
                     </div>
+
                     <button
                       type="button"
                       onClick={() => handleDeleteComment(item, comment)}
@@ -473,6 +660,7 @@ export default function PeopleNotesPage() {
               ))
             )}
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
             <textarea
               value={commentInputs[item.id] || ''}
@@ -482,6 +670,7 @@ export default function PeopleNotesPage() {
               placeholder={isArabic ? 'أضف ملاحظة أو تعليق متابعة...' : 'Add a note or follow-up comment...'}
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
             />
+
             <button
               type="button"
               onClick={() => handleAddComment(item)}
@@ -497,10 +686,16 @@ export default function PeopleNotesPage() {
   };
 
   const statusText = !roleLoaded
-    ? isArabic ? 'جار التحقق من الصلاحيات...' : 'Checking permissions...'
+    ? isArabic
+      ? 'جار التحقق من الصلاحيات...'
+      : 'Checking permissions...'
     : hasPastorAccess
-      ? isArabic ? `مصرح لك بالتعديل كـ ${userRole}` : `Authorized as ${userRole}`
-      : isArabic ? 'غير مصرح لهذا الحساب بالتعديل' : 'This account is not authorized to edit';
+      ? isArabic
+        ? `مصرح لك بالتعديل كـ ${userRole}`
+        : `Authorized as ${userRole}`
+      : isArabic
+        ? 'غير مصرح لهذا الحساب بالتعديل'
+        : 'This account is not authorized to edit';
 
   return (
     <div className="space-y-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -517,17 +712,24 @@ export default function PeopleNotesPage() {
       <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${hasPastorAccess ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center ${
+                hasPastorAccess ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
               <ShieldCheck size={21} />
             </div>
+
             <div>
               <h3 className="font-bold text-gray-900">{isArabic ? 'حالة الوصول' : 'Access Status'}</h3>
               <p className="text-sm text-gray-500 mt-1">{statusText}</p>
               <p className="text-xs text-gray-400 mt-1">
-                {isArabic ? 'الحساب الحالي' : 'Current account'}: {currentUserEmail || (isArabic ? 'غير معروف' : 'Unknown')}
+                {isArabic ? 'الحساب الحالي' : 'Current account'}:{' '}
+                {currentUserEmail || (isArabic ? 'غير معروف' : 'Unknown')}
               </p>
             </div>
           </div>
+
           {!hasPastorAccess && roleLoaded && (
             <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm font-bold text-amber-700">
               <XCircle size={16} />
@@ -554,14 +756,20 @@ export default function PeopleNotesPage() {
       <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6">
           <div>
-            <h2 className="text-2xl font-bold text-[#1A1A1A]">{isArabic ? 'سجل الأشخاص' : 'People Records'}</h2>
+            <h2 className="text-2xl font-bold text-[#1A1A1A]">
+              {isArabic ? 'سجل الأشخاص' : 'People Records'}
+            </h2>
             <p className="text-sm text-gray-500 mt-2 max-w-3xl">
               {isArabic
                 ? 'أضف شخصاً، ثم سجّل نقاط القوة ومجالات النمو وتواريخ المتابعة والملاحظات المرتبطة بكل نقطة.'
                 : 'Add a person, then record strengths, growth areas, follow-up dates, and notes attached to each item.'}
             </p>
           </div>
-          <form onSubmit={handleAddPerson} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 w-full xl:max-w-3xl">
+
+          <form
+            onSubmit={handleAddPerson}
+            className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 w-full xl:max-w-3xl"
+          >
             <input
               type="text"
               value={personForm.fullName}
@@ -570,6 +778,7 @@ export default function PeopleNotesPage() {
               placeholder={isArabic ? 'اسم الشخص' : 'Person name'}
               className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
+
             <input
               type="text"
               value={personForm.contact}
@@ -578,13 +787,22 @@ export default function PeopleNotesPage() {
               placeholder={isArabic ? 'وسيلة تواصل اختيارية' : 'Optional contact'}
               className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
+
             <button
               type="submit"
               disabled={actionsDisabled}
               className="flex items-center justify-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
             >
               <Plus size={18} />
-              <span>{saving ? (isArabic ? 'جار الحفظ...' : 'Saving...') : isArabic ? 'إضافة شخص' : 'Add Person'}</span>
+              <span>
+                {saving
+                  ? isArabic
+                    ? 'جار الحفظ...'
+                    : 'Saving...'
+                  : isArabic
+                    ? 'إضافة شخص'
+                    : 'Add Person'}
+              </span>
             </button>
           </form>
         </div>
@@ -606,14 +824,18 @@ export default function PeopleNotesPage() {
           {loadingPeople ? (
             <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#8B1E1E] mx-auto mb-4" />
-              <p className="text-sm text-gray-500">{isArabic ? 'جار تحميل السجلات...' : 'Loading records...'}</p>
+              <p className="text-sm text-gray-500">
+                {isArabic ? 'جار تحميل السجلات...' : 'Loading records...'}
+              </p>
             </div>
           ) : filteredPeople.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-center">
               <div className="w-14 h-14 rounded-2xl bg-stone-100 flex items-center justify-center mx-auto mb-4">
                 <UserRound size={24} className="text-gray-500" />
               </div>
-              <h3 className="font-bold text-gray-800">{isArabic ? 'لا توجد سجلات' : 'No records found'}</h3>
+              <h3 className="font-bold text-gray-800">
+                {isArabic ? 'لا توجد سجلات' : 'No records found'}
+              </h3>
               <p className="text-sm text-gray-500 mt-2">
                 {isArabic ? 'أضف شخصاً جديداً أو غيّر البحث.' : 'Add a new person or adjust the search.'}
               </p>
@@ -624,27 +846,41 @@ export default function PeopleNotesPage() {
                 const isSelected = person.id === selectedPersonId;
                 const strengthsCount = person.items.filter(i => i.type === 'strength').length;
                 const growthCount = person.items.filter(i => i.type === 'growth').length;
+
                 return (
                   <button
                     key={person.id}
                     type="button"
                     onClick={() => setSelectedPersonId(person.id)}
-                    className={`w-full text-left rounded-2xl border p-4 transition-all ${isSelected ? 'border-[#8B1E1E] bg-[#f8eeee]' : 'border-gray-100 bg-stone-50 hover:bg-stone-100'}`}
+                    className={`w-full text-left rounded-2xl border p-4 transition-all ${
+                      isSelected
+                        ? 'border-[#8B1E1E] bg-[#f8eeee]'
+                        : 'border-gray-100 bg-stone-50 hover:bg-stone-100'
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="font-bold text-gray-900">{person.fullName}</h3>
-                        {person.contact && <p className="text-xs text-gray-500 mt-1">{person.contact}</p>}
+
+                        {person.contact && (
+                          <p className="text-xs text-gray-500 mt-1">{person.contact}</p>
+                        )}
+
                         <div className="flex flex-wrap gap-2 mt-3">
                           <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-white border border-gray-200 text-green-700">
                             {isArabic ? 'قوة' : 'Strengths'}: {strengthsCount}
                           </span>
+
                           <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-white border border-gray-200 text-amber-700">
                             {isArabic ? 'نمو' : 'Growth'}: {growthCount}
                           </span>
                         </div>
                       </div>
-                      <UsersRound size={18} className={isSelected ? 'text-[#8B1E1E]' : 'text-gray-400'} />
+
+                      <UsersRound
+                        size={18}
+                        className={isSelected ? 'text-[#8B1E1E]' : 'text-gray-400'}
+                      />
                     </div>
                   </button>
                 );
@@ -659,7 +895,9 @@ export default function PeopleNotesPage() {
               <div className="w-16 h-16 rounded-2xl bg-stone-100 flex items-center justify-center mx-auto mb-4">
                 <UserRound size={28} className="text-gray-500" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900">{isArabic ? 'اختر شخصاً للبدء' : 'Select a person to begin'}</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                {isArabic ? 'اختر شخصاً للبدء' : 'Select a person to begin'}
+              </h3>
               <p className="text-sm text-gray-500 mt-2">
                 {isArabic
                   ? 'بعد اختيار الشخص ستظهر نقاط القوة ومجالات النمو والملاحظات.'
@@ -672,12 +910,23 @@ export default function PeopleNotesPage() {
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">{selectedPerson.fullName}</h2>
-                    {selectedPerson.contact && <p className="text-sm text-gray-500 mt-1">{selectedPerson.contact}</p>}
+
+                    {selectedPerson.contact && (
+                      <p className="text-sm text-gray-500 mt-1">{selectedPerson.contact}</p>
+                    )}
+
                     <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-400">
-                      <span>{isArabic ? 'تم الإنشاء' : 'Created'}: {formatDateTimeLabel(selectedPerson.createdAt, isArabic)}</span>
-                      <span>{isArabic ? 'آخر تحديث' : 'Updated'}: {formatDateTimeLabel(selectedPerson.updatedAt, isArabic)}</span>
+                      <span>
+                        {isArabic ? 'تم الإنشاء' : 'Created'}:{' '}
+                        {formatDateTimeLabel(selectedPerson.createdAt, isArabic)}
+                      </span>
+                      <span>
+                        {isArabic ? 'آخر تحديث' : 'Updated'}:{' '}
+                        {formatDateTimeLabel(selectedPerson.updatedAt, isArabic)}
+                      </span>
                     </div>
                   </div>
+
                   <button
                     type="button"
                     onClick={() => handleDeletePerson(selectedPerson)}
@@ -695,27 +944,38 @@ export default function PeopleNotesPage() {
                   <Plus size={20} />
                   {isArabic ? 'إضافة نقطة جديدة' : 'Add New Item'}
                 </h3>
+
                 <form onSubmit={handleAddItem} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <button
                       type="button"
                       disabled={actionsDisabled}
                       onClick={() => setItemForm(prev => ({ ...prev, type: 'strength' }))}
-                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors disabled:opacity-50 ${itemForm.type === 'strength' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-stone-50'}`}
+                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors disabled:opacity-50 ${
+                        itemForm.type === 'strength'
+                          ? 'bg-green-50 border-green-200 text-green-700'
+                          : 'bg-white border-gray-200 text-gray-500 hover:bg-stone-50'
+                      }`}
                     >
                       <Sparkles size={16} />
                       {isArabic ? 'نقطة قوة' : 'Strength'}
                     </button>
+
                     <button
                       type="button"
                       disabled={actionsDisabled}
                       onClick={() => setItemForm(prev => ({ ...prev, type: 'growth' }))}
-                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors disabled:opacity-50 ${itemForm.type === 'growth' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-stone-50'}`}
+                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors disabled:opacity-50 ${
+                        itemForm.type === 'growth'
+                          ? 'bg-amber-50 border-amber-200 text-amber-700'
+                          : 'bg-white border-gray-200 text-gray-500 hover:bg-stone-50'
+                      }`}
                     >
                       <AlertTriangle size={16} />
                       {isArabic ? 'مجال نمو' : 'Growth Area'}
                     </button>
                   </div>
+
                   <input
                     type="text"
                     value={itemForm.title}
@@ -724,6 +984,7 @@ export default function PeopleNotesPage() {
                     placeholder={isArabic ? 'العنوان' : 'Title'}
                     className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                   />
+
                   <textarea
                     value={itemForm.description}
                     onChange={e => setItemForm(prev => ({ ...prev, description: e.target.value }))}
@@ -732,12 +993,14 @@ export default function PeopleNotesPage() {
                     placeholder={isArabic ? 'الوصف أو التفاصيل...' : 'Description or details...'}
                     className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
                   />
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
                         <CalendarDays size={13} />
                         {isArabic ? 'تاريخ الإضافة' : 'Date Added'}
                       </label>
+
                       <input
                         type="date"
                         value={itemForm.dateAdded}
@@ -746,20 +1009,25 @@ export default function PeopleNotesPage() {
                         className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
+
                     <div>
                       <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
                         <CalendarDays size={13} />
                         {isArabic ? 'آخر تاريخ متابعة' : 'Latest Follow-up Date'}
                       </label>
+
                       <input
                         type="date"
                         value={itemForm.latestFollowUpDate}
-                        onChange={e => setItemForm(prev => ({ ...prev, latestFollowUpDate: e.target.value }))}
+                        onChange={e =>
+                          setItemForm(prev => ({ ...prev, latestFollowUpDate: e.target.value }))
+                        }
                         disabled={actionsDisabled}
                         className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
                   </div>
+
                   <button
                     type="submit"
                     disabled={actionsDisabled}
@@ -767,10 +1035,16 @@ export default function PeopleNotesPage() {
                   >
                     <Plus size={18} />
                     {saving
-                      ? isArabic ? 'جار الحفظ...' : 'Saving...'
+                      ? isArabic
+                        ? 'جار الحفظ...'
+                        : 'Saving...'
                       : itemForm.type === 'strength'
-                        ? isArabic ? 'إضافة نقطة قوة' : 'Add Strength'
-                        : isArabic ? 'إضافة مجال نمو' : 'Add Growth Area'}
+                        ? isArabic
+                          ? 'إضافة نقطة قوة'
+                          : 'Add Strength'
+                        : isArabic
+                          ? 'إضافة مجال نمو'
+                          : 'Add Growth Area'}
                   </button>
                 </form>
               </section>
@@ -780,11 +1054,14 @@ export default function PeopleNotesPage() {
                   <Sparkles size={20} />
                   {isArabic ? 'نقاط القوة' : 'Strengths'}
                 </h3>
+
                 {strengths.length === 0 ? (
                   <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-2xl p-5">
                     {isArabic ? 'لا توجد نقاط قوة مسجلة بعد.' : 'No strengths recorded yet.'}
                   </div>
-                ) : strengths.map(renderDevelopmentItem)}
+                ) : (
+                  strengths.map(renderDevelopmentItem)
+                )}
               </section>
 
               <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 space-y-4">
@@ -792,11 +1069,14 @@ export default function PeopleNotesPage() {
                   <AlertTriangle size={20} />
                   {isArabic ? 'مجالات النمو' : 'Growth Areas'}
                 </h3>
+
                 {growthAreas.length === 0 ? (
                   <div className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-2xl p-5">
                     {isArabic ? 'لا توجد مجالات نمو مسجلة بعد.' : 'No growth areas recorded yet.'}
                   </div>
-                ) : growthAreas.map(renderDevelopmentItem)}
+                ) : (
+                  growthAreas.map(renderDevelopmentItem)
+                )}
               </section>
             </>
           )}
