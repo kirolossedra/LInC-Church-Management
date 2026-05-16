@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
 import {
   AlertTriangle,
   BookOpenText,
@@ -8,7 +7,6 @@ import {
   MessageSquareText,
   Plus,
   Search,
-  ShieldCheck,
   Sparkles,
   Trash2,
   UserRound,
@@ -16,13 +14,11 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ref, onValue, push, update, remove } from 'firebase/database';
-import { auth, database } from '../firebase';
+import { database } from '../firebase';
 import PageTitle from '../components/PageTitle';
 import { useI18n } from '../i18n';
 
 type DevelopmentType = 'strength' | 'growth';
-type Role = 'superadmin' | 'pastor';
-
 interface DevelopmentComment {
   id: string;
   text: string;
@@ -77,9 +73,6 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-function normalizeEmail(email: string): string {
-  return email.toLowerCase().trim();
-}
 
 function formatDateLabel(dateValue: string, isArabic: boolean): string {
   if (!dateValue) return isArabic ? 'غير محدد' : 'Not set';
@@ -163,34 +156,9 @@ export default function PeopleNotesPage() {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
 
-const [firebaseUser, authLoading] = useAuthState(auth);
-const currentUserEmail = normalizeEmail(firebaseUser?.email || '');
-
-const [userRole, setUserRole] = useState<Role | undefined>(undefined);
-const [roleLoading, setRoleLoading] = useState(true);
-
-useEffect(() => {
-  const adminsRef = ref(database, 'admins/');
-  return onValue(adminsRef, snapshot => {
-    const data = snapshot.val() || {};
-    const parsed: Record<string, Role> = {};
-    Object.keys(data).forEach(k => {
-      parsed[k.replace(/,/g, '.').toLowerCase().trim()] = data[k] === 'superadmin' ? 'superadmin' : 'pastor';
-    });
-    setUserRole(parsed[currentUserEmail]);
-    setRoleLoading(false);
-  });
-}, [currentUserEmail]);
-
-const isResolvingAccess = authLoading || roleLoading;
-const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole === 'superadmin');
+  const createdByLabel = 'peopleNotesPage';
 
 
-
-  
-
-
-  
 
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
@@ -217,7 +185,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
   const [followUpInputs, setFollowUpInputs] = useState<Record<string, string>>({});
 
   
-  const actionsDisabled = saving || isResolvingAccess || !hasPastorAccess;
+  const actionsDisabled = saving;
 
   const clearMessages = () => {
     setPageError('');
@@ -234,28 +202,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
     setPageError(message);
   };
 
-  const requirePastorAccess = (): boolean => {
-    if (isResolvingAccess) {
-      showError(isArabic ? 'جار التحقق من الحساب الحالي.' : 'Current account is still being verified.');
-      return false;
-    }
-
-    if (!currentUserEmail) {
-      showError(isArabic ? 'لم يتم العثور على بريد المستخدم الحالي.' : 'Current user email was not found.');
-      return false;
-    }
-
-    if (!hasPastorAccess) {
-      showError(
-        isArabic
-          ? `هذا الحساب غير مصرح له بتعديل هذه الصفحة: ${currentUserEmail}`
-          : `This account is not authorized to edit this page: ${currentUserEmail}`
-      );
-      return false;
-    }
-
-    return true;
-  };
+  const requirePastorAccess = (): boolean => true;
 
   useEffect(() => {
     const peopleRef = ref(database, 'peopleNotes/');
@@ -365,7 +312,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
         contact,
         createdAt: now,
         updatedAt: now,
-        createdBy: currentUserEmail,
+        createdBy: createdByLabel,
       });
 
       setSelectedPersonId(newPersonRef.key || '');
@@ -416,7 +363,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
         latestFollowUpDate: itemForm.latestFollowUpDate || '',
         createdAt: now,
         updatedAt: now,
-        createdBy: currentUserEmail,
+        createdBy: createdByLabel,
       });
 
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), {
@@ -467,7 +414,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
       await push(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}/comments/`), {
         text,
         createdAt: now,
-        createdBy: currentUserEmail,
+        createdBy: createdByLabel,
       });
 
       await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
@@ -727,7 +674,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                   [item.id]: event.target.value,
                 }))
               }
-              disabled={isResolvingAccess || !hasPastorAccess}
+              disabled={saving}
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
           </div>
@@ -791,7 +738,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                 }))
               }
               rows={3}
-              disabled={isResolvingAccess || !hasPastorAccess}
+              disabled={saving}
               placeholder={isArabic ? 'أضف ملاحظة أو تعليق متابعة...' : 'Add a note or follow-up comment...'}
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
             />
@@ -810,22 +757,6 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
     );
   };
 
-  const statusText = isResolvingAccess
-    ? isArabic
-      ? 'جار التحقق من الحساب الحالي...'
-      : 'Checking current account...'
-    : hasPastorAccess
-      ? isArabic
-        ? `مصرح لك بالتعديل كـ ${userRole}`
-        : `Authorized as ${userRole}`
-      : isArabic
-        ? 'غير مصرح لهذا الحساب بالتعديل'
-        : 'This account is not authorized to edit';
-
-  const accountLabel = isResolvingAccess
-    ? isArabic ? 'جار التحميل...' : 'Loading...'
-    : currentUserEmail || (isArabic ? 'غير معروف' : 'Unknown');
-
   return (
     <div className="space-y-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
       <PageTitle
@@ -837,39 +768,6 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
         }
         icon={<BookOpenText size={22} />}
       />
-
-      <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${
-              hasPastorAccess ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
-            }`}>
-              <ShieldCheck size={21} />
-            </div>
-
-            <div>
-              <h3 className="font-bold text-gray-900">
-                {isArabic ? 'حالة الوصول' : 'Access Status'}
-              </h3>
-
-              <p className="text-sm text-gray-500 mt-1">{statusText}</p>
-
-              <p className="text-xs text-gray-400 mt-1">
-                {isArabic ? 'الحساب الحالي' : 'Current account'}: {accountLabel}
-              </p>
-            </div>
-          </div>
-
-          {!hasPastorAccess && (
-            <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm font-bold text-amber-700">
-              <XCircle size={16} />
-              {isResolvingAccess
-                ? isArabic ? 'جار تفعيل صلاحيات الصفحة' : 'Resolving page access'
-                : isArabic ? 'الأزرار معطلة لهذا الحساب' : 'Actions are disabled for this account'}
-            </div>
-          )}
-        </div>
-      </section>
 
       {pageError && (
         <section className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-sm font-bold flex items-start gap-2">
@@ -909,7 +807,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                   fullName: event.target.value,
                 }))
               }
-              disabled={isResolvingAccess || !hasPastorAccess}
+              disabled={saving}
               placeholder={isArabic ? 'اسم الشخص' : 'Person name'}
               className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
@@ -923,7 +821,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                   contact: event.target.value,
                 }))
               }
-              disabled={isResolvingAccess || !hasPastorAccess}
+              disabled={saving}
               placeholder={isArabic ? 'وسيلة تواصل اختيارية' : 'Optional contact'}
               className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
@@ -1085,7 +983,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      disabled={isResolvingAccess || !hasPastorAccess}
+                      disabled={saving}
                       onClick={() =>
                         setItemForm(prev => ({
                           ...prev,
@@ -1104,7 +1002,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
 
                     <button
                       type="button"
-                      disabled={isResolvingAccess || !hasPastorAccess}
+                      disabled={saving}
                       onClick={() =>
                         setItemForm(prev => ({
                           ...prev,
@@ -1131,7 +1029,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                         title: event.target.value,
                       }))
                     }
-                    disabled={isResolvingAccess || !hasPastorAccess}
+                    disabled={saving}
                     placeholder={isArabic ? 'العنوان' : 'Title'}
                     className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                   />
@@ -1145,7 +1043,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                       }))
                     }
                     rows={4}
-                    disabled={isResolvingAccess || !hasPastorAccess}
+                    disabled={saving}
                     placeholder={isArabic ? 'الوصف أو التفاصيل...' : 'Description or details...'}
                     className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
                   />
@@ -1166,7 +1064,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                             dateAdded: event.target.value,
                           }))
                         }
-                        disabled={isResolvingAccess || !hasPastorAccess}
+                        disabled={saving}
                         className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
@@ -1186,7 +1084,7 @@ const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole
                             latestFollowUpDate: event.target.value,
                           }))
                         }
-                        disabled={isResolvingAccess || !hasPastorAccess}
+                        disabled={saving}
                         className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
