@@ -3,13 +3,16 @@ import {
   AlertTriangle,
   BookOpenText,
   CalendarDays,
+  CheckCircle,
   MessageSquareText,
   Plus,
   Search,
+  ShieldCheck,
   Sparkles,
   Trash2,
   UserRound,
   UsersRound,
+  XCircle,
 } from 'lucide-react';
 import { ref, onValue, push, update, remove } from 'firebase/database';
 import { database, auth } from '../firebase';
@@ -17,6 +20,7 @@ import PageTitle from '../components/PageTitle';
 import { useI18n } from '../i18n';
 
 type DevelopmentType = 'strength' | 'growth';
+type Role = 'superadmin' | 'pastor';
 
 interface DevelopmentComment {
   id: string;
@@ -63,6 +67,29 @@ interface ItemForm {
 
 function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function normalizeEmail(email: string): string {
+  return email.toLowerCase().trim();
+}
+
+function parseAdminsSnapshot(data: any): Record<string, Role> {
+  if (!data) return {};
+
+  const parsed: Record<string, Role> = {};
+
+  Object.keys(data).forEach(key => {
+    const email = key.replace(/,/g, '.').toLowerCase().trim();
+    const raw = data[key];
+    parsed[email] = raw === 'superadmin' ? 'superadmin' : 'pastor';
+  });
+
+  return parsed;
 }
 
 function formatDateLabel(dateValue: string, isArabic: boolean): string {
@@ -146,13 +173,18 @@ function normalizePeopleSnapshot(data: any): PersonRecord[] {
 export default function PeopleNotesPage() {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
-  const pastorEmail = auth.currentUser?.email || '';
 
+  const currentUserEmail = normalizeEmail(auth.currentUser?.email || '');
+
+  const [admins, setAdmins] = useState<Record<string, Role>>({});
+  const [adminsLoaded, setAdminsLoaded] = useState(false);
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [searchText, setSearchText] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loadingPeople, setLoadingPeople] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [pageSuccess, setPageSuccess] = useState('');
 
   const [personForm, setPersonForm] = useState<PersonForm>({
     fullName: '',
@@ -170,32 +202,112 @@ export default function PeopleNotesPage() {
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [followUpInputs, setFollowUpInputs] = useState<Record<string, string>>({});
 
+  const userRole = currentUserEmail ? admins[currentUserEmail] : undefined;
+  const hasPastorAccess = userRole === 'pastor' || userRole === 'superadmin';
+
+  const clearMessages = () => {
+    setPageError('');
+    setPageSuccess('');
+  };
+
+  const showSuccess = (message: string) => {
+    setPageError('');
+    setPageSuccess(message);
+  };
+
+  const showError = (message: string) => {
+    setPageSuccess('');
+    setPageError(message);
+  };
+
+  const requirePastorAccess = (): boolean => {
+    if (!currentUserEmail) {
+      showError(isArabic ? 'لم يتم العثور على بريد المستخدم الحالي.' : 'Current user email was not found.');
+      return false;
+    }
+
+    if (!adminsLoaded) {
+      showError(isArabic ? 'لم يتم تحميل صلاحيات المستخدم بعد.' : 'User role is still loading.');
+      return false;
+    }
+
+    if (!hasPastorAccess) {
+      showError(
+        isArabic
+          ? `هذا الحساب غير مصرح له بتعديل هذه الصفحة: ${currentUserEmail}`
+          : `This account is not authorized to edit this page: ${currentUserEmail}`
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  useEffect(() => {
+    const adminsRef = ref(database, 'admins/');
+
+    const unsubscribe = onValue(
+      adminsRef,
+      snapshot => {
+        const parsedAdmins = parseAdminsSnapshot(snapshot.val());
+        setAdmins(parsedAdmins);
+        setAdminsLoaded(true);
+      },
+      error => {
+        console.error(error);
+        setAdminsLoaded(true);
+        showError(
+          isArabic
+            ? `فشل تحميل صلاحيات المستخدم: ${getErrorMessage(error)}`
+            : `Failed to load user roles: ${getErrorMessage(error)}`
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isArabic]);
+
   useEffect(() => {
     const peopleRef = ref(database, 'peopleNotes/');
 
-    const unsubscribe = onValue(peopleRef, snapshot => {
-      const data = snapshot.val();
-      const parsedPeople = normalizePeopleSnapshot(data);
+    const unsubscribe = onValue(
+      peopleRef,
+      snapshot => {
+        const parsedPeople = normalizePeopleSnapshot(snapshot.val());
 
-      setPeople(parsedPeople);
+        setPeople(parsedPeople);
 
-      if (!selectedPersonId && parsedPeople.length > 0) {
-        setSelectedPersonId(parsedPeople[0].id);
+        setSelectedPersonId(previousSelectedId => {
+          if (!previousSelectedId && parsedPeople.length > 0) {
+            return parsedPeople[0].id;
+          }
+
+          if (previousSelectedId && parsedPeople.length > 0 && !parsedPeople.some(person => person.id === previousSelectedId)) {
+            return parsedPeople[0].id;
+          }
+
+          if (parsedPeople.length === 0) {
+            return '';
+          }
+
+          return previousSelectedId;
+        });
+
+        setLoadingPeople(false);
+      },
+      error => {
+        console.error(error);
+        setLoadingPeople(false);
+        showError(
+          isArabic
+            ? `فشل تحميل سجلات الأشخاص: ${getErrorMessage(error)}`
+            : `Failed to load people records: ${getErrorMessage(error)}`
+        );
       }
-
-      if (selectedPersonId && parsedPeople.length > 0 && !parsedPeople.some(person => person.id === selectedPersonId)) {
-        setSelectedPersonId(parsedPeople[0].id);
-      }
-
-      if (parsedPeople.length === 0) {
-        setSelectedPersonId('');
-      }
-
-      setLoading(false);
-    });
+    );
 
     return () => unsubscribe();
-  }, [selectedPersonId]);
+  }, [isArabic]);
 
   const filteredPeople = useMemo(() => {
     const query = searchText.trim().toLowerCase();
@@ -241,12 +353,15 @@ export default function PeopleNotesPage() {
 
   const handleAddPerson = async (event: React.FormEvent) => {
     event.preventDefault();
+    clearMessages();
+
+    if (!requirePastorAccess()) return;
 
     const fullName = personForm.fullName.trim();
     const contact = personForm.contact.trim();
 
     if (!fullName) {
-      alert(isArabic ? 'يرجى إدخال اسم الشخص.' : 'Please enter the person name.');
+      showError(isArabic ? 'يرجى إدخال اسم الشخص.' : 'Please enter the person name.');
       return;
     }
 
@@ -260,14 +375,20 @@ export default function PeopleNotesPage() {
         contact,
         createdAt: now,
         updatedAt: now,
-        createdBy: pastorEmail,
+        createdBy: currentUserEmail,
       });
 
       setSelectedPersonId(newPersonRef.key || '');
       resetPersonForm();
+
+      showSuccess(isArabic ? 'تمت إضافة الشخص بنجاح.' : 'Person added successfully.');
     } catch (error) {
       console.error(error);
-      alert(isArabic ? 'فشل حفظ الشخص.' : 'Failed to save person.');
+      showError(
+        isArabic
+          ? `فشل حفظ الشخص: ${getErrorMessage(error)}`
+          : `Failed to save person: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -275,9 +396,12 @@ export default function PeopleNotesPage() {
 
   const handleAddItem = async (event: React.FormEvent) => {
     event.preventDefault();
+    clearMessages();
+
+    if (!requirePastorAccess()) return;
 
     if (!selectedPerson) {
-      alert(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.');
+      showError(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.');
       return;
     }
 
@@ -285,7 +409,7 @@ export default function PeopleNotesPage() {
     const description = itemForm.description.trim();
 
     if (!title) {
-      alert(isArabic ? 'يرجى إدخال عنوان.' : 'Please enter a title.');
+      showError(isArabic ? 'يرجى إدخال عنوان.' : 'Please enter a title.');
       return;
     }
 
@@ -302,7 +426,7 @@ export default function PeopleNotesPage() {
         latestFollowUpDate: itemForm.latestFollowUpDate || '',
         createdAt: now,
         updatedAt: now,
-        createdBy: pastorEmail,
+        createdBy: currentUserEmail,
       });
 
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), {
@@ -310,21 +434,38 @@ export default function PeopleNotesPage() {
       });
 
       resetItemForm(itemForm.type);
+
+      showSuccess(
+        itemForm.type === 'strength'
+          ? isArabic ? 'تمت إضافة نقطة القوة بنجاح.' : 'Strength added successfully.'
+          : isArabic ? 'تمت إضافة مجال النمو بنجاح.' : 'Growth area added successfully.'
+      );
     } catch (error) {
       console.error(error);
-      alert(isArabic ? 'فشل حفظ العنصر.' : 'Failed to save item.');
+      showError(
+        isArabic
+          ? `فشل حفظ العنصر: ${getErrorMessage(error)}`
+          : `Failed to save item: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const handleAddComment = async (item: DevelopmentItem) => {
-    if (!selectedPerson) return;
+    clearMessages();
+
+    if (!requirePastorAccess()) return;
+
+    if (!selectedPerson) {
+      showError(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.');
+      return;
+    }
 
     const text = (commentInputs[item.id] || '').trim();
 
     if (!text) {
-      alert(isArabic ? 'يرجى كتابة الملاحظة أولاً.' : 'Please write a note first.');
+      showError(isArabic ? 'يرجى كتابة الملاحظة أولاً.' : 'Please write a note first.');
       return;
     }
 
@@ -336,7 +477,7 @@ export default function PeopleNotesPage() {
       await push(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}/comments/`), {
         text,
         createdAt: now,
-        createdBy: pastorEmail,
+        createdBy: currentUserEmail,
       });
 
       await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
@@ -351,21 +492,34 @@ export default function PeopleNotesPage() {
         ...prev,
         [item.id]: '',
       }));
+
+      showSuccess(isArabic ? 'تمت إضافة الملاحظة بنجاح.' : 'Note added successfully.');
     } catch (error) {
       console.error(error);
-      alert(isArabic ? 'فشل حفظ الملاحظة.' : 'Failed to save note.');
+      showError(
+        isArabic
+          ? `فشل حفظ الملاحظة: ${getErrorMessage(error)}`
+          : `Failed to save note: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const handleUpdateFollowUpDate = async (item: DevelopmentItem) => {
-    if (!selectedPerson) return;
+    clearMessages();
+
+    if (!requirePastorAccess()) return;
+
+    if (!selectedPerson) {
+      showError(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.');
+      return;
+    }
 
     const followUpDate = followUpInputs[item.id] || item.latestFollowUpDate || '';
 
     if (!followUpDate) {
-      alert(isArabic ? 'يرجى اختيار تاريخ المتابعة.' : 'Please select a follow-up date.');
+      showError(isArabic ? 'يرجى اختيار تاريخ المتابعة.' : 'Please select a follow-up date.');
       return;
     }
 
@@ -387,15 +541,25 @@ export default function PeopleNotesPage() {
         ...prev,
         [item.id]: followUpDate,
       }));
+
+      showSuccess(isArabic ? 'تم تحديث تاريخ المتابعة بنجاح.' : 'Follow-up date updated successfully.');
     } catch (error) {
       console.error(error);
-      alert(isArabic ? 'فشل تحديث تاريخ المتابعة.' : 'Failed to update follow-up date.');
+      showError(
+        isArabic
+          ? `فشل تحديث تاريخ المتابعة: ${getErrorMessage(error)}`
+          : `Failed to update follow-up date: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeletePerson = async (person: PersonRecord) => {
+    clearMessages();
+
+    if (!requirePastorAccess()) return;
+
     const confirmed = confirm(
       isArabic
         ? `هل تريد حذف سجل ${person.fullName} بالكامل؟`
@@ -408,16 +572,28 @@ export default function PeopleNotesPage() {
 
     try {
       await remove(ref(database, `peopleNotes/${person.id}`));
+      showSuccess(isArabic ? 'تم حذف السجل بنجاح.' : 'Record deleted successfully.');
     } catch (error) {
       console.error(error);
-      alert(isArabic ? 'فشل حذف الشخص.' : 'Failed to delete person.');
+      showError(
+        isArabic
+          ? `فشل حذف الشخص: ${getErrorMessage(error)}`
+          : `Failed to delete person: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteItem = async (item: DevelopmentItem) => {
-    if (!selectedPerson) return;
+    clearMessages();
+
+    if (!requirePastorAccess()) return;
+
+    if (!selectedPerson) {
+      showError(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.');
+      return;
+    }
 
     const confirmed = confirm(
       isArabic
@@ -437,16 +613,29 @@ export default function PeopleNotesPage() {
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), {
         updatedAt: now,
       });
+
+      showSuccess(isArabic ? 'تم حذف العنصر بنجاح.' : 'Item deleted successfully.');
     } catch (error) {
       console.error(error);
-      alert(isArabic ? 'فشل حذف العنصر.' : 'Failed to delete item.');
+      showError(
+        isArabic
+          ? `فشل حذف العنصر: ${getErrorMessage(error)}`
+          : `Failed to delete item: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteComment = async (item: DevelopmentItem, comment: DevelopmentComment) => {
-    if (!selectedPerson) return;
+    clearMessages();
+
+    if (!requirePastorAccess()) return;
+
+    if (!selectedPerson) {
+      showError(isArabic ? 'يرجى اختيار شخص أولاً.' : 'Please select a person first.');
+      return;
+    }
 
     const confirmed = confirm(
       isArabic
@@ -470,9 +659,15 @@ export default function PeopleNotesPage() {
       await update(ref(database, `peopleNotes/${selectedPerson.id}`), {
         updatedAt: now,
       });
+
+      showSuccess(isArabic ? 'تم حذف الملاحظة بنجاح.' : 'Note deleted successfully.');
     } catch (error) {
       console.error(error);
-      alert(isArabic ? 'فشل حذف الملاحظة.' : 'Failed to delete note.');
+      showError(
+        isArabic
+          ? `فشل حذف الملاحظة: ${getErrorMessage(error)}`
+          : `Failed to delete note: ${getErrorMessage(error)}`
+      );
     } finally {
       setSaving(false);
     }
@@ -519,7 +714,7 @@ export default function PeopleNotesPage() {
           <button
             type="button"
             onClick={() => handleDeleteItem(item)}
-            disabled={saving}
+            disabled={saving || !hasPastorAccess}
             className="self-start p-2 rounded-xl text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
             title={isArabic ? 'حذف' : 'Delete'}
           >
@@ -532,6 +727,7 @@ export default function PeopleNotesPage() {
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1 block">
               {isArabic ? 'تحديث آخر تاريخ متابعة' : 'Update latest follow-up date'}
             </label>
+
             <input
               type="date"
               value={followUpInputs[item.id] ?? item.latestFollowUpDate ?? ''}
@@ -541,14 +737,15 @@ export default function PeopleNotesPage() {
                   [item.id]: event.target.value,
                 }))
               }
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+              disabled={!hasPastorAccess}
+              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
           </div>
 
           <button
             type="button"
             onClick={() => handleUpdateFollowUpDate(item)}
-            disabled={saving}
+            disabled={saving || !hasPastorAccess}
             className="px-5 py-3 bg-[#8B1E1E] text-white rounded-xl font-bold text-sm hover:bg-[#641414] transition-colors disabled:opacity-50"
           >
             {isArabic ? 'حفظ المتابعة' : 'Save Follow-up'}
@@ -572,6 +769,7 @@ export default function PeopleNotesPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm text-gray-700 whitespace-pre-wrap leading-6">{comment.text}</p>
+
                       <p className="text-[11px] text-gray-400 mt-2">
                         {formatDateTimeLabel(comment.createdAt, isArabic)}
                         {comment.createdBy ? ` • ${comment.createdBy}` : ''}
@@ -581,7 +779,7 @@ export default function PeopleNotesPage() {
                     <button
                       type="button"
                       onClick={() => handleDeleteComment(item, comment)}
-                      disabled={saving}
+                      disabled={saving || !hasPastorAccess}
                       className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-50"
                       title={isArabic ? 'حذف الملاحظة' : 'Delete note'}
                     >
@@ -603,14 +801,15 @@ export default function PeopleNotesPage() {
                 }))
               }
               rows={3}
+              disabled={!hasPastorAccess}
               placeholder={isArabic ? 'أضف ملاحظة أو تعليق متابعة...' : 'Add a note or follow-up comment...'}
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none"
+              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
             />
 
             <button
               type="button"
               onClick={() => handleAddComment(item)}
-              disabled={saving}
+              disabled={saving || !hasPastorAccess}
               className="self-end px-5 py-3 bg-white border border-[#8B1E1E] text-[#8B1E1E] rounded-xl font-bold text-sm hover:bg-[#f8eeee] transition-colors disabled:opacity-50"
             >
               {isArabic ? 'إضافة ملاحظة' : 'Add Note'}
@@ -620,6 +819,18 @@ export default function PeopleNotesPage() {
       </div>
     );
   };
+
+  const statusText = adminsLoaded
+    ? hasPastorAccess
+      ? isArabic
+        ? `مصرح لك بالتعديل كـ ${userRole}`
+        : `Authorized as ${userRole}`
+      : isArabic
+        ? 'غير مصرح لهذا الحساب بالتعديل'
+        : 'This account is not authorized to edit'
+    : isArabic
+      ? 'جار تحميل الصلاحيات...'
+      : 'Loading permissions...';
 
   return (
     <div className="space-y-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -632,6 +843,51 @@ export default function PeopleNotesPage() {
         }
         icon={<BookOpenText size={22} />}
       />
+
+      <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${
+              hasPastorAccess ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+            }`}>
+              <ShieldCheck size={21} />
+            </div>
+
+            <div>
+              <h3 className="font-bold text-gray-900">
+                {isArabic ? 'حالة الوصول' : 'Access Status'}
+              </h3>
+
+              <p className="text-sm text-gray-500 mt-1">{statusText}</p>
+
+              <p className="text-xs text-gray-400 mt-1">
+                {isArabic ? 'الحساب الحالي' : 'Current account'}: {currentUserEmail || (isArabic ? 'غير معروف' : 'Unknown')}
+              </p>
+            </div>
+          </div>
+
+          {!hasPastorAccess && adminsLoaded && (
+            <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm font-bold text-amber-700">
+              <XCircle size={16} />
+              {isArabic ? 'الأزرار معطلة لهذا الحساب' : 'Actions are disabled for this account'}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {pageError && (
+        <section className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-sm font-bold flex items-start gap-2">
+          <XCircle size={18} className="shrink-0 mt-0.5" />
+          <span>{pageError}</span>
+        </section>
+      )}
+
+      {pageSuccess && (
+        <section className="bg-green-50 border border-green-200 text-green-700 rounded-2xl p-4 text-sm font-bold flex items-start gap-2">
+          <CheckCircle size={18} className="shrink-0 mt-0.5" />
+          <span>{pageSuccess}</span>
+        </section>
+      )}
 
       <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6">
@@ -657,8 +913,9 @@ export default function PeopleNotesPage() {
                   fullName: event.target.value,
                 }))
               }
+              disabled={!hasPastorAccess}
               placeholder={isArabic ? 'اسم الشخص' : 'Person name'}
-              className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+              className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
 
             <input
@@ -670,17 +927,18 @@ export default function PeopleNotesPage() {
                   contact: event.target.value,
                 }))
               }
+              disabled={!hasPastorAccess}
               placeholder={isArabic ? 'وسيلة تواصل اختيارية' : 'Optional contact'}
-              className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+              className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !hasPastorAccess}
               className="flex items-center justify-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
             >
               <Plus size={18} />
-              <span>{isArabic ? 'إضافة شخص' : 'Add Person'}</span>
+              <span>{saving ? (isArabic ? 'جار الحفظ...' : 'Saving...') : isArabic ? 'إضافة شخص' : 'Add Person'}</span>
             </button>
           </form>
         </div>
@@ -690,6 +948,7 @@ export default function PeopleNotesPage() {
         <div className="lg:col-span-1 bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center gap-2 bg-stone-50 border border-gray-200 rounded-xl px-4 py-3 mb-5">
             <Search size={16} className="text-gray-400" />
+
             <input
               type="text"
               value={searchText}
@@ -699,9 +958,10 @@ export default function PeopleNotesPage() {
             />
           </div>
 
-          {loading ? (
+          {loadingPeople ? (
             <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#8B1E1E] mx-auto mb-4"></div>
+
               <p className="text-sm text-gray-500">
                 {isArabic ? 'جار تحميل السجلات...' : 'Loading records...'}
               </p>
@@ -810,7 +1070,7 @@ export default function PeopleNotesPage() {
                   <button
                     type="button"
                     onClick={() => handleDeletePerson(selectedPerson)}
-                    disabled={saving}
+                    disabled={saving || !hasPastorAccess}
                     className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 text-red-700 font-bold text-sm hover:bg-red-100 transition-colors disabled:opacity-50"
                   >
                     <Trash2 size={16} />
@@ -829,13 +1089,14 @@ export default function PeopleNotesPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <button
                       type="button"
+                      disabled={!hasPastorAccess}
                       onClick={() =>
                         setItemForm(prev => ({
                           ...prev,
                           type: 'strength',
                         }))
                       }
-                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors ${
+                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors disabled:opacity-50 ${
                         itemForm.type === 'strength'
                           ? 'bg-green-50 border-green-200 text-green-700'
                           : 'bg-white border-gray-200 text-gray-500 hover:bg-stone-50'
@@ -847,13 +1108,14 @@ export default function PeopleNotesPage() {
 
                     <button
                       type="button"
+                      disabled={!hasPastorAccess}
                       onClick={() =>
                         setItemForm(prev => ({
                           ...prev,
                           type: 'growth',
                         }))
                       }
-                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors ${
+                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-colors disabled:opacity-50 ${
                         itemForm.type === 'growth'
                           ? 'bg-amber-50 border-amber-200 text-amber-700'
                           : 'bg-white border-gray-200 text-gray-500 hover:bg-stone-50'
@@ -873,8 +1135,9 @@ export default function PeopleNotesPage() {
                         title: event.target.value,
                       }))
                     }
+                    disabled={!hasPastorAccess}
                     placeholder={isArabic ? 'العنوان' : 'Title'}
-                    className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+                    className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                   />
 
                   <textarea
@@ -886,8 +1149,9 @@ export default function PeopleNotesPage() {
                       }))
                     }
                     rows={4}
+                    disabled={!hasPastorAccess}
                     placeholder={isArabic ? 'الوصف أو التفاصيل...' : 'Description or details...'}
-                    className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none"
+                    className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
                   />
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -906,7 +1170,8 @@ export default function PeopleNotesPage() {
                             dateAdded: event.target.value,
                           }))
                         }
-                        className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+                        disabled={!hasPastorAccess}
+                        className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
 
@@ -925,20 +1190,23 @@ export default function PeopleNotesPage() {
                             latestFollowUpDate: event.target.value,
                           }))
                         }
-                        className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+                        disabled={!hasPastorAccess}
+                        className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
                   </div>
 
                   <button
                     type="submit"
-                    disabled={saving}
+                    disabled={saving || !hasPastorAccess}
                     className="w-full md:w-auto flex items-center justify-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                   >
                     <Plus size={18} />
-                    {itemForm.type === 'strength'
-                      ? isArabic ? 'إضافة نقطة قوة' : 'Add Strength'
-                      : isArabic ? 'إضافة مجال نمو' : 'Add Growth Area'}
+                    {saving
+                      ? isArabic ? 'جار الحفظ...' : 'Saving...'
+                      : itemForm.type === 'strength'
+                        ? isArabic ? 'إضافة نقطة قوة' : 'Add Strength'
+                        : isArabic ? 'إضافة مجال نمو' : 'Add Growth Area'}
                   </button>
                 </form>
               </section>
