@@ -289,9 +289,11 @@ export default function PeopleNotesPage() {
   };
 
   const handleAddPerson = async (event: React.FormEvent) => {
-    event.preventDefault();
-    clearMessages();
 
+   event.preventDefault();
+  console.log('handleAddPerson fired'); // ADD THIS
+  clearMessages();
+    
     if (!requirePastorAccess()) return;
 
     const fullName = personForm.fullName.trim();
