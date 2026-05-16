@@ -66,10 +66,7 @@ interface ItemForm {
   latestFollowUpDate: string;
 }
 
-interface PeopleNotesPageProps {
-  userEmail?: string;
-  userRole?: Role;
-}
+
 
 function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
@@ -162,14 +159,38 @@ function normalizePeopleSnapshot(data: any): PersonRecord[] {
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
-export default function PeopleNotesPage({ userEmail = '', userRole }: PeopleNotesPageProps) {
+export default function PeopleNotesPage() {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
 
-  const [firebaseUser, authLoading] = useAuthState(auth);
+const [firebaseUser, authLoading] = useAuthState(auth);
+const currentUserEmail = normalizeEmail(firebaseUser?.email || '');
 
-  const currentUserEmail = normalizeEmail(userEmail || firebaseUser?.email || '');
-  const isResolvingAccess = authLoading && !currentUserEmail;
+const [userRole, setUserRole] = useState<Role | undefined>(undefined);
+const [roleLoading, setRoleLoading] = useState(true);
+
+useEffect(() => {
+  const adminsRef = ref(database, 'admins/');
+  return onValue(adminsRef, snapshot => {
+    const data = snapshot.val() || {};
+    const parsed: Record<string, Role> = {};
+    Object.keys(data).forEach(k => {
+      parsed[k.replace(/,/g, '.').toLowerCase().trim()] = data[k] === 'superadmin' ? 'superadmin' : 'pastor';
+    });
+    setUserRole(parsed[currentUserEmail]);
+    setRoleLoading(false);
+  });
+}, [currentUserEmail]);
+
+const isResolvingAccess = authLoading || roleLoading;
+const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole === 'superadmin');
+
+
+
+  
+
+
+  
 
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
@@ -195,7 +216,7 @@ export default function PeopleNotesPage({ userEmail = '', userRole }: PeopleNote
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [followUpInputs, setFollowUpInputs] = useState<Record<string, string>>({});
 
-  const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole === 'superadmin');
+  
   const actionsDisabled = saving || isResolvingAccess || !hasPastorAccess;
 
   const clearMessages = () => {
