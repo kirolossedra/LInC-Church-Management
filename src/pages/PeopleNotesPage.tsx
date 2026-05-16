@@ -15,7 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ref, onValue, push, update, remove } from 'firebase/database';
-import { database, auth } from '../firebase';
+import { database } from '../firebase';
 import PageTitle from '../components/PageTitle';
 import { useI18n } from '../i18n';
 
@@ -76,20 +76,6 @@ function getErrorMessage(error: unknown): string {
 
 function normalizeEmail(email: string): string {
   return email.toLowerCase().trim();
-}
-
-function parseAdminsSnapshot(data: any): Record<string, Role> {
-  if (!data) return {};
-
-  const parsed: Record<string, Role> = {};
-
-  Object.keys(data).forEach(key => {
-    const email = key.replace(/,/g, '.').toLowerCase().trim();
-    const raw = data[key];
-    parsed[email] = raw === 'superadmin' ? 'superadmin' : 'pastor';
-  });
-
-  return parsed;
 }
 
 function formatDateLabel(dateValue: string, isArabic: boolean): string {
@@ -170,14 +156,17 @@ function normalizePeopleSnapshot(data: any): PersonRecord[] {
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
-export default function PeopleNotesPage() {
+export default function PeopleNotesPage({
+  userEmail,
+  userRole,
+}: {
+  userEmail: string;
+  userRole: Role | undefined;
+}) {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
 
-  const currentUserEmail = normalizeEmail(auth.currentUser?.email || '');
-
-  const [admins, setAdmins] = useState<Record<string, Role>>({});
-  const [adminsLoaded, setAdminsLoaded] = useState(false);
+  const currentUserEmail = normalizeEmail(userEmail || '');
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [searchText, setSearchText] = useState('');
@@ -202,7 +191,6 @@ export default function PeopleNotesPage() {
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [followUpInputs, setFollowUpInputs] = useState<Record<string, string>>({});
 
-  const userRole = currentUserEmail ? admins[currentUserEmail] : undefined;
   const hasPastorAccess = userRole === 'pastor' || userRole === 'superadmin';
 
   const clearMessages = () => {
@@ -226,11 +214,6 @@ export default function PeopleNotesPage() {
       return false;
     }
 
-    if (!adminsLoaded) {
-      showError(isArabic ? 'لم يتم تحميل صلاحيات المستخدم بعد.' : 'User role is still loading.');
-      return false;
-    }
-
     if (!hasPastorAccess) {
       showError(
         isArabic
@@ -243,29 +226,6 @@ export default function PeopleNotesPage() {
     return true;
   };
 
-  useEffect(() => {
-    const adminsRef = ref(database, 'admins/');
-
-    const unsubscribe = onValue(
-      adminsRef,
-      snapshot => {
-        const parsedAdmins = parseAdminsSnapshot(snapshot.val());
-        setAdmins(parsedAdmins);
-        setAdminsLoaded(true);
-      },
-      error => {
-        console.error(error);
-        setAdminsLoaded(true);
-        showError(
-          isArabic
-            ? `فشل تحميل صلاحيات المستخدم: ${getErrorMessage(error)}`
-            : `Failed to load user roles: ${getErrorMessage(error)}`
-        );
-      }
-    );
-
-    return () => unsubscribe();
-  }, [isArabic]);
 
   useEffect(() => {
     const peopleRef = ref(database, 'peopleNotes/');
@@ -820,17 +780,13 @@ export default function PeopleNotesPage() {
     );
   };
 
-  const statusText = adminsLoaded
-    ? hasPastorAccess
-      ? isArabic
-        ? `مصرح لك بالتعديل كـ ${userRole}`
-        : `Authorized as ${userRole}`
-      : isArabic
-        ? 'غير مصرح لهذا الحساب بالتعديل'
-        : 'This account is not authorized to edit'
+  const statusText = hasPastorAccess
+    ? isArabic
+      ? `مصرح لك بالتعديل كـ ${userRole}`
+      : `Authorized as ${userRole}`
     : isArabic
-      ? 'جار تحميل الصلاحيات...'
-      : 'Loading permissions...';
+      ? 'غير مصرح لهذا الحساب بالتعديل'
+      : 'This account is not authorized to edit';
 
   return (
     <div className="space-y-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -866,7 +822,7 @@ export default function PeopleNotesPage() {
             </div>
           </div>
 
-          {!hasPastorAccess && adminsLoaded && (
+          {!hasPastorAccess && (
             <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm font-bold text-amber-700">
               <XCircle size={16} />
               {isArabic ? 'الأزرار معطلة لهذا الحساب' : 'Actions are disabled for this account'}
