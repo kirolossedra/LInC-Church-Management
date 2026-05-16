@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useAuthState } from 'react-firebase-hooks/auth';
 import {
   AlertTriangle,
   BookOpenText,
@@ -15,7 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ref, onValue, push, update, remove } from 'firebase/database';
-import { database } from '../firebase';
+import { auth, database } from '../firebase';
 import PageTitle from '../components/PageTitle';
 import { useI18n } from '../i18n';
 
@@ -63,6 +64,11 @@ interface ItemForm {
   description: string;
   dateAdded: string;
   latestFollowUpDate: string;
+}
+
+interface PeopleNotesPageProps {
+  userEmail?: string;
+  userRole?: Role;
 }
 
 function todayDateString(): string {
@@ -156,17 +162,15 @@ function normalizePeopleSnapshot(data: any): PersonRecord[] {
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
-export default function PeopleNotesPage({
-  userEmail,
-  userRole,
-}: {
-  userEmail: string;
-  userRole: Role | undefined;
-}) {
+export default function PeopleNotesPage({ userEmail = '', userRole }: PeopleNotesPageProps) {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
 
-  const currentUserEmail = normalizeEmail(userEmail || '');
+  const [firebaseUser, authLoading] = useAuthState(auth);
+
+  const currentUserEmail = normalizeEmail(userEmail || firebaseUser?.email || '');
+  const isResolvingAccess = authLoading && !currentUserEmail;
+
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [searchText, setSearchText] = useState('');
@@ -191,7 +195,8 @@ export default function PeopleNotesPage({
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [followUpInputs, setFollowUpInputs] = useState<Record<string, string>>({});
 
-  const hasPastorAccess = userRole === 'pastor' || userRole === 'superadmin';
+  const hasPastorAccess = !isResolvingAccess && (userRole === 'pastor' || userRole === 'superadmin');
+  const actionsDisabled = saving || isResolvingAccess || !hasPastorAccess;
 
   const clearMessages = () => {
     setPageError('');
@@ -209,6 +214,11 @@ export default function PeopleNotesPage({
   };
 
   const requirePastorAccess = (): boolean => {
+    if (isResolvingAccess) {
+      showError(isArabic ? 'جار التحقق من الحساب الحالي.' : 'Current account is still being verified.');
+      return false;
+    }
+
     if (!currentUserEmail) {
       showError(isArabic ? 'لم يتم العثور على بريد المستخدم الحالي.' : 'Current user email was not found.');
       return false;
@@ -225,7 +235,6 @@ export default function PeopleNotesPage({
 
     return true;
   };
-
 
   useEffect(() => {
     const peopleRef = ref(database, 'peopleNotes/');
@@ -674,7 +683,7 @@ export default function PeopleNotesPage({
           <button
             type="button"
             onClick={() => handleDeleteItem(item)}
-            disabled={saving || !hasPastorAccess}
+            disabled={actionsDisabled}
             className="self-start p-2 rounded-xl text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
             title={isArabic ? 'حذف' : 'Delete'}
           >
@@ -697,7 +706,7 @@ export default function PeopleNotesPage({
                   [item.id]: event.target.value,
                 }))
               }
-              disabled={!hasPastorAccess}
+              disabled={isResolvingAccess || !hasPastorAccess}
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
           </div>
@@ -705,7 +714,7 @@ export default function PeopleNotesPage({
           <button
             type="button"
             onClick={() => handleUpdateFollowUpDate(item)}
-            disabled={saving || !hasPastorAccess}
+            disabled={actionsDisabled}
             className="px-5 py-3 bg-[#8B1E1E] text-white rounded-xl font-bold text-sm hover:bg-[#641414] transition-colors disabled:opacity-50"
           >
             {isArabic ? 'حفظ المتابعة' : 'Save Follow-up'}
@@ -739,7 +748,7 @@ export default function PeopleNotesPage({
                     <button
                       type="button"
                       onClick={() => handleDeleteComment(item, comment)}
-                      disabled={saving || !hasPastorAccess}
+                      disabled={actionsDisabled}
                       className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-50"
                       title={isArabic ? 'حذف الملاحظة' : 'Delete note'}
                     >
@@ -761,7 +770,7 @@ export default function PeopleNotesPage({
                 }))
               }
               rows={3}
-              disabled={!hasPastorAccess}
+              disabled={isResolvingAccess || !hasPastorAccess}
               placeholder={isArabic ? 'أضف ملاحظة أو تعليق متابعة...' : 'Add a note or follow-up comment...'}
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
             />
@@ -769,7 +778,7 @@ export default function PeopleNotesPage({
             <button
               type="button"
               onClick={() => handleAddComment(item)}
-              disabled={saving || !hasPastorAccess}
+              disabled={actionsDisabled}
               className="self-end px-5 py-3 bg-white border border-[#8B1E1E] text-[#8B1E1E] rounded-xl font-bold text-sm hover:bg-[#f8eeee] transition-colors disabled:opacity-50"
             >
               {isArabic ? 'إضافة ملاحظة' : 'Add Note'}
@@ -780,13 +789,21 @@ export default function PeopleNotesPage({
     );
   };
 
-  const statusText = hasPastorAccess
+  const statusText = isResolvingAccess
     ? isArabic
-      ? `مصرح لك بالتعديل كـ ${userRole}`
-      : `Authorized as ${userRole}`
-    : isArabic
-      ? 'غير مصرح لهذا الحساب بالتعديل'
-      : 'This account is not authorized to edit';
+      ? 'جار التحقق من الحساب الحالي...'
+      : 'Checking current account...'
+    : hasPastorAccess
+      ? isArabic
+        ? `مصرح لك بالتعديل كـ ${userRole}`
+        : `Authorized as ${userRole}`
+      : isArabic
+        ? 'غير مصرح لهذا الحساب بالتعديل'
+        : 'This account is not authorized to edit';
+
+  const accountLabel = isResolvingAccess
+    ? isArabic ? 'جار التحميل...' : 'Loading...'
+    : currentUserEmail || (isArabic ? 'غير معروف' : 'Unknown');
 
   return (
     <div className="space-y-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -817,7 +834,7 @@ export default function PeopleNotesPage({
               <p className="text-sm text-gray-500 mt-1">{statusText}</p>
 
               <p className="text-xs text-gray-400 mt-1">
-                {isArabic ? 'الحساب الحالي' : 'Current account'}: {currentUserEmail || (isArabic ? 'غير معروف' : 'Unknown')}
+                {isArabic ? 'الحساب الحالي' : 'Current account'}: {accountLabel}
               </p>
             </div>
           </div>
@@ -825,7 +842,9 @@ export default function PeopleNotesPage({
           {!hasPastorAccess && (
             <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm font-bold text-amber-700">
               <XCircle size={16} />
-              {isArabic ? 'الأزرار معطلة لهذا الحساب' : 'Actions are disabled for this account'}
+              {isResolvingAccess
+                ? isArabic ? 'جار تفعيل صلاحيات الصفحة' : 'Resolving page access'
+                : isArabic ? 'الأزرار معطلة لهذا الحساب' : 'Actions are disabled for this account'}
             </div>
           )}
         </div>
@@ -869,7 +888,7 @@ export default function PeopleNotesPage({
                   fullName: event.target.value,
                 }))
               }
-              disabled={!hasPastorAccess}
+              disabled={isResolvingAccess || !hasPastorAccess}
               placeholder={isArabic ? 'اسم الشخص' : 'Person name'}
               className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
@@ -883,14 +902,14 @@ export default function PeopleNotesPage({
                   contact: event.target.value,
                 }))
               }
-              disabled={!hasPastorAccess}
+              disabled={isResolvingAccess || !hasPastorAccess}
               placeholder={isArabic ? 'وسيلة تواصل اختيارية' : 'Optional contact'}
               className="px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
             />
 
             <button
               type="submit"
-              disabled={saving || !hasPastorAccess}
+              disabled={actionsDisabled}
               className="flex items-center justify-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
             >
               <Plus size={18} />
@@ -1026,7 +1045,7 @@ export default function PeopleNotesPage({
                   <button
                     type="button"
                     onClick={() => handleDeletePerson(selectedPerson)}
-                    disabled={saving || !hasPastorAccess}
+                    disabled={actionsDisabled}
                     className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 text-red-700 font-bold text-sm hover:bg-red-100 transition-colors disabled:opacity-50"
                   >
                     <Trash2 size={16} />
@@ -1045,7 +1064,7 @@ export default function PeopleNotesPage({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <button
                       type="button"
-                      disabled={!hasPastorAccess}
+                      disabled={isResolvingAccess || !hasPastorAccess}
                       onClick={() =>
                         setItemForm(prev => ({
                           ...prev,
@@ -1064,7 +1083,7 @@ export default function PeopleNotesPage({
 
                     <button
                       type="button"
-                      disabled={!hasPastorAccess}
+                      disabled={isResolvingAccess || !hasPastorAccess}
                       onClick={() =>
                         setItemForm(prev => ({
                           ...prev,
@@ -1091,7 +1110,7 @@ export default function PeopleNotesPage({
                         title: event.target.value,
                       }))
                     }
-                    disabled={!hasPastorAccess}
+                    disabled={isResolvingAccess || !hasPastorAccess}
                     placeholder={isArabic ? 'العنوان' : 'Title'}
                     className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                   />
@@ -1105,7 +1124,7 @@ export default function PeopleNotesPage({
                       }))
                     }
                     rows={4}
-                    disabled={!hasPastorAccess}
+                    disabled={isResolvingAccess || !hasPastorAccess}
                     placeholder={isArabic ? 'الوصف أو التفاصيل...' : 'Description or details...'}
                     className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none disabled:opacity-60"
                   />
@@ -1126,7 +1145,7 @@ export default function PeopleNotesPage({
                             dateAdded: event.target.value,
                           }))
                         }
-                        disabled={!hasPastorAccess}
+                        disabled={isResolvingAccess || !hasPastorAccess}
                         className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
@@ -1146,7 +1165,7 @@ export default function PeopleNotesPage({
                             latestFollowUpDate: event.target.value,
                           }))
                         }
-                        disabled={!hasPastorAccess}
+                        disabled={isResolvingAccess || !hasPastorAccess}
                         className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm disabled:opacity-60"
                       />
                     </div>
@@ -1154,7 +1173,7 @@ export default function PeopleNotesPage({
 
                   <button
                     type="submit"
-                    disabled={saving || !hasPastorAccess}
+                    disabled={actionsDisabled}
                     className="w-full md:w-auto flex items-center justify-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                   >
                     <Plus size={18} />
