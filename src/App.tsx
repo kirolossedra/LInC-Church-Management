@@ -335,7 +335,7 @@ function AppRoutes() {
         element={
           <Layout activeTab={getActiveTab()} isAdmin={!!isPastor} isSuperAdmin={!!isSuperAdmin}>
             <ProtectedRoute hasAccess={!!isPastor} loading={appLoading}>
-              <PeopleNotesPage userEmail={userEmail} userRole={adminRole} />
+              <PeopleNotesPage />
             </ProtectedRoute>
           </Layout>
         }
