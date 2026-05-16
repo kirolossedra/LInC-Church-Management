@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { database } from '../firebase';
 import { ref, onValue } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
@@ -1250,6 +1251,11 @@ Otherwise, provide a helpful response about their calendar.`;
     !getMeetingAcknowledged(meeting)
   ).length;
 
+  const peopleNotesTitle = displayLocale === 'ar' ? 'ملاحظات نمو الأشخاص' : 'People Development Notes';
+  const peopleNotesSubtitle = displayLocale === 'ar'
+    ? 'تسجيل نقاط القوة، مجالات النمو، المتابعات، والملاحظات الرعوية'
+    : 'Record strengths, growth areas, follow-ups, and pastoral notes';
+
   return (
     <div className="space-y-8" style={{ fontFamily: 'Arial, sans-serif' }} dir={dir}>
       <PageTitle
@@ -1293,6 +1299,14 @@ Otherwise, provide a helpful response about their calendar.`;
               {t('calendar.connectGoogle')}
             </button>
           )}
+          <Link
+            to="/pastor/people-notes"
+            className="flex items-center gap-2 bg-stone-50 hover:bg-stone-100 text-[#8B1E1E] px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-[#8B1E1E]/20"
+            title={peopleNotesSubtitle}
+          >
+            <Users size={16} />
+            <span>{peopleNotesTitle}</span>
+          </Link>
           <button
             onClick={() => { setIsAddOpen(true); setEditingMeeting(null); setSelectedParticipants([]); setEmailSent(false); }}
             className="flex items-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95"
