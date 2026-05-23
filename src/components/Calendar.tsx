@@ -206,7 +206,7 @@ export default function Calendar() {
   const [meetingRequests, setMeetingRequests] = useState<MeetingRequest[]>([]);
   const [showRequests, setShowRequests] = useState(false);
   const [nextGenQuestions, setNextGenQuestions] = useState<NextGenQuestion[]>([]);
-  const [showNextGenQuestions, setShowNextGenQuestions] = useState(false);
+  const [showNextGenQuestions, setShowNextGenQuestions] = useState(true);
   const [nextGenSelectionLoadingId, setNextGenSelectionLoadingId] = useState<string | null>(null);
   const [selectedSlotDay, setSelectedSlotDay] = useState<Date | null>(null);
   const [slotBlockingLoading, setSlotBlockingLoading] = useState(false);
