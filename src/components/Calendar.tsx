@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { database } from '../firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, update } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot } from 'lucide-react';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
   createCalendarMeetLink,
@@ -85,6 +85,44 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#039;');
 }
 
+function normalizeNumber(value: unknown): number {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function normalizeNextGenQuestion(id: string, value: any): NextGenQuestion {
+  const totalUpvotes = normalizeNumber(value?.totalUpvotes);
+  const totalDownvotes = normalizeNumber(value?.totalDownvotes);
+  const netVotes = typeof value?.netVotes === 'number'
+    ? normalizeNumber(value.netVotes)
+    : totalUpvotes - totalDownvotes;
+
+  const verses = Array.isArray(value?.verses)
+    ? value.verses
+        .map((verse: any) => ({
+          reference: String(verse?.reference || '').trim(),
+          text: String(verse?.text || '').trim(),
+        }))
+        .filter((verse: NextGenVerse) => verse.reference || verse.text)
+    : [];
+
+  return {
+    id,
+    question: String(value?.question || '').trim(),
+    category: String(value?.category || 'Other').trim(),
+    verses,
+    notes: String(value?.notes || '').trim(),
+    status: String(value?.status || 'submittedForPastorReview').trim(),
+    source: String(value?.source || 'nextGenActivities').trim(),
+    translation: String(value?.translation || 'WEB').trim(),
+    totalUpvotes,
+    totalDownvotes,
+    netVotes,
+    createdAt: normalizeNumber(value?.createdAt),
+    updatedAt: normalizeNumber(value?.updatedAt),
+  };
+}
+
 interface Participant {
   id: string;
   name: string;
@@ -108,6 +146,27 @@ interface Unavailability {
   endTime?: string;
   reason?: string;
   allDay?: boolean;
+}
+
+interface NextGenVerse {
+  reference: string;
+  text: string;
+}
+
+interface NextGenQuestion {
+  id: string;
+  question: string;
+  category: string;
+  verses: NextGenVerse[];
+  notes: string;
+  status: string;
+  source: string;
+  translation: string;
+  totalUpvotes: number;
+  totalDownvotes: number;
+  netVotes: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 interface AvailabilityForm {
@@ -146,6 +205,9 @@ export default function Calendar() {
   const [emailSent, setEmailSent] = useState(false);
   const [meetingRequests, setMeetingRequests] = useState<MeetingRequest[]>([]);
   const [showRequests, setShowRequests] = useState(false);
+  const [nextGenQuestions, setNextGenQuestions] = useState<NextGenQuestion[]>([]);
+  const [showNextGenQuestions, setShowNextGenQuestions] = useState(false);
+  const [nextGenSelectionLoadingId, setNextGenSelectionLoadingId] = useState<string | null>(null);
   const [selectedSlotDay, setSelectedSlotDay] = useState<Date | null>(null);
   const [slotBlockingLoading, setSlotBlockingLoading] = useState(false);
 
@@ -249,6 +311,32 @@ export default function Calendar() {
         setMeetingRequests([]);
       }
     });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const nextGenQuestionsRef = ref(database, 'nextGenActivities/qaSessions/');
+    const unsubscribe = onValue(nextGenQuestionsRef, (snapshot) => {
+      const data = snapshot.val();
+
+      if (data) {
+        const parsed = Object.entries(data)
+          .map(([id, val]: [string, any]) => normalizeNextGenQuestion(id, val))
+          .filter(question => question.question);
+
+        parsed.sort((a, b) => {
+          if (b.netVotes !== a.netVotes) return b.netVotes - a.netVotes;
+          if (b.totalUpvotes !== a.totalUpvotes) return b.totalUpvotes - a.totalUpvotes;
+          if (a.totalDownvotes !== b.totalDownvotes) return a.totalDownvotes - b.totalDownvotes;
+          return b.createdAt - a.createdAt;
+        });
+
+        setNextGenQuestions(parsed);
+      } else {
+        setNextGenQuestions([]);
+      }
+    });
+
     return () => unsubscribe();
   }, []);
 
@@ -914,6 +1002,24 @@ ${safeFullReport}
     }
   };
 
+  const handleNextGenQuestionSelection = async (question: NextGenQuestion, selected: boolean) => {
+    setNextGenSelectionLoadingId(question.id);
+
+    try {
+      await update(ref(database, `nextGenActivities/qaSessions/${question.id}`), {
+        status: selected ? 'selectedForNextGenSession' : 'submittedForPastorReview',
+        selectedForNextGenSession: selected,
+        selectedAt: selected ? Date.now() : null,
+        updatedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error('Failed to update NextGen question selection:', err);
+      alert(displayLocale === 'ar' ? 'فشل تحديث اختيار السؤال.' : 'Failed to update the question selection.');
+    } finally {
+      setNextGenSelectionLoadingId(null);
+    }
+  };
+
   const handleAiAssistant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!aiInput.trim()) return;
@@ -1251,6 +1357,14 @@ Otherwise, provide a helpful response about their calendar.`;
     !getMeetingAcknowledged(meeting)
   ).length;
 
+  const rankedNextGenQuestions = nextGenQuestions;
+  const selectedNextGenQuestions = nextGenQuestions.filter(question =>
+    question.status === 'selectedForNextGenSession' || Boolean((question as any).selectedForNextGenSession)
+  );
+  const selectableNextGenQuestions = rankedNextGenQuestions.filter(question =>
+    question.status !== 'selectedForNextGenSession' && !Boolean((question as any).selectedForNextGenSession)
+  );
+
   const peopleNotesTitle = displayLocale === 'ar' ? 'ملاحظات نمو الأشخاص' : 'People Development Notes';
   const peopleNotesSubtitle = displayLocale === 'ar'
     ? 'تسجيل نقاط القوة، مجالات النمو، المتابعات، والملاحظات الرعوية'
@@ -1307,6 +1421,19 @@ Otherwise, provide a helpful response about their calendar.`;
             <Users size={16} />
             <span>{peopleNotesTitle}</span>
           </Link>
+          <button
+            type="button"
+            onClick={() => setShowNextGenQuestions(!showNextGenQuestions)}
+            className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-amber-200"
+          >
+            <Trophy size={16} />
+            <span>{displayLocale === 'ar' ? 'أسئلة NextGen' : 'NextGen Questions'}</span>
+            {nextGenQuestions.length > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                {nextGenQuestions.length}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => { setIsAddOpen(true); setEditingMeeting(null); setSelectedParticipants([]); setEmailSent(false); }}
             className="flex items-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95"
@@ -1402,6 +1529,174 @@ Otherwise, provide a helpful response about their calendar.`;
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {showNextGenQuestions && (
+        <section className="bg-white p-6 rounded-3xl shadow-sm border border-amber-200">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
+            <div>
+              <h3 className="text-lg font-bold flex items-center gap-2 text-amber-700">
+                <Trophy size={18} />
+                {displayLocale === 'ar' ? 'أسئلة NextGen حسب التصويت' : 'NextGen Questions Ranked by Votes'}
+                <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                  {rankedNextGenQuestions.length}
+                </span>
+              </h3>
+              <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+                {displayLocale === 'ar'
+                  ? 'الترتيب حسب صافي التصويت، ثم إجمالي التصويت الإيجابي، ثم الأقل تصويتاً سلبياً'
+                  : 'Sorted by net votes, then total upvotes, then fewer downvotes'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full border border-green-100 font-bold">
+                {displayLocale === 'ar' ? `المختارة: ${selectedNextGenQuestions.length}` : `Selected: ${selectedNextGenQuestions.length}`}
+              </span>
+              <span className="px-3 py-1 bg-stone-50 text-gray-600 rounded-full border border-gray-100 font-bold">
+                {displayLocale === 'ar' ? `غير المختارة: ${selectableNextGenQuestions.length}` : `Not selected: ${selectableNextGenQuestions.length}`}
+              </span>
+            </div>
+          </div>
+
+          {rankedNextGenQuestions.length === 0 ? (
+            <div className="p-6 bg-stone-50 rounded-2xl border border-gray-100 text-sm text-gray-500">
+              {displayLocale === 'ar'
+                ? 'لا توجد أسئلة NextGen محفوظة حالياً.'
+                : 'No saved NextGen questions are available yet.'}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {rankedNextGenQuestions.map((question, index) => {
+                const isSelected = question.status === 'selectedForNextGenSession' || Boolean((question as any).selectedForNextGenSession);
+                const isUpdating = nextGenSelectionLoadingId === question.id;
+
+                return (
+                  <div
+                    key={question.id}
+                    className={`p-5 rounded-2xl border transition-all ${
+                      isSelected
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-stone-50 border-gray-100'
+                    }`}
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black border ${
+                          isSelected
+                            ? 'bg-green-100 text-green-700 border-green-200'
+                            : 'bg-white text-[#8B1E1E] border-gray-100'
+                        }`}>
+                          #{index + 1}
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-3 py-1 bg-white text-[#8B1E1E] rounded-full text-xs font-bold border border-[#8B1E1E]/10">
+                              {question.category || 'Other'}
+                            </span>
+                            <span className="px-3 py-1 bg-white text-gray-500 rounded-full text-xs font-bold border border-gray-100">
+                              {question.translation || 'WEB'}
+                            </span>
+                            {isSelected && (
+                              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200">
+                                {displayLocale === 'ar' ? 'مختار للجلسة' : 'Selected for session'}
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className="text-lg font-bold text-gray-900 leading-snug">
+                            {question.question}
+                          </h4>
+
+                          {question.verses.length > 0 && (
+                            <div className="space-y-2">
+                              {question.verses.map((verse, verseIndex) => (
+                                <div key={`${question.id}-verse-${verseIndex}`} className="bg-white border border-gray-100 rounded-xl p-3">
+                                  {verse.reference && (
+                                    <div className="text-xs font-bold text-[#8B1E1E] mb-1">
+                                      {verse.reference}
+                                    </div>
+                                  )}
+                                  {verse.text && (
+                                    <p className="text-xs leading-5 text-gray-600 whitespace-pre-wrap">
+                                      {verse.text}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {question.notes && (
+                            <p className="text-xs text-gray-400 italic">
+                              {question.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row lg:flex-col gap-3 lg:min-w-[210px]">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+                            <div className="flex items-center justify-center gap-1 text-[10px] text-green-700 font-bold uppercase">
+                              <ThumbsUp size={11} />
+                              {displayLocale === 'ar' ? 'مؤيد' : 'Up'}
+                            </div>
+                            <div className="text-lg font-black text-green-700">
+                              {question.totalUpvotes}
+                            </div>
+                          </div>
+
+                          <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+                            <div className="flex items-center justify-center gap-1 text-[10px] text-red-700 font-bold uppercase">
+                              <ThumbsDown size={11} />
+                              {displayLocale === 'ar' ? 'رافض' : 'Down'}
+                            </div>
+                            <div className="text-lg font-black text-red-700">
+                              {question.totalDownvotes}
+                            </div>
+                          </div>
+
+                          <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+                            <div className="text-[10px] text-[#8B1E1E] font-bold uppercase">
+                              {displayLocale === 'ar' ? 'الصافي' : 'Net'}
+                            </div>
+                            <div className="text-lg font-black text-[#8B1E1E]">
+                              {question.netVotes}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isUpdating}
+                          onClick={() => handleNextGenQuestionSelection(question, !isSelected)}
+                          className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                            isSelected
+                              ? 'bg-white text-red-700 border border-red-100 hover:bg-red-50'
+                              : 'bg-[#8B1E1E] text-white hover:bg-[#641414]'
+                          }`}
+                        >
+                          {isUpdating ? (
+                            <Hourglass size={14} className="animate-spin" />
+                          ) : isSelected ? (
+                            <XCircle size={14} />
+                          ) : (
+                            <CheckCircle size={14} />
+                          )}
+                          {isSelected
+                            ? (displayLocale === 'ar' ? 'إلغاء الاختيار' : 'Unselect')
+                            : (displayLocale === 'ar' ? 'اختيار للجلسة' : 'Select for Session')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
