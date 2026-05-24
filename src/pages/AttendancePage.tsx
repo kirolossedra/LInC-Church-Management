@@ -318,6 +318,12 @@ export default function AttendancePage() {
     absent: isArabic ? 'غائب' : 'Absent',
     attendedLabel: isArabic ? 'حضور' : 'Attended',
     missedLabel: isArabic ? 'غياب' : 'Missed',
+    dateAttendanceLine: isArabic ? 'خط التاريخ مقابل الحضور (0/1)' : 'Date vs Attendance (0/1) Line Plot',
+    attendanceDonut: isArabic ? 'مخطط دائري للحضور مقابل الغياب' : 'Attendance vs Missed Donut Chart',
+    presentValue: isArabic ? 'قيمة الحضور = 1' : 'Present = 1',
+    absentValue: isArabic ? 'قيمة الغياب = 0' : 'Absent = 0',
+    attendedPercent: isArabic ? 'نسبة الحضور' : 'Attended Percent',
+    missedPercent: isArabic ? 'نسبة الغياب' : 'Missed Percent',
   };
 
   const weekDayLabels = isArabic
@@ -2772,11 +2778,145 @@ export default function AttendancePage() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
                     gap: '22px',
                     marginBottom: '24px',
                   }}
                 >
+                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
+                    <h3 style={{ margin: '0 0 8px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
+                      {text.dateAttendanceLine}
+                    </h3>
+                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 800, marginBottom: '12px' }}>
+                      {text.presentValue} · {text.absentValue}
+                    </div>
+
+                    <svg viewBox="0 0 560 260" role="img" style={{ width: '100%', minHeight: '260px' }}>
+                      <line x1="58" y1="38" x2="58" y2="198" stroke="#ddd" strokeWidth="2" />
+                      <line x1="58" y1="198" x2="526" y2="198" stroke="#ddd" strokeWidth="2" />
+                      <line x1="58" y1="62" x2="526" y2="62" stroke="#e7d8d8" strokeWidth="1.5" strokeDasharray="6 6" />
+                      <line x1="58" y1="176" x2="526" y2="176" stroke="#e7d8d8" strokeWidth="1.5" strokeDasharray="6 6" />
+
+                      <text x="34" y="67" textAnchor="middle" fontSize="14" fill="#15803d" fontWeight="900">1</text>
+                      <text x="34" y="181" textAnchor="middle" fontSize="14" fill="#b91c1c" fontWeight="900">0</text>
+
+                      <polyline
+                        fill="none"
+                        stroke="#8b1e1e"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={selectedPersonTimeline.map((item, index) => {
+                          const x = selectedPersonTimeline.length === 1
+                            ? 292
+                            : 58 + (index / (selectedPersonTimeline.length - 1)) * 468;
+                          const y = item.attended ? 62 : 176;
+                          return `${x},${y}`;
+                        }).join(' ')}
+                      />
+
+                      {selectedPersonTimeline.map((item, index) => {
+                        const x = selectedPersonTimeline.length === 1
+                          ? 292
+                          : 58 + (index / (selectedPersonTimeline.length - 1)) * 468;
+                        const y = item.attended ? 62 : 176;
+                        const shouldShowDate = selectedPersonTimeline.length <= 8 || index % Math.ceil(selectedPersonTimeline.length / 8) === 0 || index === selectedPersonTimeline.length - 1;
+
+                        return (
+                          <g key={item.dateKey}>
+                            <circle
+                              cx={x}
+                              cy={y}
+                              r="7"
+                              fill={item.attended ? '#15803d' : '#b91c1c'}
+                              stroke="white"
+                              strokeWidth="2"
+                            />
+                            {shouldShowDate && (
+                              <text
+                                x={x}
+                                y="224"
+                                textAnchor="middle"
+                                fontSize="10"
+                                fill="#641414"
+                                fontWeight="800"
+                                transform={`rotate(-38 ${x} 224)`}
+                              >
+                                {item.dateKey.slice(5)}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </svg>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '8px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', color: '#15803d', fontWeight: 900, fontSize: '13px' }}>
+                        <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#15803d' }} />
+                        {text.present}
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', color: '#b91c1c', fontWeight: 900, fontSize: '13px' }}>
+                        <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#b91c1c' }} />
+                        {text.absent}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
+                    <h3 style={{ margin: '0 0 16px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
+                      {text.attendanceDonut}
+                    </h3>
+
+                    <div style={{ display: 'grid', placeItems: 'center' }}>
+                      <svg viewBox="0 0 240 240" role="img" style={{ width: '100%', maxWidth: '260px' }}>
+                        <circle
+                          cx="120"
+                          cy="120"
+                          r="82"
+                          fill="none"
+                          stroke="#fee2e2"
+                          strokeWidth="34"
+                        />
+                        <circle
+                          cx="120"
+                          cy="120"
+                          r="82"
+                          fill="none"
+                          stroke="#15803d"
+                          strokeWidth="34"
+                          strokeLinecap="round"
+                          pathLength="100"
+                          strokeDasharray={`${selectedPersonAttendanceAnalysis.attendanceRate} ${100 - selectedPersonAttendanceAnalysis.attendanceRate}`}
+                          transform="rotate(-90 120 120)"
+                        />
+                        <text x="120" y="112" textAnchor="middle" fontSize="34" fill="#8b1e1e" fontWeight="900">
+                          {selectedPersonAttendanceAnalysis.attendanceRate}%
+                        </text>
+                        <text x="120" y="140" textAnchor="middle" fontSize="13" fill="#641414" fontWeight="900">
+                          {text.attendanceRate}
+                        </text>
+                      </svg>
+                    </div>
+
+                    <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: '#15803d', fontWeight: 900 }}>
+                        <span>{text.attendedPercent}</span>
+                        <span>{selectedPersonAttendanceAnalysis.attendanceCount} / {sundayDateKeysSinceStart.length}</span>
+                      </div>
+                      <div style={{ height: '14px', background: '#f5f4f0', borderRadius: '999px', overflow: 'hidden' }}>
+                        <div style={{ width: `${selectedPersonAttendanceAnalysis.attendanceRate}%`, height: '100%', background: '#15803d', borderRadius: '999px' }} />
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: '#b91c1c', fontWeight: 900 }}>
+                        <span>{text.missedPercent}</span>
+                        <span>{selectedPersonMissedDates.length} / {sundayDateKeysSinceStart.length}</span>
+                      </div>
+                      <div style={{ height: '14px', background: '#f5f4f0', borderRadius: '999px', overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.max(0, 100 - selectedPersonAttendanceAnalysis.attendanceRate)}%`, height: '100%', background: '#b91c1c', borderRadius: '999px' }} />
+                      </div>
+                    </div>
+                  </div>
+
                   <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
                     <h3 style={{ margin: '0 0 16px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
                       {text.cumulativeAttendanceLine}
@@ -2803,7 +2943,14 @@ export default function AttendancePage() {
                           ? 218
                           : 38 + (index / (selectedPersonTimeline.length - 1)) * 360;
                         const y = 184 - (item.cumulativeAttendance / Math.max(1, selectedPersonAttendanceAnalysis.attendanceCount)) * 150;
-                        return <circle key={item.dateKey} cx={x} cy={y} r="4" fill="#8b1e1e" />;
+                        return (
+                          <g key={item.dateKey}>
+                            <circle cx={x} cy={y} r="5" fill="#8b1e1e" />
+                            <text x={x} y={y - 10} textAnchor="middle" fontSize="10" fill="#641414" fontWeight="800">
+                              {item.cumulativeAttendance}
+                            </text>
+                          </g>
+                        );
                       })}
                     </svg>
                   </div>
