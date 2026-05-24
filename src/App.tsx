@@ -11,6 +11,7 @@ import GuidePage from './pages/GuidePage';
 import BookingCalendar from './pages/BookingCalendar';
 import NextGenActivities from './pages/NextGenActivities';
 import PeopleNotesPage from './pages/PeopleNotesPage';
+import AttendancePage from './pages/AttendancePage';
 import { auth, signInWithGoogle, signInWithEmail, signUpWithEmail } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { database } from './firebase';
@@ -375,6 +376,15 @@ function AppRoutes() {
         element={
           <Layout activeTab="nextgen-activities" isAdmin={false} isSuperAdmin={false}>
             <NextGenActivities />
+          </Layout>
+        }
+      />
+
+      <Route
+        path="/attendance"
+        element={
+          <Layout activeTab="attendance" isAdmin={false} isSuperAdmin={false}>
+            <AttendancePage />
           </Layout>
         }
       />
