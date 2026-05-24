@@ -1,11 +1,36 @@
-// Attendance page locked by a simple date-based passcode before showing the page content.
+// Attendance page locked by a simple date-based passcode before showing the attendance actions.
 
 import { useState } from 'react';
+import { ClipboardList, UserPlus } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 export default function AttendancePage() {
+  const { dir, locale } = useI18n();
+
   const [passcodeInput, setPasscodeInput] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [error, setError] = useState('');
+
+  const text = {
+    accessTitle: locale === 'ar' ? 'الدخول إلى الحضور' : 'Attendance Access',
+    accessDescription:
+      locale === 'ar'
+        ? 'أدخل رمز حضور اليوم للمتابعة.'
+        : "Enter today's attendance passcode to continue.",
+    passcodePlaceholder: locale === 'ar' ? 'رمز من 4 أرقام' : '4-digit code',
+    incorrectPasscode:
+      locale === 'ar'
+        ? 'رمز غير صحيح. حاول مرة أخرى.'
+        : 'Incorrect passcode. Please try again.',
+    proceed: locale === 'ar' ? 'متابعة' : 'Proceed',
+    pageTitle: locale === 'ar' ? 'صفحة الحضور' : 'Attendance Page',
+    pageDescription:
+      locale === 'ar'
+        ? 'اختر الإجراء الذي تريد تنفيذه.'
+        : 'Choose the action you want to perform.',
+    addPerson: locale === 'ar' ? 'إضافة شخص' : 'Add Person',
+    takeAttendance: locale === 'ar' ? 'تسجيل الحضور' : 'Take Attendance',
+  };
 
   const getTodayPasscode = () => {
     const today = new Date();
@@ -26,12 +51,13 @@ export default function AttendancePage() {
       return;
     }
 
-    setError('Incorrect passcode. Please try again.');
+    setError(text.incorrectPasscode);
   };
 
   if (!isUnlocked) {
     return (
       <div
+        dir={dir}
         style={{
           minHeight: '100vh',
           padding: '40px',
@@ -79,7 +105,7 @@ export default function AttendancePage() {
               fontWeight: 800,
             }}
           >
-            Attendance Access
+            {text.accessTitle}
           </h1>
 
           <p
@@ -89,7 +115,7 @@ export default function AttendancePage() {
               lineHeight: 1.6,
             }}
           >
-            Enter today&apos;s attendance passcode to continue.
+            {text.accessDescription}
           </p>
 
           <form onSubmit={handleSubmit}>
@@ -102,7 +128,7 @@ export default function AttendancePage() {
                 setPasscodeInput(e.target.value.replace(/\D/g, ''));
                 setError('');
               }}
-              placeholder="4-digit code"
+              placeholder={text.passcodePlaceholder}
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -147,7 +173,7 @@ export default function AttendancePage() {
                 boxShadow: '0 8px 24px rgba(139, 30, 30, 0.22)',
               }}
             >
-              Proceed
+              {text.proceed}
             </button>
           </form>
         </div>
@@ -156,9 +182,107 @@ export default function AttendancePage() {
   }
 
   return (
-    <div style={{ padding: '40px', fontFamily: 'Arial, sans-serif' }}>
-      <h1>Attendance Page</h1>
-      <p>If you can see this page, the Attendance route is working.</p>
+    <div
+      dir={dir}
+      style={{
+        minHeight: '100vh',
+        padding: '40px',
+        fontFamily: 'Arial, sans-serif',
+        background: '#f5f4f0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '720px',
+          background: 'white',
+          borderRadius: '28px',
+          padding: '40px',
+          boxShadow: '0 12px 35px rgba(139, 30, 30, 0.14)',
+          border: '1px solid rgba(139, 30, 30, 0.12)',
+          textAlign: 'center',
+        }}
+      >
+        <h1
+          style={{
+            margin: '0 0 12px',
+            color: '#8b1e1e',
+            fontSize: '32px',
+            fontWeight: 800,
+          }}
+        >
+          {text.pageTitle}
+        </h1>
+
+        <p
+          style={{
+            margin: '0 0 32px',
+            color: '#666',
+            fontSize: '17px',
+            lineHeight: 1.6,
+          }}
+        >
+          {text.pageDescription}
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            maxWidth: '420px',
+            margin: '0 auto',
+          }}
+        >
+          <button
+            type="button"
+            style={{
+              width: '100%',
+              minHeight: '58px',
+              border: '2px solid #8b1e1e',
+              borderRadius: '999px',
+              background: '#8b1e1e',
+              color: 'white',
+              fontSize: '18px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              boxShadow: '0 8px 24px rgba(139, 30, 30, 0.22)',
+            }}
+          >
+            <UserPlus size={20} />
+            {text.addPerson}
+          </button>
+
+          <button
+            type="button"
+            style={{
+              width: '100%',
+              minHeight: '58px',
+              border: '2px solid #8b1e1e',
+              borderRadius: '999px',
+              background: 'white',
+              color: '#8b1e1e',
+              fontSize: '18px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+            }}
+          >
+            <ClipboardList size={20} />
+            {text.takeAttendance}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
