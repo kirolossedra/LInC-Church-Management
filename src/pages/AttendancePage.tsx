@@ -11,6 +11,8 @@ interface AttendancePerson {
   firebaseId: string;
   firstName: string;
   lastName: string;
+  arabicFirstName: string;
+  arabicLastName: string;
   phoneNumber: string;
   email: string;
   daysOfAttendance: string;
@@ -21,6 +23,8 @@ interface AttendancePerson {
 interface AttendancePersonForm {
   firstName: string;
   lastName: string;
+  arabicFirstName: string;
+  arabicLastName: string;
   phoneNumber: string;
   email: string;
 }
@@ -35,6 +39,8 @@ function normalizePerson(firebaseId: string, value: any): AttendancePerson {
     firebaseId,
     firstName: String(value?.firstName || '').trim(),
     lastName: String(value?.lastName || '').trim(),
+    arabicFirstName: String(value?.arabicFirstName || '').trim(),
+    arabicLastName: String(value?.arabicLastName || '').trim(),
     phoneNumber: String(value?.phoneNumber || '').trim(),
     email: String(value?.email || '').trim(),
     daysOfAttendance: String(value?.daysOfAttendance || '').trim(),
@@ -46,6 +52,8 @@ function normalizePerson(firebaseId: string, value: any): AttendancePerson {
 const emptyPersonForm: AttendancePersonForm = {
   firstName: '',
   lastName: '',
+  arabicFirstName: '',
+  arabicLastName: '',
   phoneNumber: '',
   email: '',
 };
@@ -91,8 +99,12 @@ export default function AttendancePage() {
     peopleDescription: isArabic
       ? 'أضف شخصاً جديداً أو ابحث عن شخص موجود لتعديل بياناته.'
       : 'Add a new person or search for an existing person to modify their details.',
+    englishNameSection: isArabic ? 'الاسم بالإنجليزية' : 'English Name',
+    arabicNameSection: isArabic ? 'الاسم بالعربية' : 'Arabic Name',
     firstName: isArabic ? 'الاسم الأول' : 'First Name',
     lastName: isArabic ? 'اسم العائلة' : 'Last Name',
+    arabicFirstName: isArabic ? 'الاسم الأول بالعربية' : 'Arabic First Name',
+    arabicLastName: isArabic ? 'اسم العائلة بالعربية' : 'Arabic Last Name',
     phoneNumber: isArabic ? 'رقم الهاتف' : 'Phone Number',
     email: isArabic ? 'البريد الإلكتروني' : 'Email',
     daysOfAttendance: isArabic ? 'أيام الحضور' : 'Days of Attendance',
@@ -100,8 +112,8 @@ export default function AttendancePage() {
       ? 'يتم حفظ هذا الحقل تلقائياً ولا يتم إدخاله عند إضافة الشخص.'
       : 'This field is stored automatically and is not entered when adding a person.',
     searchPlaceholder: isArabic
-      ? 'ابحث بالاسم أو الهاتف أو البريد الإلكتروني...'
-      : 'Search by name, phone, or email...',
+      ? 'ابحث بالاسم العربي أو الإنجليزي أو الهاتف أو البريد الإلكتروني...'
+      : 'Search by Arabic name, English name, phone, or email...',
     newPerson: isArabic ? 'شخص جديد' : 'New Person',
     savePerson: isArabic ? 'حفظ الشخص' : 'Save Person',
     updatePerson: isArabic ? 'تحديث الشخص' : 'Update Person',
@@ -114,8 +126,8 @@ export default function AttendancePage() {
     loadingPeople: isArabic ? 'جار تحميل الأشخاص...' : 'Loading people...',
     failedLoadPeople: isArabic ? 'فشل تحميل الأشخاص.' : 'Failed to load people.',
     missingRequired: isArabic
-      ? 'الاسم الأول واسم العائلة مطلوبان.'
-      : 'First name and last name are required.',
+      ? 'الاسم الأول واسم العائلة بالإنجليزية مطلوبان.'
+      : 'English first name and English last name are required.',
     savedSuccessfully: isArabic ? 'تم حفظ الشخص بنجاح.' : 'Person saved successfully.',
     failedSavePerson: isArabic
       ? 'فشل حفظ الشخص في قاعدة البيانات.'
@@ -142,6 +154,8 @@ export default function AttendancePage() {
       const searchableText = [
         person.firstName,
         person.lastName,
+        person.arabicFirstName,
+        person.arabicLastName,
         person.phoneNumber,
         person.email,
         person.daysOfAttendance,
@@ -168,7 +182,14 @@ export default function AttendancePage() {
 
         const loadedPeople = Object.entries(rawPeople || {})
           .map(([firebaseId, value]) => normalizePerson(firebaseId, value))
-          .filter(person => person.firstName || person.lastName || person.email || person.phoneNumber);
+          .filter(person => (
+            person.firstName ||
+            person.lastName ||
+            person.arabicFirstName ||
+            person.arabicLastName ||
+            person.email ||
+            person.phoneNumber
+          ));
 
         setPeople(loadedPeople);
         setIsLoadingPeople(false);
@@ -215,6 +236,8 @@ export default function AttendancePage() {
     setPersonForm({
       firstName: person.firstName,
       lastName: person.lastName,
+      arabicFirstName: person.arabicFirstName,
+      arabicLastName: person.arabicLastName,
       phoneNumber: person.phoneNumber,
       email: person.email,
     });
@@ -223,6 +246,8 @@ export default function AttendancePage() {
   const handleSavePerson = async () => {
     const cleanedFirstName = personForm.firstName.trim();
     const cleanedLastName = personForm.lastName.trim();
+    const cleanedArabicFirstName = personForm.arabicFirstName.trim();
+    const cleanedArabicLastName = personForm.arabicLastName.trim();
     const cleanedPhoneNumber = personForm.phoneNumber.trim();
     const cleanedEmail = personForm.email.trim();
 
@@ -242,6 +267,8 @@ export default function AttendancePage() {
       const payload = {
         firstName: cleanedFirstName,
         lastName: cleanedLastName,
+        arabicFirstName: cleanedArabicFirstName,
+        arabicLastName: cleanedArabicLastName,
         phoneNumber: cleanedPhoneNumber,
         email: cleanedEmail,
         daysOfAttendance: existingPerson?.daysOfAttendance || '',
@@ -560,11 +587,23 @@ export default function AttendancePage() {
               </button>
             </div>
 
+            <h3
+              style={{
+                margin: '0 0 16px',
+                color: '#641414',
+                fontSize: '18px',
+                fontWeight: 800,
+              }}
+            >
+              {text.englishNameSection}
+            </h3>
+
             <div
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                 gap: '16px',
+                marginBottom: '24px',
               }}
             >
               <div>
@@ -606,7 +645,79 @@ export default function AttendancePage() {
                   }}
                 />
               </div>
+            </div>
 
+            <h3
+              style={{
+                margin: '0 0 16px',
+                color: '#641414',
+                fontSize: '18px',
+                fontWeight: 800,
+              }}
+            >
+              {text.arabicNameSection}
+            </h3>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '16px',
+                marginBottom: '24px',
+              }}
+            >
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
+                  {text.arabicFirstName}
+                </label>
+                <input
+                  type="text"
+                  value={personForm.arabicFirstName}
+                  onChange={e => setPersonForm(prev => ({ ...prev, arabicFirstName: e.target.value }))}
+                  dir="rtl"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '14px 16px',
+                    borderRadius: '16px',
+                    border: '1px solid #e5e0da',
+                    outline: 'none',
+                    fontSize: '16px',
+                    textAlign: 'right',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
+                  {text.arabicLastName}
+                </label>
+                <input
+                  type="text"
+                  value={personForm.arabicLastName}
+                  onChange={e => setPersonForm(prev => ({ ...prev, arabicLastName: e.target.value }))}
+                  dir="rtl"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '14px 16px',
+                    borderRadius: '16px',
+                    border: '1px solid #e5e0da',
+                    outline: 'none',
+                    fontSize: '16px',
+                    textAlign: 'right',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '16px',
+              }}
+            >
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
                   {text.phoneNumber}
@@ -866,6 +977,22 @@ export default function AttendancePage() {
                       >
                         {person.firstName} {person.lastName}
                       </div>
+
+                      {(person.arabicFirstName || person.arabicLastName) && (
+                        <div
+                          dir="rtl"
+                          style={{
+                            color: '#8b1e1e',
+                            fontSize: '16px',
+                            fontWeight: 800,
+                            marginBottom: '6px',
+                            textAlign: 'right',
+                          }}
+                        >
+                          {person.arabicFirstName} {person.arabicLastName}
+                        </div>
+                      )}
+
                       <div
                         style={{
                           color: '#777',
@@ -875,6 +1002,7 @@ export default function AttendancePage() {
                       >
                         {person.phoneNumber || '—'} · {person.email || '—'}
                       </div>
+
                       <div
                         style={{
                           color: '#8b1e1e',
