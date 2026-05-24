@@ -194,6 +194,7 @@ export default function AttendancePage() {
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
   const [isSavingAttendanceForId, setIsSavingAttendanceForId] = useState('');
   const [analysisSearchTerm, setAnalysisSearchTerm] = useState('');
+  const [selectedAnalysisPersonId, setSelectedAnalysisPersonId] = useState('');
 
   const text = {
     accessTitle: isArabic ? 'الدخول إلى الحضور' : 'Attendance Access',
@@ -297,6 +298,21 @@ export default function AttendancePage() {
     noAttendanceData: isArabic
       ? 'لا توجد بيانات حضور منذ بداية التحليل.'
       : 'No attendance data since the analysis start date.',
+    viewFullStats: isArabic ? 'عرض التحليل الكامل' : 'View Full Stats',
+    personalAnalysisTitle: isArabic ? 'تحليل شخصي مفصل' : 'Personal Detailed Analysis',
+    personalAnalysisDescription: isArabic
+      ? 'اختر شخصاً من نتائج البحث لعرض تفاصيل حضوره منذ أول أحد في مايو.'
+      : 'Select a person from the search results to view full attendance details since the first Sunday in May.',
+    selectedPerson: isArabic ? 'الشخص المختار' : 'Selected Person',
+    attendedSundays: isArabic ? 'أيام الأحد التي حضرها' : 'Attended Sundays',
+    missedSundays: isArabic ? 'أيام الأحد التي لم يحضرها' : 'Missed Sundays',
+    fullAttendanceTimeline: isArabic ? 'الخط الزمني الكامل للحضور' : 'Full Attendance Timeline',
+    personalAttendancePlot: isArabic ? 'رسم حضور الشخص' : 'Personal Attendance Plot',
+    attendedStatus: isArabic ? 'حضر' : 'Attended',
+    missedStatus: isArabic ? 'لم يحضر' : 'Missed',
+    noPersonalSelection: isArabic
+      ? 'ابحث عن شخص واضغط عرض التحليل الكامل.'
+      : 'Search for a person and click View Full Stats.',
     noAnalysisResults: isArabic
       ? 'لا توجد نتائج تحليل مطابقة للبحث.'
       : 'No matching analysis results.',
@@ -413,6 +429,24 @@ export default function AttendancePage() {
       return searchableText.includes(cleanedSearch);
     });
   }, [analysisSearchTerm, personAttendanceAnalysis]);
+
+  const selectedPersonalAnalysis = useMemo(() => {
+    if (!selectedAnalysisPersonId) return null;
+
+    return personAttendanceAnalysis.find(item => item.person.firebaseId === selectedAnalysisPersonId) || null;
+  }, [personAttendanceAnalysis, selectedAnalysisPersonId]);
+
+  const selectedPersonalMissedDates = useMemo(() => {
+    if (!selectedPersonalAnalysis) return [];
+
+    const attendedDateSet = new Set(selectedPersonalAnalysis.attendedDates);
+
+    return sundayDateKeysSinceStart.filter(dateKey => !attendedDateSet.has(dateKey));
+  }, [selectedPersonalAnalysis, sundayDateKeysSinceStart]);
+
+  const selectedPersonalDisplayName = selectedPersonalAnalysis
+    ? `${selectedPersonalAnalysis.person.firstName} ${selectedPersonalAnalysis.person.lastName}`.trim() || '—'
+    : '';
 
   const weeklyAttendanceSummary = useMemo<WeeklyAttendanceSummary[]>(() => {
     return sundayDateKeysSinceStart.map(dateKey => ({
@@ -2174,11 +2208,291 @@ export default function AttendancePage() {
                       >
                         {text.attendanceRate}: {item.attendanceRate}%
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAnalysisPersonId(item.person.firebaseId)}
+                        style={{
+                          marginTop: '12px',
+                          width: '100%',
+                          minHeight: '38px',
+                          border: selectedAnalysisPersonId === item.person.firebaseId ? '2px solid #641414' : '2px solid #8b1e1e',
+                          borderRadius: '999px',
+                          background: selectedAnalysisPersonId === item.person.firebaseId ? '#641414' : '#8b1e1e',
+                          color: 'white',
+                          fontSize: '12px',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {text.viewFullStats}
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+
+            <div
+              style={{
+                border: '1px solid rgba(139, 30, 30, 0.10)',
+                borderRadius: '24px',
+                padding: '22px',
+                background: '#fffaf7',
+                marginBottom: '30px',
+              }}
+            >
+              <h3
+                style={{
+                  margin: '0 0 8px',
+                  color: '#8b1e1e',
+                  fontSize: '21px',
+                  fontWeight: 900,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <Users size={22} />
+                {text.personalAnalysisTitle}
+              </h3>
+
+              <p
+                style={{
+                  margin: '0 0 18px',
+                  color: '#666',
+                  lineHeight: 1.6,
+                }}
+              >
+                {text.personalAnalysisDescription}
+              </p>
+
+              {!selectedPersonalAnalysis && (
+                <div
+                  style={{
+                    padding: '20px',
+                    borderRadius: '18px',
+                    background: '#f5f4f0',
+                    color: '#666',
+                    textAlign: 'center',
+                    fontWeight: 800,
+                  }}
+                >
+                  {text.noPersonalSelection}
+                </div>
+              )}
+
+              {selectedPersonalAnalysis && (
+                <div style={{ display: 'grid', gap: '20px' }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                      gap: '14px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        border: '1px solid #eee',
+                      }}
+                    >
+                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
+                        {text.selectedPerson}
+                      </div>
+                      <div style={{ color: '#641414', fontSize: '18px', fontWeight: 900 }}>
+                        {selectedPersonalDisplayName}
+                      </div>
+                      {(selectedPersonalAnalysis.person.arabicFirstName || selectedPersonalAnalysis.person.arabicLastName) && (
+                        <div
+                          dir="rtl"
+                          style={{
+                            color: '#8b1e1e',
+                            fontSize: '16px',
+                            fontWeight: 900,
+                            marginTop: '6px',
+                            textAlign: 'right',
+                          }}
+                        >
+                          {selectedPersonalAnalysis.person.arabicFirstName} {selectedPersonalAnalysis.person.arabicLastName}
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        border: '1px solid #eee',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
+                        {text.attendanceCount}
+                      </div>
+                      <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
+                        {selectedPersonalAnalysis.attendanceCount}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        border: '1px solid #eee',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
+                        {text.attendanceRate}
+                      </div>
+                      <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
+                        {selectedPersonalAnalysis.attendanceRate}%
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        border: '1px solid #eee',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
+                        {text.missedSundays}
+                      </div>
+                      <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
+                        {selectedPersonalMissedDates.length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4
+                      style={{
+                        margin: '0 0 12px',
+                        color: '#641414',
+                        fontSize: '17px',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {text.personalAttendancePlot}
+                    </h4>
+
+                    <div
+                      style={{
+                        height: '22px',
+                        borderRadius: '999px',
+                        background: '#f5f4f0',
+                        overflow: 'hidden',
+                        border: '1px solid #eee',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${selectedPersonalAnalysis.attendanceRate}%`,
+                          height: '100%',
+                          borderRadius: '999px',
+                          background: '#8b1e1e',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                      gap: '16px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        border: '1px solid #eee',
+                      }}
+                    >
+                      <h4 style={{ margin: '0 0 12px', color: '#15803d', fontSize: '16px', fontWeight: 900 }}>
+                        {text.attendedSundays}
+                      </h4>
+                      <div style={{ color: '#555', fontSize: '14px', lineHeight: 1.8 }}>
+                        {selectedPersonalAnalysis.attendedDates.join(', ') || '—'}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        border: '1px solid #eee',
+                      }}
+                    >
+                      <h4 style={{ margin: '0 0 12px', color: '#991b1b', fontSize: '16px', fontWeight: 900 }}>
+                        {text.missedSundays}
+                      </h4>
+                      <div style={{ color: '#555', fontSize: '14px', lineHeight: 1.8 }}>
+                        {selectedPersonalMissedDates.join(', ') || '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4
+                      style={{
+                        margin: '0 0 12px',
+                        color: '#641414',
+                        fontSize: '17px',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {text.fullAttendanceTimeline}
+                    </h4>
+
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      {sundayDateKeysSinceStart.map(dateKey => {
+                        const didAttend = selectedPersonalAnalysis.attendedDates.includes(dateKey);
+
+                        return (
+                          <div
+                            key={dateKey}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr auto',
+                              gap: '12px',
+                              alignItems: 'center',
+                              padding: '12px 14px',
+                              borderRadius: '14px',
+                              background: didAttend ? '#f0fdf4' : '#fef2f2',
+                              border: didAttend ? '1px solid #bbf7d0' : '1px solid #fecaca',
+                            }}
+                          >
+                            <span style={{ color: '#641414', fontWeight: 900 }}>{dateKey}</span>
+                            <span
+                              style={{
+                                color: didAttend ? '#15803d' : '#991b1b',
+                                fontWeight: 900,
+                                fontSize: '13px',
+                              }}
+                            >
+                              {didAttend ? text.attendedStatus : text.missedStatus}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div
               style={{
