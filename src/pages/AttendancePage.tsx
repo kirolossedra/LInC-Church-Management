@@ -1,36 +1,187 @@
 // Attendance page locked by a simple date-based passcode before showing the attendance actions.
+// Supports adding and modifying people in Firebase before building the attendance-taking flow.
 
-import { useState } from 'react';
-import { ClipboardList, UserPlus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ClipboardList, Loader2, Save, Search, UserPlus, Users } from 'lucide-react';
+import { onValue, push, ref, set } from 'firebase/database';
+import { database } from '../firebase';
 import { useI18n } from '../i18n';
+
+interface AttendancePerson {
+  firebaseId: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  email: string;
+  daysOfAttendance: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface AttendancePersonForm {
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  email: string;
+}
+
+function normalizeNumber(value: unknown): number {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function normalizePerson(firebaseId: string, value: any): AttendancePerson {
+  return {
+    firebaseId,
+    firstName: String(value?.firstName || '').trim(),
+    lastName: String(value?.lastName || '').trim(),
+    phoneNumber: String(value?.phoneNumber || '').trim(),
+    email: String(value?.email || '').trim(),
+    daysOfAttendance: String(value?.daysOfAttendance || '').trim(),
+    createdAt: normalizeNumber(value?.createdAt),
+    updatedAt: normalizeNumber(value?.updatedAt),
+  };
+}
+
+const emptyPersonForm: AttendancePersonForm = {
+  firstName: '',
+  lastName: '',
+  phoneNumber: '',
+  email: '',
+};
 
 export default function AttendancePage() {
   const { dir, locale } = useI18n();
+  const isArabic = locale === 'ar';
 
   const [passcodeInput, setPasscodeInput] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [error, setError] = useState('');
+  const [passcodeError, setPasscodeError] = useState('');
+
+  const [activePanel, setActivePanel] = useState<'menu' | 'people' | 'attendance'>('menu');
+
+  const [people, setPeople] = useState<AttendancePerson[]>([]);
+  const [isLoadingPeople, setIsLoadingPeople] = useState(true);
+  const [peopleError, setPeopleError] = useState('');
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPersonId, setSelectedPersonId] = useState('');
+  const [personForm, setPersonForm] = useState<AttendancePersonForm>(emptyPersonForm);
+  const [isSavingPerson, setIsSavingPerson] = useState(false);
 
   const text = {
-    accessTitle: locale === 'ar' ? 'الدخول إلى الحضور' : 'Attendance Access',
-    accessDescription:
-      locale === 'ar'
-        ? 'أدخل رمز حضور اليوم للمتابعة.'
-        : "Enter today's attendance passcode to continue.",
-    passcodePlaceholder: locale === 'ar' ? 'رمز من 4 أرقام' : '4-digit code',
-    incorrectPasscode:
-      locale === 'ar'
-        ? 'رمز غير صحيح. حاول مرة أخرى.'
-        : 'Incorrect passcode. Please try again.',
-    proceed: locale === 'ar' ? 'متابعة' : 'Proceed',
-    pageTitle: locale === 'ar' ? 'صفحة الحضور' : 'Attendance Page',
-    pageDescription:
-      locale === 'ar'
-        ? 'اختر الإجراء الذي تريد تنفيذه.'
-        : 'Choose the action you want to perform.',
-    addPerson: locale === 'ar' ? 'إضافة شخص' : 'Add Person',
-    takeAttendance: locale === 'ar' ? 'تسجيل الحضور' : 'Take Attendance',
+    accessTitle: isArabic ? 'الدخول إلى الحضور' : 'Attendance Access',
+    accessDescription: isArabic
+      ? 'أدخل رمز حضور اليوم للمتابعة.'
+      : "Enter today's attendance passcode to continue.",
+    passcodePlaceholder: isArabic ? 'رمز من 4 أرقام' : '4-digit code',
+    incorrectPasscode: isArabic
+      ? 'رمز غير صحيح. حاول مرة أخرى.'
+      : 'Incorrect passcode. Please try again.',
+    proceed: isArabic ? 'متابعة' : 'Proceed',
+
+    pageTitle: isArabic ? 'صفحة الحضور' : 'Attendance Page',
+    pageDescription: isArabic
+      ? 'اختر الإجراء الذي تريد تنفيذه.'
+      : 'Choose the action you want to perform.',
+    addModifyPerson: isArabic ? 'إضافة أو تعديل شخص' : 'Add / Modify Person',
+    takeAttendance: isArabic ? 'تسجيل الحضور' : 'Take Attendance',
+
+    peopleTitle: isArabic ? 'إضافة أو تعديل الأشخاص' : 'Add or Modify People',
+    peopleDescription: isArabic
+      ? 'أضف شخصاً جديداً أو ابحث عن شخص موجود لتعديل بياناته.'
+      : 'Add a new person or search for an existing person to modify their details.',
+    firstName: isArabic ? 'الاسم الأول' : 'First Name',
+    lastName: isArabic ? 'اسم العائلة' : 'Last Name',
+    phoneNumber: isArabic ? 'رقم الهاتف' : 'Phone Number',
+    email: isArabic ? 'البريد الإلكتروني' : 'Email',
+    daysOfAttendance: isArabic ? 'أيام الحضور' : 'Days of Attendance',
+    daysStoredOnly: isArabic
+      ? 'يتم حفظ هذا الحقل تلقائياً ولا يتم إدخاله عند إضافة الشخص.'
+      : 'This field is stored automatically and is not entered when adding a person.',
+    searchPlaceholder: isArabic
+      ? 'ابحث بالاسم أو الهاتف أو البريد الإلكتروني...'
+      : 'Search by name, phone, or email...',
+    newPerson: isArabic ? 'شخص جديد' : 'New Person',
+    savePerson: isArabic ? 'حفظ الشخص' : 'Save Person',
+    updatePerson: isArabic ? 'تحديث الشخص' : 'Update Person',
+    saving: isArabic ? 'جار الحفظ...' : 'Saving...',
+    reset: isArabic ? 'إعادة ضبط' : 'Reset',
+    backToMenu: isArabic ? 'العودة للقائمة' : 'Back to Menu',
+    existingPeople: isArabic ? 'الأشخاص المسجلون' : 'Existing People',
+    noPeople: isArabic ? 'لا يوجد أشخاص مسجلون بعد.' : 'No people saved yet.',
+    noSearchResults: isArabic ? 'لا توجد نتائج مطابقة.' : 'No matching results.',
+    loadingPeople: isArabic ? 'جار تحميل الأشخاص...' : 'Loading people...',
+    failedLoadPeople: isArabic ? 'فشل تحميل الأشخاص.' : 'Failed to load people.',
+    missingRequired: isArabic
+      ? 'الاسم الأول واسم العائلة مطلوبان.'
+      : 'First name and last name are required.',
+    savedSuccessfully: isArabic ? 'تم حفظ الشخص بنجاح.' : 'Person saved successfully.',
+    failedSavePerson: isArabic
+      ? 'فشل حفظ الشخص في قاعدة البيانات.'
+      : 'Failed to save person to the database.',
+    attendanceComingNext: isArabic
+      ? 'سيتم بناء تسجيل الحضور في الخطوة التالية.'
+      : 'Attendance-taking will be built in the next step.',
   };
+
+  const sortedPeople = useMemo(() => {
+    return [...people].sort((a, b) => {
+      const aName = `${a.firstName} ${a.lastName}`.trim().toLowerCase();
+      const bName = `${b.firstName} ${b.lastName}`.trim().toLowerCase();
+      return aName.localeCompare(bName);
+    });
+  }, [people]);
+
+  const filteredPeople = useMemo(() => {
+    const cleanedSearch = searchTerm.trim().toLowerCase();
+
+    if (!cleanedSearch) return sortedPeople;
+
+    return sortedPeople.filter(person => {
+      const searchableText = [
+        person.firstName,
+        person.lastName,
+        person.phoneNumber,
+        person.email,
+        person.daysOfAttendance,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return searchableText.includes(cleanedSearch);
+    });
+  }, [searchTerm, sortedPeople]);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+
+    setIsLoadingPeople(true);
+    setPeopleError('');
+
+    const peopleRef = ref(database, 'attendance/people/');
+
+    const unsubscribe = onValue(
+      peopleRef,
+      snapshot => {
+        const rawPeople = snapshot.val() as Record<string, any> | null;
+
+        const loadedPeople = Object.entries(rawPeople || {})
+          .map(([firebaseId, value]) => normalizePerson(firebaseId, value))
+          .filter(person => person.firstName || person.lastName || person.email || person.phoneNumber);
+
+        setPeople(loadedPeople);
+        setIsLoadingPeople(false);
+      },
+      error => {
+        console.error('Failed to load attendance people:', error);
+        setPeopleError(text.failedLoadPeople);
+        setIsLoadingPeople(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isUnlocked, text.failedLoadPeople]);
 
   const getTodayPasscode = () => {
     const today = new Date();
@@ -42,16 +193,76 @@ export default function AttendancePage() {
     return passcode.toString().padStart(4, '0');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handlePasscodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (passcodeInput.trim() === getTodayPasscode()) {
       setIsUnlocked(true);
-      setError('');
+      setPasscodeError('');
       return;
     }
 
-    setError(text.incorrectPasscode);
+    setPasscodeError(text.incorrectPasscode);
+  };
+
+  const resetPersonForm = () => {
+    setSelectedPersonId('');
+    setPersonForm(emptyPersonForm);
+  };
+
+  const handleSelectPerson = (person: AttendancePerson) => {
+    setSelectedPersonId(person.firebaseId);
+    setPersonForm({
+      firstName: person.firstName,
+      lastName: person.lastName,
+      phoneNumber: person.phoneNumber,
+      email: person.email,
+    });
+  };
+
+  const handleSavePerson = async () => {
+    const cleanedFirstName = personForm.firstName.trim();
+    const cleanedLastName = personForm.lastName.trim();
+    const cleanedPhoneNumber = personForm.phoneNumber.trim();
+    const cleanedEmail = personForm.email.trim();
+
+    if (!cleanedFirstName || !cleanedLastName) {
+      alert(text.missingRequired);
+      return;
+    }
+
+    setIsSavingPerson(true);
+
+    try {
+      const now = Date.now();
+      const existingPerson = selectedPersonId
+        ? people.find(person => person.firebaseId === selectedPersonId)
+        : null;
+
+      const payload = {
+        firstName: cleanedFirstName,
+        lastName: cleanedLastName,
+        phoneNumber: cleanedPhoneNumber,
+        email: cleanedEmail,
+        daysOfAttendance: existingPerson?.daysOfAttendance || '',
+        createdAt: existingPerson?.createdAt || now,
+        updatedAt: now,
+      };
+
+      if (selectedPersonId) {
+        await set(ref(database, `attendance/people/${selectedPersonId}`), payload);
+      } else {
+        await push(ref(database, 'attendance/people/'), payload);
+      }
+
+      alert(text.savedSuccessfully);
+      resetPersonForm();
+    } catch (err) {
+      console.error('Failed to save attendance person:', err);
+      alert(text.failedSavePerson);
+    } finally {
+      setIsSavingPerson(false);
+    }
   };
 
   if (!isUnlocked) {
@@ -118,7 +329,7 @@ export default function AttendancePage() {
             {text.accessDescription}
           </p>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handlePasscodeSubmit}>
             <input
               type="text"
               inputMode="numeric"
@@ -126,7 +337,7 @@ export default function AttendancePage() {
               value={passcodeInput}
               onChange={e => {
                 setPasscodeInput(e.target.value.replace(/\D/g, ''));
-                setError('');
+                setPasscodeError('');
               }}
               placeholder={text.passcodePlaceholder}
               style={{
@@ -145,7 +356,7 @@ export default function AttendancePage() {
               }}
             />
 
-            {error && (
+            {passcodeError && (
               <p
                 style={{
                   margin: '0 0 16px',
@@ -154,7 +365,7 @@ export default function AttendancePage() {
                   fontWeight: 700,
                 }}
               >
-                {error}
+                {passcodeError}
               </p>
             )}
 
@@ -189,99 +400,527 @@ export default function AttendancePage() {
         padding: '40px',
         fontFamily: 'Arial, sans-serif',
         background: '#f5f4f0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
       }}
     >
       <div
         style={{
           width: '100%',
-          maxWidth: '720px',
-          background: 'white',
-          borderRadius: '28px',
-          padding: '40px',
-          boxShadow: '0 12px 35px rgba(139, 30, 30, 0.14)',
-          border: '1px solid rgba(139, 30, 30, 0.12)',
-          textAlign: 'center',
+          maxWidth: '980px',
+          margin: '0 auto',
         }}
       >
-        <h1
-          style={{
-            margin: '0 0 12px',
-            color: '#8b1e1e',
-            fontSize: '32px',
-            fontWeight: 800,
-          }}
-        >
-          {text.pageTitle}
-        </h1>
-
-        <p
-          style={{
-            margin: '0 0 32px',
-            color: '#666',
-            fontSize: '17px',
-            lineHeight: 1.6,
-          }}
-        >
-          {text.pageDescription}
-        </p>
-
         <div
           style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-            maxWidth: '420px',
-            margin: '0 auto',
+            background: 'white',
+            borderRadius: '28px',
+            padding: '40px',
+            boxShadow: '0 12px 35px rgba(139, 30, 30, 0.14)',
+            border: '1px solid rgba(139, 30, 30, 0.12)',
+            textAlign: 'center',
           }}
         >
-          <button
-            type="button"
+          <h1
             style={{
-              width: '100%',
-              minHeight: '58px',
-              border: '2px solid #8b1e1e',
-              borderRadius: '999px',
-              background: '#8b1e1e',
-              color: 'white',
-              fontSize: '18px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
-              boxShadow: '0 8px 24px rgba(139, 30, 30, 0.22)',
-            }}
-          >
-            <UserPlus size={20} />
-            {text.addPerson}
-          </button>
-
-          <button
-            type="button"
-            style={{
-              width: '100%',
-              minHeight: '58px',
-              border: '2px solid #8b1e1e',
-              borderRadius: '999px',
-              background: 'white',
+              margin: '0 0 12px',
               color: '#8b1e1e',
-              fontSize: '18px',
+              fontSize: '32px',
               fontWeight: 800,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
             }}
           >
-            <ClipboardList size={20} />
-            {text.takeAttendance}
-          </button>
+            {text.pageTitle}
+          </h1>
+
+          <p
+            style={{
+              margin: '0 0 32px',
+              color: '#666',
+              fontSize: '17px',
+              lineHeight: 1.6,
+            }}
+          >
+            {text.pageDescription}
+          </p>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              maxWidth: '520px',
+              margin: '0 auto',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActivePanel('people')}
+              style={{
+                width: '100%',
+                minHeight: '58px',
+                border: '2px solid #8b1e1e',
+                borderRadius: '999px',
+                background: activePanel === 'people' ? '#8b1e1e' : 'white',
+                color: activePanel === 'people' ? 'white' : '#8b1e1e',
+                fontSize: '18px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: activePanel === 'people' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
+              }}
+            >
+              <UserPlus size={20} />
+              {text.addModifyPerson}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActivePanel('attendance')}
+              style={{
+                width: '100%',
+                minHeight: '58px',
+                border: '2px solid #8b1e1e',
+                borderRadius: '999px',
+                background: activePanel === 'attendance' ? '#8b1e1e' : 'white',
+                color: activePanel === 'attendance' ? 'white' : '#8b1e1e',
+                fontSize: '18px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: activePanel === 'attendance' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
+              }}
+            >
+              <ClipboardList size={20} />
+              {text.takeAttendance}
+            </button>
+          </div>
         </div>
+
+        {activePanel === 'people' && (
+          <section
+            style={{
+              marginTop: '28px',
+              background: 'white',
+              borderRadius: '28px',
+              padding: '32px',
+              boxShadow: '0 12px 35px rgba(139, 30, 30, 0.10)',
+              border: '1px solid rgba(139, 30, 30, 0.10)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '16px',
+                marginBottom: '28px',
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: '0 0 8px',
+                    color: '#8b1e1e',
+                    fontSize: '26px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {text.peopleTitle}
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    color: '#666',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {text.peopleDescription}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActivePanel('menu')}
+                style={{
+                  border: 'none',
+                  borderRadius: '999px',
+                  background: '#f5f4f0',
+                  color: '#641414',
+                  padding: '12px 18px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {text.backToMenu}
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '16px',
+              }}
+            >
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
+                  {text.firstName}
+                </label>
+                <input
+                  type="text"
+                  value={personForm.firstName}
+                  onChange={e => setPersonForm(prev => ({ ...prev, firstName: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '14px 16px',
+                    borderRadius: '16px',
+                    border: '1px solid #e5e0da',
+                    outline: 'none',
+                    fontSize: '16px',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
+                  {text.lastName}
+                </label>
+                <input
+                  type="text"
+                  value={personForm.lastName}
+                  onChange={e => setPersonForm(prev => ({ ...prev, lastName: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '14px 16px',
+                    borderRadius: '16px',
+                    border: '1px solid #e5e0da',
+                    outline: 'none',
+                    fontSize: '16px',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
+                  {text.phoneNumber}
+                </label>
+                <input
+                  type="tel"
+                  value={personForm.phoneNumber}
+                  onChange={e => setPersonForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '14px 16px',
+                    borderRadius: '16px',
+                    border: '1px solid #e5e0da',
+                    outline: 'none',
+                    fontSize: '16px',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
+                  {text.email}
+                </label>
+                <input
+                  type="email"
+                  value={personForm.email}
+                  onChange={e => setPersonForm(prev => ({ ...prev, email: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '14px 16px',
+                    borderRadius: '16px',
+                    border: '1px solid #e5e0da',
+                    outline: 'none',
+                    fontSize: '16px',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '14px 16px',
+                borderRadius: '16px',
+                background: '#f8eeee',
+                color: '#641414',
+                fontWeight: 700,
+                fontSize: '14px',
+              }}
+            >
+              {text.daysOfAttendance}: {text.daysStoredOnly}
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                marginTop: '22px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleSavePerson}
+                disabled={isSavingPerson}
+                style={{
+                  width: '100%',
+                  minHeight: '54px',
+                  border: 'none',
+                  borderRadius: '999px',
+                  background: '#8b1e1e',
+                  color: 'white',
+                  fontSize: '17px',
+                  fontWeight: 800,
+                  cursor: isSavingPerson ? 'not-allowed' : 'pointer',
+                  opacity: isSavingPerson ? 0.65 : 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  boxShadow: '0 8px 24px rgba(139, 30, 30, 0.22)',
+                }}
+              >
+                {isSavingPerson ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                {isSavingPerson
+                  ? text.saving
+                  : selectedPersonId
+                    ? text.updatePerson
+                    : text.savePerson}
+              </button>
+
+              <button
+                type="button"
+                onClick={resetPersonForm}
+                style={{
+                  width: '100%',
+                  minHeight: '50px',
+                  border: '2px solid #8b1e1e',
+                  borderRadius: '999px',
+                  background: 'white',
+                  color: '#8b1e1e',
+                  fontSize: '16px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                {selectedPersonId ? text.newPerson : text.reset}
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginTop: '34px',
+                borderTop: '1px solid #eee',
+                paddingTop: '28px',
+              }}
+            >
+              <h3
+                style={{
+                  margin: '0 0 16px',
+                  color: '#8b1e1e',
+                  fontSize: '22px',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <Users size={22} />
+                {text.existingPeople}
+              </h3>
+
+              <div
+                style={{
+                  position: 'relative',
+                  marginBottom: '18px',
+                }}
+              >
+                <Search
+                  size={18}
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    left: dir === 'rtl' ? 'auto' : '16px',
+                    right: dir === 'rtl' ? '16px' : 'auto',
+                    color: '#8b1e1e',
+                  }}
+                />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder={text.searchPlaceholder}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: dir === 'rtl' ? '14px 46px 14px 16px' : '14px 16px 14px 46px',
+                    borderRadius: '999px',
+                    border: '1px solid #e5e0da',
+                    outline: 'none',
+                    fontSize: '15px',
+                  }}
+                />
+              </div>
+
+              {isLoadingPeople && (
+                <div
+                  style={{
+                    padding: '18px',
+                    borderRadius: '18px',
+                    background: '#f5f4f0',
+                    color: '#666',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <Loader2 size={18} className="animate-spin" />
+                  {text.loadingPeople}
+                </div>
+              )}
+
+              {peopleError && (
+                <div
+                  style={{
+                    padding: '18px',
+                    borderRadius: '18px',
+                    background: '#fee2e2',
+                    color: '#991b1b',
+                    fontWeight: 800,
+                  }}
+                >
+                  {peopleError}
+                </div>
+              )}
+
+              {!isLoadingPeople && !peopleError && people.length === 0 && (
+                <div
+                  style={{
+                    padding: '20px',
+                    borderRadius: '18px',
+                    background: '#f5f4f0',
+                    color: '#666',
+                    textAlign: 'center',
+                  }}
+                >
+                  {text.noPeople}
+                </div>
+              )}
+
+              {!isLoadingPeople && !peopleError && people.length > 0 && filteredPeople.length === 0 && (
+                <div
+                  style={{
+                    padding: '20px',
+                    borderRadius: '18px',
+                    background: '#f5f4f0',
+                    color: '#666',
+                    textAlign: 'center',
+                  }}
+                >
+                  {text.noSearchResults}
+                </div>
+              )}
+
+              {!isLoadingPeople && !peopleError && filteredPeople.length > 0 && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: '12px',
+                  }}
+                >
+                  {filteredPeople.map(person => (
+                    <button
+                      key={person.firebaseId}
+                      type="button"
+                      onClick={() => handleSelectPerson(person)}
+                      style={{
+                        width: '100%',
+                        textAlign: dir === 'rtl' ? 'right' : 'left',
+                        border: selectedPersonId === person.firebaseId ? '2px solid #8b1e1e' : '1px solid #eee',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        background: selectedPersonId === person.firebaseId ? '#f8eeee' : 'white',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: '#641414',
+                          fontSize: '17px',
+                          fontWeight: 800,
+                          marginBottom: '6px',
+                        }}
+                      >
+                        {person.firstName} {person.lastName}
+                      </div>
+                      <div
+                        style={{
+                          color: '#777',
+                          fontSize: '14px',
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {person.phoneNumber || '—'} · {person.email || '—'}
+                      </div>
+                      <div
+                        style={{
+                          color: '#8b1e1e',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          marginTop: '6px',
+                        }}
+                      >
+                        {text.daysOfAttendance}: {person.daysOfAttendance || '—'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {activePanel === 'attendance' && (
+          <section
+            style={{
+              marginTop: '28px',
+              background: 'white',
+              borderRadius: '28px',
+              padding: '32px',
+              boxShadow: '0 12px 35px rgba(139, 30, 30, 0.10)',
+              border: '1px solid rgba(139, 30, 30, 0.10)',
+              textAlign: 'center',
+            }}
+          >
+            <ClipboardList size={42} color="#8b1e1e" />
+            <h2
+              style={{
+                margin: '18px 0 10px',
+                color: '#8b1e1e',
+                fontSize: '26px',
+                fontWeight: 800,
+              }}
+            >
+              {text.takeAttendance}
+            </h2>
+            <p style={{ color: '#666', lineHeight: 1.6 }}>
+              {text.attendanceComingNext}
+            </p>
+          </section>
+        )}
       </div>
     </div>
   );
