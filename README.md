@@ -1,3 +1,4 @@
+```markdown
 # LINC Pastor Dashboard
 
 A bilingual (English/Arabic) church administration dashboard for LINC Ministries' Leadership Development Program (2026–2028). Built as a frontend-only React application with Firebase backend services and Google API integrations.
@@ -72,6 +73,7 @@ A bilingual (English/Arabic) church administration dashboard for LINC Ministries
 ## Project Structure
 
 ```
+
 kiroform/
 ├── src/
 │   ├── components/          # Reusable UI components
@@ -85,8 +87,11 @@ kiroform/
 │   │   └── translations.ts  # EN/AR translation map
 │   ├── pages/               # Route-level components
 │   │   ├── AdminDashboard.tsx
+│   │   ├── BookingCalendar.tsx
 │   │   ├── GuidePage.tsx    # Pastor user guide
 │   │   ├── LandingPage.tsx
+│   │   ├── NextGenActivities.tsx
+│   │   ├── PeopleNotesPage.tsx
 │   │   ├── PrivacyPolicy.tsx
 │   │   └── TermsOfService.tsx
 │   ├── services/            # External API integrations
@@ -98,7 +103,8 @@ kiroform/
 ├── .env                     # Environment variables (git-ignored)
 ├── .env.example             # Template for required env vars
 └── vite.config.ts
-```
+
+````
 
 ## Getting Started
 
@@ -115,30 +121,32 @@ kiroform/
    ```bash
    cd kiroform
    npm install
-   ```
+````
 
 2. **Configure environment variables:**
+
    ```bash
    cp .env.example .env
    ```
 
    Fill in the following in `.env`:
 
-   | Variable | Description |
-   |---|---|
-   | `VITE_FIREBASE_API_KEY` | Firebase project API key |
-   | `VITE_FIREBASE_AUTH_DOMAIN` | Firebase auth domain |
-   | `VITE_FIREBASE_PROJECT_ID` | Firebase project ID |
-   | `VITE_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket |
-   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID |
-   | `VITE_FIREBASE_APP_ID` | Firebase app ID |
-   | `VITE_FIREBASE_MEASUREMENT_ID` | Firebase measurement ID |
-   | `VITE_GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID |
-   | `VITE_GOOGLE_REDIRECT_URI` | OAuth redirect (e.g. `http://localhost:3000`) |
+   | Variable                            | Description                                   |
+   | ----------------------------------- | --------------------------------------------- |
+   | `VITE_FIREBASE_API_KEY`             | Firebase project API key                      |
+   | `VITE_FIREBASE_AUTH_DOMAIN`         | Firebase auth domain                          |
+   | `VITE_FIREBASE_PROJECT_ID`          | Firebase project ID                           |
+   | `VITE_FIREBASE_STORAGE_BUCKET`      | Firebase storage bucket                       |
+   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID                  |
+   | `VITE_FIREBASE_APP_ID`              | Firebase app ID                               |
+   | `VITE_FIREBASE_MEASUREMENT_ID`      | Firebase measurement ID                       |
+   | `VITE_GOOGLE_CLIENT_ID`             | Google OAuth 2.0 Client ID                    |
+   | `VITE_GOOGLE_REDIRECT_URI`          | OAuth redirect (e.g. `http://localhost:3000`) |
 
 3. **Firebase Rules:**
 
    Ensure your Firebase Realtime Database rules allow read/write:
+
    ```json
    {
      "rules": {
@@ -165,13 +173,15 @@ kiroform/
 4. **Google OAuth Configuration:**
 
    In your Google Cloud Console:
-   - Enable **Google Calendar API** and **Gmail API**
-   - Create OAuth 2.0 Client ID (Web application type)
-   - Add `http://localhost:3000` to **Authorized JavaScript origins**
-   - Add `http://localhost:3000` and `http://127.0.0.1:3000` to **Authorized redirect URIs**
-   - Scopes required: `https://www.googleapis.com/auth/calendar.events`, `https://www.googleapis.com/auth/gmail.send`
+
+   * Enable **Google Calendar API** and **Gmail API**
+   * Create OAuth 2.0 Client ID (Web application type)
+   * Add `http://localhost:3000` to **Authorized JavaScript origins**
+   * Add `http://localhost:3000` and `http://127.0.0.1:3000` to **Authorized redirect URIs**
+   * Scopes required: `https://www.googleapis.com/auth/calendar.events`, `https://www.googleapis.com/auth/gmail.send`
 
 5. **Start the dev server:**
+
    ```bash
    npm run dev
    ```
@@ -189,20 +199,21 @@ Output will be in `dist/`. Deploy to any static hosting (Firebase Hosting, Verce
 ## Admin Access
 
 Access to `/dashboard`, `/calendar`, and `/guide` is restricted to these email addresses by default:
-- `georgejoseph5000@gmail.com`
-- `georgtawadrous@gmail.com`
-- `test@example.com`
+
+* `georgejoseph5000@gmail.com`
+* `georgtawadrous@gmail.com`
+* `test@example.com`
 
 Edit the `admins` array in `src/App.tsx` to add or remove admin users.
 
 ## Scripts
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Start Vite dev server (port 3000) |
-| `npm run build` | TypeScript check + production build |
-| `npm run preview` | Preview production build locally |
-| `npm run lint` | Run ESLint |
+| Command           | Description                         |
+| ----------------- | ----------------------------------- |
+| `npm run dev`     | Start Vite dev server (port 3000)   |
+| `npm run build`   | TypeScript check + production build |
+| `npm run preview` | Preview production build locally    |
+| `npm run lint`    | Run ESLint                          |
 
 ## License
 
@@ -211,3 +222,6 @@ Private — LINC Ministries
 ## Created by
 
 T-TLabs
+
+```
+```
