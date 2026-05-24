@@ -108,6 +108,13 @@ export default function LandingPage() {
                 <Sparkles size={18} />
                 NextGen Activities
               </button>
+              <button
+                onClick={() => navigate('/attendance')}
+                className="inline-flex items-center justify-center gap-3 min-h-[52px] px-8 bg-white text-[#8b1e1e] border-2 border-[#8b1e1e] rounded-full font-bold transition-transform hover:-translate-y-[2px] hover:bg-[#f8eeee]"
+              >
+                <ClipboardList size={18} />
+                Attendance
+              </button>
             </div>
           </motion.div>
         </div>
