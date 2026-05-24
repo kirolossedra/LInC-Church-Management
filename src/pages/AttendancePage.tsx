@@ -14,6 +14,7 @@ import {
   Search,
   TrendingUp,
   UserPlus,
+  X,
   Users,
 } from 'lucide-react';
 import { onValue, push, ref, set } from 'firebase/database';
@@ -298,24 +299,25 @@ export default function AttendancePage() {
     noAttendanceData: isArabic
       ? 'لا توجد بيانات حضور منذ بداية التحليل.'
       : 'No attendance data since the analysis start date.',
-    viewFullStats: isArabic ? 'عرض التحليل الكامل' : 'View Full Stats',
-    personalAnalysisTitle: isArabic ? 'تحليل شخصي مفصل' : 'Personal Detailed Analysis',
-    personalAnalysisDescription: isArabic
-      ? 'اختر شخصاً من نتائج البحث لعرض تفاصيل حضوره منذ أول أحد في مايو.'
-      : 'Select a person from the search results to view full attendance details since the first Sunday in May.',
-    selectedPerson: isArabic ? 'الشخص المختار' : 'Selected Person',
-    attendedSundays: isArabic ? 'أيام الأحد التي حضرها' : 'Attended Sundays',
-    missedSundays: isArabic ? 'أيام الأحد التي لم يحضرها' : 'Missed Sundays',
-    fullAttendanceTimeline: isArabic ? 'الخط الزمني الكامل للحضور' : 'Full Attendance Timeline',
-    personalAttendancePlot: isArabic ? 'رسم حضور الشخص' : 'Personal Attendance Plot',
-    attendedStatus: isArabic ? 'حضر' : 'Attended',
-    missedStatus: isArabic ? 'لم يحضر' : 'Missed',
-    noPersonalSelection: isArabic
-      ? 'ابحث عن شخص واضغط عرض التحليل الكامل.'
-      : 'Search for a person and click View Full Stats.',
     noAnalysisResults: isArabic
       ? 'لا توجد نتائج تحليل مطابقة للبحث.'
       : 'No matching analysis results.',
+    viewFullStats: isArabic ? 'عرض التحليل الكامل' : 'View Full Stats',
+    close: isArabic ? 'إغلاق' : 'Close',
+    personalAnalysis: isArabic ? 'تحليل شخصي كامل' : 'Full Personal Analysis',
+    attendedSundays: isArabic ? 'أيام الأحد التي حضرها' : 'Attended Sundays',
+    missedSundays: isArabic ? 'أيام الأحد التي لم يحضرها' : 'Missed Sundays',
+    missedCount: isArabic ? 'عدد مرات الغياب' : 'Missed Count',
+    attendanceTimeline: isArabic ? 'الخط الزمني للحضور' : 'Attendance Timeline',
+    cumulativeAttendanceLine: isArabic ? 'خط الحضور التراكمي' : 'Cumulative Attendance Line',
+    weeklyAttendanceLine: isArabic ? 'خط الحضور الأسبوعي العام' : 'Overall Weekly Attendance Line',
+    attendanceHistogram: isArabic ? 'هيستوجرام عدد مرات الحضور' : 'Attendance Count Histogram',
+    attendanceRateHistogram: isArabic ? 'هيستوجرام نسب الحضور' : 'Attendance Rate Histogram',
+    distributionAnalytics: isArabic ? 'تحليل التوزيعات' : 'Distribution Analytics',
+    present: isArabic ? 'حاضر' : 'Present',
+    absent: isArabic ? 'غائب' : 'Absent',
+    attendedLabel: isArabic ? 'حضور' : 'Attended',
+    missedLabel: isArabic ? 'غياب' : 'Missed',
   };
 
   const weekDayLabels = isArabic
@@ -430,23 +432,75 @@ export default function AttendancePage() {
     });
   }, [analysisSearchTerm, personAttendanceAnalysis]);
 
-  const selectedPersonalAnalysis = useMemo(() => {
+
+  const selectedPersonAttendanceAnalysis = useMemo(() => {
     if (!selectedAnalysisPersonId) return null;
 
     return personAttendanceAnalysis.find(item => item.person.firebaseId === selectedAnalysisPersonId) || null;
   }, [personAttendanceAnalysis, selectedAnalysisPersonId]);
 
-  const selectedPersonalMissedDates = useMemo(() => {
-    if (!selectedPersonalAnalysis) return [];
+  const selectedPersonMissedDates = useMemo(() => {
+    if (!selectedPersonAttendanceAnalysis) return [];
 
-    const attendedDateSet = new Set(selectedPersonalAnalysis.attendedDates);
-
+    const attendedDateSet = new Set(selectedPersonAttendanceAnalysis.attendedDates);
     return sundayDateKeysSinceStart.filter(dateKey => !attendedDateSet.has(dateKey));
-  }, [selectedPersonalAnalysis, sundayDateKeysSinceStart]);
+  }, [selectedPersonAttendanceAnalysis, sundayDateKeysSinceStart]);
 
-  const selectedPersonalDisplayName = selectedPersonalAnalysis
-    ? `${selectedPersonalAnalysis.person.firstName} ${selectedPersonalAnalysis.person.lastName}`.trim() || '—'
-    : '';
+  const selectedPersonTimeline = useMemo(() => {
+    if (!selectedPersonAttendanceAnalysis) return [];
+
+    const attendedDateSet = new Set(selectedPersonAttendanceAnalysis.attendedDates);
+    let cumulativeAttendance = 0;
+
+    return sundayDateKeysSinceStart.map((dateKey, index) => {
+      const attended = attendedDateSet.has(dateKey);
+      if (attended) cumulativeAttendance += 1;
+
+      return {
+        dateKey,
+        index: index + 1,
+        attended,
+        cumulativeAttendance,
+      };
+    });
+  }, [selectedPersonAttendanceAnalysis, sundayDateKeysSinceStart]);
+
+  const attendanceCountHistogram = useMemo(() => {
+    const histogram = new Map<number, number>();
+
+    personAttendanceAnalysis.forEach(item => {
+      histogram.set(item.attendanceCount, (histogram.get(item.attendanceCount) || 0) + 1);
+    });
+
+    return Array.from(histogram.entries())
+      .map(([attendanceCount, peopleCount]) => ({ attendanceCount, peopleCount }))
+      .sort((a, b) => a.attendanceCount - b.attendanceCount);
+  }, [personAttendanceAnalysis]);
+
+  const attendanceRateHistogram = useMemo(() => {
+    const buckets = [
+      { label: '0–20%', min: 0, max: 20, peopleCount: 0 },
+      { label: '21–40%', min: 21, max: 40, peopleCount: 0 },
+      { label: '41–60%', min: 41, max: 60, peopleCount: 0 },
+      { label: '61–80%', min: 61, max: 80, peopleCount: 0 },
+      { label: '81–100%', min: 81, max: 100, peopleCount: 0 },
+    ];
+
+    personAttendanceAnalysis.forEach(item => {
+      const bucket = buckets.find(currentBucket => item.attendanceRate >= currentBucket.min && item.attendanceRate <= currentBucket.max);
+      if (bucket) bucket.peopleCount += 1;
+    });
+
+    return buckets;
+  }, [personAttendanceAnalysis]);
+
+  const maxAttendanceCountHistogramPeople = useMemo(() => {
+    return Math.max(1, ...attendanceCountHistogram.map(item => item.peopleCount));
+  }, [attendanceCountHistogram]);
+
+  const maxAttendanceRateHistogramPeople = useMemo(() => {
+    return Math.max(1, ...attendanceRateHistogram.map(item => item.peopleCount));
+  }, [attendanceRateHistogram]);
 
   const weeklyAttendanceSummary = useMemo<WeeklyAttendanceSummary[]>(() => {
     return sundayDateKeysSinceStart.map(dateKey => ({
@@ -2108,9 +2162,12 @@ export default function AttendancePage() {
                 }}
               >
                 {filteredPersonAttendanceAnalysis.map(item => (
-                  <div
+                  <button
                     key={item.person.firebaseId}
+                    type="button"
+                    onClick={() => setSelectedAnalysisPersonId(item.person.firebaseId)}
                     style={{
+                      width: '100%',
                       border: '1px solid #eee',
                       borderRadius: '18px',
                       padding: '16px',
@@ -2119,6 +2176,8 @@ export default function AttendancePage() {
                       gridTemplateColumns: '1fr auto',
                       gap: '16px',
                       alignItems: 'center',
+                      cursor: 'pointer',
+                      textAlign: 'inherit',
                     }}
                   >
                     <div style={{ textAlign: dir === 'rtl' ? 'right' : 'left' }}>
@@ -2208,291 +2267,21 @@ export default function AttendancePage() {
                       >
                         {text.attendanceRate}: {item.attendanceRate}%
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setSelectedAnalysisPersonId(item.person.firebaseId)}
+                      <div
                         style={{
-                          marginTop: '12px',
-                          width: '100%',
-                          minHeight: '38px',
-                          border: selectedAnalysisPersonId === item.person.firebaseId ? '2px solid #641414' : '2px solid #8b1e1e',
-                          borderRadius: '999px',
-                          background: selectedAnalysisPersonId === item.person.firebaseId ? '#641414' : '#8b1e1e',
-                          color: 'white',
+                          marginTop: '8px',
+                          color: '#8b1e1e',
                           fontSize: '12px',
                           fontWeight: 900,
-                          cursor: 'pointer',
                         }}
                       >
                         {text.viewFullStats}
-                      </button>
+                      </div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
-
-            <div
-              style={{
-                border: '1px solid rgba(139, 30, 30, 0.10)',
-                borderRadius: '24px',
-                padding: '22px',
-                background: '#fffaf7',
-                marginBottom: '30px',
-              }}
-            >
-              <h3
-                style={{
-                  margin: '0 0 8px',
-                  color: '#8b1e1e',
-                  fontSize: '21px',
-                  fontWeight: 900,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-              >
-                <Users size={22} />
-                {text.personalAnalysisTitle}
-              </h3>
-
-              <p
-                style={{
-                  margin: '0 0 18px',
-                  color: '#666',
-                  lineHeight: 1.6,
-                }}
-              >
-                {text.personalAnalysisDescription}
-              </p>
-
-              {!selectedPersonalAnalysis && (
-                <div
-                  style={{
-                    padding: '20px',
-                    borderRadius: '18px',
-                    background: '#f5f4f0',
-                    color: '#666',
-                    textAlign: 'center',
-                    fontWeight: 800,
-                  }}
-                >
-                  {text.noPersonalSelection}
-                </div>
-              )}
-
-              {selectedPersonalAnalysis && (
-                <div style={{ display: 'grid', gap: '20px' }}>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-                      gap: '14px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '18px',
-                        padding: '16px',
-                        border: '1px solid #eee',
-                      }}
-                    >
-                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
-                        {text.selectedPerson}
-                      </div>
-                      <div style={{ color: '#641414', fontSize: '18px', fontWeight: 900 }}>
-                        {selectedPersonalDisplayName}
-                      </div>
-                      {(selectedPersonalAnalysis.person.arabicFirstName || selectedPersonalAnalysis.person.arabicLastName) && (
-                        <div
-                          dir="rtl"
-                          style={{
-                            color: '#8b1e1e',
-                            fontSize: '16px',
-                            fontWeight: 900,
-                            marginTop: '6px',
-                            textAlign: 'right',
-                          }}
-                        >
-                          {selectedPersonalAnalysis.person.arabicFirstName} {selectedPersonalAnalysis.person.arabicLastName}
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '18px',
-                        padding: '16px',
-                        border: '1px solid #eee',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
-                        {text.attendanceCount}
-                      </div>
-                      <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
-                        {selectedPersonalAnalysis.attendanceCount}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '18px',
-                        padding: '16px',
-                        border: '1px solid #eee',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
-                        {text.attendanceRate}
-                      </div>
-                      <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
-                        {selectedPersonalAnalysis.attendanceRate}%
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '18px',
-                        padding: '16px',
-                        border: '1px solid #eee',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <div style={{ color: '#777', fontSize: '12px', fontWeight: 900, marginBottom: '8px' }}>
-                        {text.missedSundays}
-                      </div>
-                      <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
-                        {selectedPersonalMissedDates.length}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4
-                      style={{
-                        margin: '0 0 12px',
-                        color: '#641414',
-                        fontSize: '17px',
-                        fontWeight: 900,
-                      }}
-                    >
-                      {text.personalAttendancePlot}
-                    </h4>
-
-                    <div
-                      style={{
-                        height: '22px',
-                        borderRadius: '999px',
-                        background: '#f5f4f0',
-                        overflow: 'hidden',
-                        border: '1px solid #eee',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${selectedPersonalAnalysis.attendanceRate}%`,
-                          height: '100%',
-                          borderRadius: '999px',
-                          background: '#8b1e1e',
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                      gap: '16px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '18px',
-                        padding: '16px',
-                        border: '1px solid #eee',
-                      }}
-                    >
-                      <h4 style={{ margin: '0 0 12px', color: '#15803d', fontSize: '16px', fontWeight: 900 }}>
-                        {text.attendedSundays}
-                      </h4>
-                      <div style={{ color: '#555', fontSize: '14px', lineHeight: 1.8 }}>
-                        {selectedPersonalAnalysis.attendedDates.join(', ') || '—'}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '18px',
-                        padding: '16px',
-                        border: '1px solid #eee',
-                      }}
-                    >
-                      <h4 style={{ margin: '0 0 12px', color: '#991b1b', fontSize: '16px', fontWeight: 900 }}>
-                        {text.missedSundays}
-                      </h4>
-                      <div style={{ color: '#555', fontSize: '14px', lineHeight: 1.8 }}>
-                        {selectedPersonalMissedDates.join(', ') || '—'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4
-                      style={{
-                        margin: '0 0 12px',
-                        color: '#641414',
-                        fontSize: '17px',
-                        fontWeight: 900,
-                      }}
-                    >
-                      {text.fullAttendanceTimeline}
-                    </h4>
-
-                    <div style={{ display: 'grid', gap: '10px' }}>
-                      {sundayDateKeysSinceStart.map(dateKey => {
-                        const didAttend = selectedPersonalAnalysis.attendedDates.includes(dateKey);
-
-                        return (
-                          <div
-                            key={dateKey}
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: '1fr auto',
-                              gap: '12px',
-                              alignItems: 'center',
-                              padding: '12px 14px',
-                              borderRadius: '14px',
-                              background: didAttend ? '#f0fdf4' : '#fef2f2',
-                              border: didAttend ? '1px solid #bbf7d0' : '1px solid #fecaca',
-                            }}
-                          >
-                            <span style={{ color: '#641414', fontWeight: 900 }}>{dateKey}</span>
-                            <span
-                              style={{
-                                color: didAttend ? '#15803d' : '#991b1b',
-                                fontWeight: 900,
-                                fontSize: '13px',
-                              }}
-                            >
-                              {didAttend ? text.attendedStatus : text.missedStatus}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
 
             <div
               style={{
@@ -2669,9 +2458,419 @@ export default function AttendancePage() {
                     })}
                   </div>
                 )}
+
+
+              <div
+                style={{
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                  borderRadius: '24px',
+                  padding: '22px',
+                  background: '#fffaf7',
+                }}
+              >
+                <h3
+                  style={{
+                    margin: '0 0 18px',
+                    color: '#8b1e1e',
+                    fontSize: '21px',
+                    fontWeight: 900,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <TrendingUp size={22} />
+                  {text.weeklyAttendanceLine}
+                </h3>
+
+                {weeklyAttendanceSummary.every(item => item.attendedCount === 0) && (
+                  <div
+                    style={{
+                      padding: '20px',
+                      borderRadius: '18px',
+                      background: '#f5f4f0',
+                      color: '#666',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {text.noAttendanceData}
+                  </div>
+                )}
+
+                {!weeklyAttendanceSummary.every(item => item.attendedCount === 0) && (
+                  <svg viewBox="0 0 420 220" role="img" style={{ width: '100%', minHeight: '220px' }}>
+                    <line x1="38" y1="20" x2="38" y2="184" stroke="#ddd" strokeWidth="2" />
+                    <line x1="38" y1="184" x2="398" y2="184" stroke="#ddd" strokeWidth="2" />
+                    <polyline
+                      fill="none"
+                      stroke="#8b1e1e"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      points={weeklyAttendanceSummary.map((item, index) => {
+                        const x = weeklyAttendanceSummary.length === 1
+                          ? 218
+                          : 38 + (index / (weeklyAttendanceSummary.length - 1)) * 360;
+                        const y = 184 - (item.attendedCount / maxWeeklyAttendanceCount) * 150;
+                        return `${x},${y}`;
+                      }).join(' ')}
+                    />
+                    {weeklyAttendanceSummary.map((item, index) => {
+                      const x = weeklyAttendanceSummary.length === 1
+                        ? 218
+                        : 38 + (index / (weeklyAttendanceSummary.length - 1)) * 360;
+                      const y = 184 - (item.attendedCount / maxWeeklyAttendanceCount) * 150;
+
+                      return (
+                        <g key={item.dateKey}>
+                          <circle cx={x} cy={y} r="5" fill="#8b1e1e" />
+                          <text x={x} y={y - 10} textAnchor="middle" fontSize="11" fill="#641414" fontWeight="700">
+                            {item.attendedCount}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
+              </div>
+
+              <div
+                style={{
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                  borderRadius: '24px',
+                  padding: '22px',
+                  background: '#fffaf7',
+                }}
+              >
+                <h3
+                  style={{
+                    margin: '0 0 18px',
+                    color: '#8b1e1e',
+                    fontSize: '21px',
+                    fontWeight: 900,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <BarChart3 size={22} />
+                  {text.attendanceHistogram}
+                </h3>
+
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {attendanceCountHistogram.map(item => (
+                    <div key={item.attendanceCount}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          color: '#641414',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          marginBottom: '6px',
+                        }}
+                      >
+                        <span>{item.attendanceCount} {text.attendedLabel}</span>
+                        <span>{item.peopleCount}</span>
+                      </div>
+                      <div style={{ height: '18px', borderRadius: '999px', background: '#f5f4f0', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            width: `${Math.max(4, (item.peopleCount / maxAttendanceCountHistogramPeople) * 100)}%`,
+                            height: '100%',
+                            borderRadius: '999px',
+                            background: '#8b1e1e',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                  borderRadius: '24px',
+                  padding: '22px',
+                  background: '#fffaf7',
+                }}
+              >
+                <h3
+                  style={{
+                    margin: '0 0 18px',
+                    color: '#8b1e1e',
+                    fontSize: '21px',
+                    fontWeight: 900,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <BarChart3 size={22} />
+                  {text.attendanceRateHistogram}
+                </h3>
+
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {attendanceRateHistogram.map(item => (
+                    <div key={item.label}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          color: '#641414',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          marginBottom: '6px',
+                        }}
+                      >
+                        <span>{item.label}</span>
+                        <span>{item.peopleCount}</span>
+                      </div>
+                      <div style={{ height: '18px', borderRadius: '999px', background: '#f5f4f0', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            width: `${Math.max(4, (item.peopleCount / maxAttendanceRateHistogramPeople) * 100)}%`,
+                            height: '100%',
+                            borderRadius: '999px',
+                            background: '#8b1e1e',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
               </div>
             </div>
           </section>
+        )}
+
+
+        {selectedPersonAttendanceAnalysis && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.55)',
+              zIndex: 1000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px',
+            }}
+            onClick={() => setSelectedAnalysisPersonId('')}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '1040px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                background: 'white',
+                borderRadius: '30px',
+                boxShadow: '0 30px 80px rgba(0,0,0,0.30)',
+                border: '1px solid rgba(139, 30, 30, 0.18)',
+              }}
+              onClick={event => event.stopPropagation()}
+            >
+              <div
+                style={{
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 2,
+                  background: '#8b1e1e',
+                  color: 'white',
+                  padding: '22px 26px',
+                  borderRadius: '30px 30px 0 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                }}
+              >
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '26px', fontWeight: 900 }}>
+                    {text.personalAnalysis}
+                  </h2>
+                  <p style={{ margin: '6px 0 0', color: 'rgba(255,255,255,0.78)', fontWeight: 700 }}>
+                    {selectedPersonAttendanceAnalysis.person.firstName} {selectedPersonAttendanceAnalysis.person.lastName}
+                    {(selectedPersonAttendanceAnalysis.person.arabicFirstName || selectedPersonAttendanceAnalysis.person.arabicLastName)
+                      ? ` — ${selectedPersonAttendanceAnalysis.person.arabicFirstName} ${selectedPersonAttendanceAnalysis.person.arabicLastName}`
+                      : ''}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedAnalysisPersonId('')}
+                  aria-label={text.close}
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '50%',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    background: 'rgba(255,255,255,0.12)',
+                    color: 'white',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <X size={22} />
+                </button>
+              </div>
+
+              <div style={{ padding: '26px' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                    gap: '14px',
+                    marginBottom: '24px',
+                  }}
+                >
+                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
+                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                      {text.attendanceCount}
+                    </div>
+                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
+                      {selectedPersonAttendanceAnalysis.attendanceCount}
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
+                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                      {text.missedCount}
+                    </div>
+                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
+                      {selectedPersonMissedDates.length}
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
+                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                      {text.attendanceRate}
+                    </div>
+                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
+                      {selectedPersonAttendanceAnalysis.attendanceRate}%
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
+                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                      {text.totalSundays}
+                    </div>
+                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
+                      {sundayDateKeysSinceStart.length}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                    gap: '22px',
+                    marginBottom: '24px',
+                  }}
+                >
+                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
+                    <h3 style={{ margin: '0 0 16px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
+                      {text.cumulativeAttendanceLine}
+                    </h3>
+                    <svg viewBox="0 0 420 220" role="img" style={{ width: '100%', minHeight: '220px' }}>
+                      <line x1="38" y1="20" x2="38" y2="184" stroke="#ddd" strokeWidth="2" />
+                      <line x1="38" y1="184" x2="398" y2="184" stroke="#ddd" strokeWidth="2" />
+                      <polyline
+                        fill="none"
+                        stroke="#8b1e1e"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        points={selectedPersonTimeline.map((item, index) => {
+                          const x = selectedPersonTimeline.length === 1
+                            ? 218
+                            : 38 + (index / (selectedPersonTimeline.length - 1)) * 360;
+                          const y = 184 - (item.cumulativeAttendance / Math.max(1, selectedPersonAttendanceAnalysis.attendanceCount)) * 150;
+                          return `${x},${y}`;
+                        }).join(' ')}
+                      />
+                      {selectedPersonTimeline.map((item, index) => {
+                        const x = selectedPersonTimeline.length === 1
+                          ? 218
+                          : 38 + (index / (selectedPersonTimeline.length - 1)) * 360;
+                        const y = 184 - (item.cumulativeAttendance / Math.max(1, selectedPersonAttendanceAnalysis.attendanceCount)) * 150;
+                        return <circle key={item.dateKey} cx={x} cy={y} r="4" fill="#8b1e1e" />;
+                      })}
+                    </svg>
+                  </div>
+
+                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
+                    <h3 style={{ margin: '0 0 16px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
+                      {text.attendanceTimeline}
+                    </h3>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      {selectedPersonTimeline.map(item => (
+                        <div key={item.dateKey}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#641414', fontSize: '13px', fontWeight: 800, marginBottom: '6px' }}>
+                            <span>{item.dateKey}</span>
+                            <span>{item.attended ? text.present : text.absent}</span>
+                          </div>
+                          <div style={{ height: '18px', borderRadius: '999px', background: '#f5f4f0', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: item.attended ? '100%' : '18%',
+                                height: '100%',
+                                borderRadius: '999px',
+                                background: item.attended ? '#15803d' : '#b91c1c',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                    gap: '18px',
+                  }}
+                >
+                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '22px', padding: '18px', background: 'white' }}>
+                    <h3 style={{ margin: '0 0 14px', color: '#8b1e1e', fontSize: '19px', fontWeight: 900 }}>
+                      {text.attendedSundays}
+                    </h3>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {(selectedPersonAttendanceAnalysis.attendedDates.length ? selectedPersonAttendanceAnalysis.attendedDates : ['—']).map(dateKey => (
+                        <span key={dateKey} style={{ background: '#f0fdf4', color: '#15803d', borderRadius: '999px', padding: '8px 12px', fontSize: '13px', fontWeight: 800 }}>
+                          {dateKey}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '22px', padding: '18px', background: 'white' }}>
+                    <h3 style={{ margin: '0 0 14px', color: '#8b1e1e', fontSize: '19px', fontWeight: 900 }}>
+                      {text.missedSundays}
+                    </h3>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {(selectedPersonMissedDates.length ? selectedPersonMissedDates : ['—']).map(dateKey => (
+                        <span key={dateKey} style={{ background: '#fee2e2', color: '#991b1b', borderRadius: '999px', padding: '8px 12px', fontSize: '13px', fontWeight: 800 }}>
+                          {dateKey}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
