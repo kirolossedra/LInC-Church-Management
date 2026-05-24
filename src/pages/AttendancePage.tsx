@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  BarChart3,
   CalendarDays,
   CheckCircle,
   ChevronLeft,
@@ -11,6 +12,7 @@ import {
   Loader2,
   Save,
   Search,
+  TrendingUp,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -46,6 +48,18 @@ interface CalendarDay {
   date: Date;
   isCurrentMonth: boolean;
   isSunday: boolean;
+}
+
+interface WeeklyAttendanceSummary {
+  dateKey: string;
+  attendedCount: number;
+}
+
+interface PersonAttendanceAnalysis {
+  person: AttendancePerson;
+  attendedDates: string[];
+  attendanceCount: number;
+  attendanceRate: number;
 }
 
 function normalizeNumber(value: unknown): number {
@@ -114,6 +128,39 @@ function buildCalendarDays(monthDate: Date): CalendarDay[] {
   });
 }
 
+function getFirstSundayInMay(year: number): Date {
+  const mayFirst = new Date(year, 4, 1);
+  const firstSunday = new Date(mayFirst);
+  const daysUntilSunday = (7 - mayFirst.getDay()) % 7;
+
+  firstSunday.setDate(mayFirst.getDate() + daysUntilSunday);
+
+  return firstSunday;
+}
+
+function buildSundayDateKeysFromStart(startDate: Date, endDate: Date): string[] {
+  const sundayDateKeys: string[] = [];
+  const cursor = new Date(startDate);
+
+  cursor.setHours(0, 0, 0, 0);
+
+  const cleanEndDate = new Date(endDate);
+  cleanEndDate.setHours(0, 0, 0, 0);
+
+  while (cursor <= cleanEndDate) {
+    sundayDateKeys.push(formatDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return sundayDateKeys;
+}
+
+function parseDateKeyToTime(dateKey: string): number {
+  const parsedDate = new Date(`${dateKey}T00:00:00`);
+
+  return parsedDate.getTime();
+}
+
 const emptyPersonForm: AttendancePersonForm = {
   firstName: '',
   lastName: '',
@@ -131,7 +178,7 @@ export default function AttendancePage() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passcodeError, setPasscodeError] = useState('');
 
-  const [activePanel, setActivePanel] = useState<'menu' | 'people' | 'attendance'>('menu');
+  const [activePanel, setActivePanel] = useState<'menu' | 'people' | 'attendance' | 'analysis'>('menu');
 
   const [people, setPeople] = useState<AttendancePerson[]>([]);
   const [isLoadingPeople, setIsLoadingPeople] = useState(true);
@@ -146,6 +193,7 @@ export default function AttendancePage() {
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState('');
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
   const [isSavingAttendanceForId, setIsSavingAttendanceForId] = useState('');
+  const [analysisSearchTerm, setAnalysisSearchTerm] = useState('');
 
   const text = {
     accessTitle: isArabic ? 'الدخول إلى الحضور' : 'Attendance Access',
@@ -229,6 +277,29 @@ export default function AttendancePage() {
     noAttendanceSearchResults: isArabic
       ? 'لا يوجد أشخاص مطابقون للبحث.'
       : 'No matching people found.',
+
+    analysis: isArabic ? 'التحليل' : 'Analysis',
+    analysisTitle: isArabic ? 'تحليل الحضور' : 'Attendance Analysis',
+    analysisDescription: isArabic
+      ? 'ابحث عن الأشخاص وشاهد عدد مرات حضورهم منذ أول أحد في شهر مايو، مع رسوم بسيطة للتحليل.'
+      : 'Search people and see how many Sundays they attended since the first Sunday in May, with simple analysis plots.',
+    analysisStartDate: isArabic ? 'تاريخ بداية التحليل' : 'Analysis Start Date',
+    totalSundays: isArabic ? 'عدد أيام الأحد منذ البداية' : 'Total Sundays Since Start',
+    totalPeople: isArabic ? 'إجمالي الأشخاص' : 'Total People',
+    averageAttendance: isArabic ? 'متوسط الحضور لكل أحد' : 'Average Attendance per Sunday',
+    analysisSearchPlaceholder: isArabic
+      ? 'ابحث عن شخص لتحليل حضوره...'
+      : 'Search for a person to analyze attendance...',
+    attendanceCount: isArabic ? 'عدد مرات الحضور' : 'Attendance Count',
+    attendanceRate: isArabic ? 'نسبة الحضور' : 'Attendance Rate',
+    weeklyAttendancePlot: isArabic ? 'رسم الحضور حسب الأحد' : 'Weekly Attendance Plot',
+    topAttendeesPlot: isArabic ? 'رسم أكثر الأشخاص حضوراً' : 'Top Attendees Plot',
+    noAttendanceData: isArabic
+      ? 'لا توجد بيانات حضور منذ بداية التحليل.'
+      : 'No attendance data since the analysis start date.',
+    noAnalysisResults: isArabic
+      ? 'لا توجد نتائج تحليل مطابقة للبحث.'
+      : 'No matching analysis results.',
   };
 
   const weekDayLabels = isArabic
@@ -293,6 +364,93 @@ export default function AttendancePage() {
       return searchableText.includes(cleanedSearch);
     });
   }, [attendanceSearchTerm, sortedPeople]);
+
+  const analysisStartDate = useMemo(() => getFirstSundayInMay(new Date().getFullYear()), []);
+
+  const analysisStartDateKey = useMemo(() => formatDateKey(analysisStartDate), [analysisStartDate]);
+
+  const sundayDateKeysSinceStart = useMemo(() => {
+    return buildSundayDateKeysFromStart(analysisStartDate, new Date());
+  }, [analysisStartDate]);
+
+  const personAttendanceAnalysis = useMemo<PersonAttendanceAnalysis[]>(() => {
+    const startTime = analysisStartDate.getTime();
+    const totalSundays = Math.max(1, sundayDateKeysSinceStart.length);
+
+    return sortedPeople.map(person => {
+      const attendedDates = getAttendanceDays(person.daysOfAttendance)
+        .filter(dateKey => parseDateKeyToTime(dateKey) >= startTime)
+        .sort();
+
+      return {
+        person,
+        attendedDates,
+        attendanceCount: attendedDates.length,
+        attendanceRate: Math.round((attendedDates.length / totalSundays) * 100),
+      };
+    });
+  }, [analysisStartDate, sortedPeople, sundayDateKeysSinceStart.length]);
+
+  const filteredPersonAttendanceAnalysis = useMemo(() => {
+    const cleanedSearch = analysisSearchTerm.trim().toLowerCase();
+
+    if (!cleanedSearch) return personAttendanceAnalysis;
+
+    return personAttendanceAnalysis.filter(item => {
+      const person = item.person;
+      const searchableText = [
+        person.firstName,
+        person.lastName,
+        person.arabicFirstName,
+        person.arabicLastName,
+        person.phoneNumber,
+        person.email,
+        person.daysOfAttendance,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return searchableText.includes(cleanedSearch);
+    });
+  }, [analysisSearchTerm, personAttendanceAnalysis]);
+
+  const weeklyAttendanceSummary = useMemo<WeeklyAttendanceSummary[]>(() => {
+    return sundayDateKeysSinceStart.map(dateKey => ({
+      dateKey,
+      attendedCount: people.filter(person => getAttendanceDays(person.daysOfAttendance).includes(dateKey)).length,
+    }));
+  }, [people, sundayDateKeysSinceStart]);
+
+  const maxWeeklyAttendanceCount = useMemo(() => {
+    return Math.max(1, ...weeklyAttendanceSummary.map(item => item.attendedCount));
+  }, [weeklyAttendanceSummary]);
+
+  const topAttendanceAnalysis = useMemo(() => {
+    return [...personAttendanceAnalysis]
+      .sort((a, b) => {
+        if (b.attendanceCount !== a.attendanceCount) return b.attendanceCount - a.attendanceCount;
+
+        const aName = `${a.person.firstName} ${a.person.lastName}`.trim();
+        const bName = `${b.person.firstName} ${b.person.lastName}`.trim();
+
+        return aName.localeCompare(bName);
+      })
+      .slice(0, 10);
+  }, [personAttendanceAnalysis]);
+
+  const maxPersonAttendanceCount = useMemo(() => {
+    return Math.max(1, ...topAttendanceAnalysis.map(item => item.attendanceCount));
+  }, [topAttendanceAnalysis]);
+
+  const totalRecordedAttendanceSinceStart = useMemo(() => {
+    return personAttendanceAnalysis.reduce((total, item) => total + item.attendanceCount, 0);
+  }, [personAttendanceAnalysis]);
+
+  const averageAttendancePerSunday = useMemo(() => {
+    if (!sundayDateKeysSinceStart.length) return 0;
+
+    return Math.round((totalRecordedAttendanceSinceStart / sundayDateKeysSinceStart.length) * 10) / 10;
+  }, [sundayDateKeysSinceStart.length, totalRecordedAttendanceSinceStart]);
 
   useEffect(() => {
     if (!isUnlocked) return;
@@ -705,6 +863,30 @@ export default function AttendancePage() {
             >
               <ClipboardList size={20} />
               {text.takeAttendance}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActivePanel('analysis')}
+              style={{
+                width: '100%',
+                minHeight: '58px',
+                border: '2px solid #8b1e1e',
+                borderRadius: '999px',
+                background: activePanel === 'analysis' ? '#8b1e1e' : 'white',
+                color: activePanel === 'analysis' ? 'white' : '#8b1e1e',
+                fontSize: '18px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: activePanel === 'analysis' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
+              }}
+            >
+              <BarChart3 size={20} />
+              {text.analysis}
             </button>
           </div>
         </div>
@@ -1648,6 +1830,533 @@ export default function AttendancePage() {
                 })}
               </div>
             )}
+          </section>
+        )}
+
+        {activePanel === 'analysis' && (
+          <section
+            style={{
+              marginTop: '28px',
+              background: 'white',
+              borderRadius: '28px',
+              padding: '32px',
+              boxShadow: '0 12px 35px rgba(139, 30, 30, 0.10)',
+              border: '1px solid rgba(139, 30, 30, 0.10)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '16px',
+                marginBottom: '28px',
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: '0 0 8px',
+                    color: '#8b1e1e',
+                    fontSize: '26px',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <BarChart3 size={28} />
+                  {text.analysisTitle}
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    color: '#666',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {text.analysisDescription}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActivePanel('menu')}
+                style={{
+                  border: 'none',
+                  borderRadius: '999px',
+                  background: '#f5f4f0',
+                  color: '#641414',
+                  padding: '12px 18px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {text.backToMenu}
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+                gap: '14px',
+                marginBottom: '26px',
+              }}
+            >
+              <div
+                style={{
+                  background: '#f8eeee',
+                  borderRadius: '20px',
+                  padding: '18px',
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                }}
+              >
+                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                  {text.analysisStartDate}
+                </div>
+                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
+                  {analysisStartDateKey}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: '#f8eeee',
+                  borderRadius: '20px',
+                  padding: '18px',
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                }}
+              >
+                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                  {text.totalSundays}
+                </div>
+                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
+                  {sundayDateKeysSinceStart.length}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: '#f8eeee',
+                  borderRadius: '20px',
+                  padding: '18px',
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                }}
+              >
+                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                  {text.totalPeople}
+                </div>
+                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
+                  {people.length}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: '#f8eeee',
+                  borderRadius: '20px',
+                  padding: '18px',
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                }}
+              >
+                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
+                  {text.averageAttendance}
+                </div>
+                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
+                  {averageAttendancePerSunday}
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                position: 'relative',
+                marginBottom: '24px',
+              }}
+            >
+              <Search
+                size={18}
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  left: dir === 'rtl' ? 'auto' : '16px',
+                  right: dir === 'rtl' ? '16px' : 'auto',
+                  color: '#8b1e1e',
+                }}
+              />
+              <input
+                type="text"
+                value={analysisSearchTerm}
+                onChange={e => setAnalysisSearchTerm(e.target.value)}
+                placeholder={text.analysisSearchPlaceholder}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: dir === 'rtl' ? '14px 46px 14px 16px' : '14px 16px 14px 46px',
+                  borderRadius: '999px',
+                  border: '1px solid #e5e0da',
+                  outline: 'none',
+                  fontSize: '15px',
+                }}
+              />
+            </div>
+
+            {isLoadingPeople && (
+              <div
+                style={{
+                  padding: '18px',
+                  borderRadius: '18px',
+                  background: '#f5f4f0',
+                  color: '#666',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <Loader2 size={18} className="animate-spin" />
+                {text.loadingPeople}
+              </div>
+            )}
+
+            {peopleError && (
+              <div
+                style={{
+                  padding: '18px',
+                  borderRadius: '18px',
+                  background: '#fee2e2',
+                  color: '#991b1b',
+                  fontWeight: 800,
+                }}
+              >
+                {peopleError}
+              </div>
+            )}
+
+            {!isLoadingPeople && !peopleError && people.length === 0 && (
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '18px',
+                  background: '#f5f4f0',
+                  color: '#666',
+                  textAlign: 'center',
+                  marginBottom: '24px',
+                }}
+              >
+                {text.noPeople}
+              </div>
+            )}
+
+            {!isLoadingPeople && !peopleError && people.length > 0 && filteredPersonAttendanceAnalysis.length === 0 && (
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '18px',
+                  background: '#f5f4f0',
+                  color: '#666',
+                  textAlign: 'center',
+                  marginBottom: '24px',
+                }}
+              >
+                {text.noAnalysisResults}
+              </div>
+            )}
+
+            {!isLoadingPeople && !peopleError && filteredPersonAttendanceAnalysis.length > 0 && (
+              <div
+                style={{
+                  display: 'grid',
+                  gap: '12px',
+                  marginBottom: '30px',
+                }}
+              >
+                {filteredPersonAttendanceAnalysis.map(item => (
+                  <div
+                    key={item.person.firebaseId}
+                    style={{
+                      border: '1px solid #eee',
+                      borderRadius: '18px',
+                      padding: '16px',
+                      background: 'white',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto',
+                      gap: '16px',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div style={{ textAlign: dir === 'rtl' ? 'right' : 'left' }}>
+                      <div
+                        style={{
+                          color: '#641414',
+                          fontSize: '17px',
+                          fontWeight: 800,
+                          marginBottom: '6px',
+                        }}
+                      >
+                        {item.person.firstName} {item.person.lastName}
+                      </div>
+
+                      {(item.person.arabicFirstName || item.person.arabicLastName) && (
+                        <div
+                          dir="rtl"
+                          style={{
+                            color: '#8b1e1e',
+                            fontSize: '16px',
+                            fontWeight: 800,
+                            marginBottom: '6px',
+                            textAlign: 'right',
+                          }}
+                        >
+                          {item.person.arabicFirstName} {item.person.arabicLastName}
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          color: '#777',
+                          fontSize: '14px',
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {item.person.phoneNumber || '—'} · {item.person.email || '—'}
+                      </div>
+
+                      <div
+                        style={{
+                          color: '#8b1e1e',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          marginTop: '6px',
+                        }}
+                      >
+                        {text.daysOfAttendance}: {item.attendedDates.join(', ') || '—'}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        minWidth: '150px',
+                        borderRadius: '18px',
+                        background: '#f8eeee',
+                        padding: '14px',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: '#777',
+                          fontSize: '12px',
+                          fontWeight: 900,
+                          marginBottom: '6px',
+                        }}
+                      >
+                        {text.attendanceCount}
+                      </div>
+                      <div
+                        style={{
+                          color: '#8b1e1e',
+                          fontSize: '28px',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {item.attendanceCount}
+                      </div>
+                      <div
+                        style={{
+                          color: '#641414',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          marginTop: '4px',
+                        }}
+                      >
+                        {text.attendanceRate}: {item.attendanceRate}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: '22px',
+              }}
+            >
+              <div
+                style={{
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                  borderRadius: '24px',
+                  padding: '22px',
+                  background: '#fffaf7',
+                }}
+              >
+                <h3
+                  style={{
+                    margin: '0 0 18px',
+                    color: '#8b1e1e',
+                    fontSize: '21px',
+                    fontWeight: 900,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <TrendingUp size={22} />
+                  {text.weeklyAttendancePlot}
+                </h3>
+
+                {weeklyAttendanceSummary.every(item => item.attendedCount === 0) && (
+                  <div
+                    style={{
+                      padding: '20px',
+                      borderRadius: '18px',
+                      background: '#f5f4f0',
+                      color: '#666',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {text.noAttendanceData}
+                  </div>
+                )}
+
+                {!weeklyAttendanceSummary.every(item => item.attendedCount === 0) && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gap: '12px',
+                    }}
+                  >
+                    {weeklyAttendanceSummary.map(item => (
+                      <div key={item.dateKey}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            color: '#641414',
+                            fontSize: '13px',
+                            fontWeight: 800,
+                            marginBottom: '6px',
+                          }}
+                        >
+                          <span>{item.dateKey}</span>
+                          <span>{item.attendedCount}</span>
+                        </div>
+                        <div
+                          style={{
+                            height: '16px',
+                            borderRadius: '999px',
+                            background: '#f5f4f0',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${Math.max(4, (item.attendedCount / maxWeeklyAttendanceCount) * 100)}%`,
+                              height: '100%',
+                              borderRadius: '999px',
+                              background: '#8b1e1e',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  border: '1px solid rgba(139, 30, 30, 0.10)',
+                  borderRadius: '24px',
+                  padding: '22px',
+                  background: '#fffaf7',
+                }}
+              >
+                <h3
+                  style={{
+                    margin: '0 0 18px',
+                    color: '#8b1e1e',
+                    fontSize: '21px',
+                    fontWeight: 900,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <BarChart3 size={22} />
+                  {text.topAttendeesPlot}
+                </h3>
+
+                {topAttendanceAnalysis.every(item => item.attendanceCount === 0) && (
+                  <div
+                    style={{
+                      padding: '20px',
+                      borderRadius: '18px',
+                      background: '#f5f4f0',
+                      color: '#666',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {text.noAttendanceData}
+                  </div>
+                )}
+
+                {!topAttendanceAnalysis.every(item => item.attendanceCount === 0) && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gap: '12px',
+                    }}
+                  >
+                    {topAttendanceAnalysis.map(item => {
+                      const displayName = `${item.person.firstName} ${item.person.lastName}`.trim() || '—';
+
+                      return (
+                        <div key={item.person.firebaseId}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: '10px',
+                              color: '#641414',
+                              fontSize: '13px',
+                              fontWeight: 800,
+                              marginBottom: '6px',
+                            }}
+                          >
+                            <span>{displayName}</span>
+                            <span>{item.attendanceCount}</span>
+                          </div>
+                          <div
+                            style={{
+                              height: '16px',
+                              borderRadius: '999px',
+                              background: '#f5f4f0',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${Math.max(4, (item.attendanceCount / maxPersonAttendanceCount) * 100)}%`,
+                                height: '100%',
+                                borderRadius: '999px',
+                                background: '#8b1e1e',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </section>
         )}
       </div>
