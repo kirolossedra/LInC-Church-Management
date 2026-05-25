@@ -109,12 +109,12 @@ export default function NextGenActivities() {
     return savedSessions
       .filter(session => session.question && !reviewedSessionIds.has(session.firebaseId))
       .sort((a, b) => {
+        if (b.totalUpvotes !== a.totalUpvotes) return b.totalUpvotes - a.totalUpvotes;
+        if (b.netVotes !== a.netVotes) return b.netVotes - a.netVotes;
         if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
         return a.question.localeCompare(b.question);
       });
   }, [savedSessions, reviewedSessionIds]);
-
-  const activePeerReviewSession = reviewableSessions[0] || null;
 
   useEffect(() => {
     setIsLoadingPeerReview(true);
@@ -386,7 +386,7 @@ export default function NextGenActivities() {
                       {isArabic ? 'مراجعة الزملاء' : 'Peer Review'}
                     </h2>
                     <p className={`text-sm mt-1 ${isPeerReviewOpen ? 'text-white/80' : 'text-[#777]'}`}>
-                      {isArabic ? 'صوّت على الأسئلة مرة واحدة بصدق.' : 'Review questions once with honesty.'}
+                      {isArabic ? 'راجع القائمة كاملة وصوّت مرة واحدة لكل سؤال.' : 'Review the full list and vote once per question.'}
                     </p>
                   </div>
                 </div>
@@ -400,8 +400,8 @@ export default function NextGenActivities() {
               </h3>
               <p className="text-[#666] leading-relaxed">
                 {isArabic
-                  ? 'هذه الصفحة تحفظ السؤال فقط مع حقول تصويت مخفية ليتم ترتيب الأسئلة لاحقاً.'
-                  : 'This page saves the question only, with hidden vote counters for later ranking.'}
+                  ? 'ترتيب مراجعة الزملاء يعتمد على التصويت الحالي، لكن أرقام التصويت مخفية عن المشاركين.'
+                  : 'Peer review is ranked by current voting priority, but vote counts are hidden from participants.'}
               </p>
             </div>
           </div>
@@ -516,8 +516,8 @@ export default function NextGenActivities() {
                     </h2>
                     <p className="text-white/75 text-sm mt-1">
                       {isArabic
-                        ? 'راجع كل سؤال مرة واحدة بصدق. التراجع متاح لآخر تصويت فقط.'
-                        : 'Review each question honestly once. Undo is available only for the previous vote.'}
+                        ? 'القائمة كاملة مرتبة حسب الأولوية الحالية. أرقام التصويت غير معروضة أثناء المراجعة.'
+                        : 'The full list is ranked by current priority. Vote totals are not shown during review.'}
                     </p>
                   </div>
                 </div>
@@ -545,8 +545,8 @@ export default function NextGenActivities() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="text-sm text-gray-500">
                     {isArabic
-                      ? `المتبقي للمراجعة في هذه الجلسة: ${reviewableSessions.length}`
-                      : `Remaining in this session: ${reviewableSessions.length}`}
+                      ? `الأسئلة المتاحة للمراجعة في هذه الجلسة: ${reviewableSessions.length}`
+                      : `Questions available in this session: ${reviewableSessions.length}`}
                   </div>
 
                   <button
@@ -573,7 +573,7 @@ export default function NextGenActivities() {
                   </div>
                 )}
 
-                {!isLoadingPeerReview && !activePeerReviewSession && (
+                {!isLoadingPeerReview && reviewableSessions.length === 0 && (
                   <div className="text-center bg-stone-50 border border-gray-100 rounded-3xl p-10">
                     <div className="w-14 h-14 mx-auto grid place-items-center rounded-full bg-[#f8eeee] text-[#8b1e1e] mb-4">
                       <ThumbsUp size={24} />
@@ -589,86 +589,74 @@ export default function NextGenActivities() {
                   </div>
                 )}
 
-                {!isLoadingPeerReview && activePeerReviewSession && (
-                  <motion.div
-                    key={activePeerReviewSession.firebaseId}
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="rounded-[28px] bg-stone-50 border border-gray-100 p-6 space-y-5"
-                  >
-                    <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2 mb-3">
-                          <span className="px-3 py-1 bg-[#f8eeee] text-[#8b1e1e] rounded-full text-xs font-bold border border-[rgba(139,30,30,0.10)]">
-                            {activePeerReviewSession.category}
-                          </span>
-                        </div>
-                        <h3 className="text-2xl font-bold text-[#641414] leading-snug">
-                          {activePeerReviewSession.question}
-                        </h3>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 min-w-[220px]">
-                        <div className="bg-white rounded-2xl p-3 border border-gray-100 text-center">
-                          <div className="text-xs text-gray-400 font-bold uppercase">
-                            {isArabic ? 'مؤيد' : 'Up'}
-                          </div>
-                          <div className="text-xl font-bold text-green-700">
-                            {activePeerReviewSession.totalUpvotes}
-                          </div>
-                        </div>
-                        <div className="bg-white rounded-2xl p-3 border border-gray-100 text-center">
-                          <div className="text-xs text-gray-400 font-bold uppercase">
-                            {isArabic ? 'رافض' : 'Down'}
-                          </div>
-                          <div className="text-xl font-bold text-red-700">
-                            {activePeerReviewSession.totalDownvotes}
-                          </div>
-                        </div>
-                        <div className="bg-white rounded-2xl p-3 border border-gray-100 text-center">
-                          <div className="text-xs text-gray-400 font-bold uppercase">
-                            {isArabic ? 'الصافي' : 'Net'}
-                          </div>
-                          <div className="text-xl font-bold text-[#8b1e1e]">
-                            {activePeerReviewSession.netVotes}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {activePeerReviewSession.notes && (
-                      <div className="bg-white border border-gray-100 rounded-2xl p-4">
-                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
-                          {isArabic ? 'ملاحظات' : 'Notes'}
-                        </h4>
-                        <p className="text-sm leading-relaxed text-[#333]">
-                          {activePeerReviewSession.notes}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => handlePeerVote(activePeerReviewSession.firebaseId, 'upvote')}
-                        disabled={isSubmittingPeerVote || isUndoingPeerVote}
-                        className="inline-flex items-center justify-center gap-2 px-6 py-4 bg-green-700 text-white rounded-2xl font-bold hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                {!isLoadingPeerReview && reviewableSessions.length > 0 && (
+                  <div className="space-y-4">
+                    {reviewableSessions.map((session, index) => (
+                      <motion.div
+                        key={session.firebaseId}
+                        initial={{ opacity: 0, y: 18 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.035 }}
+                        className="rounded-[28px] bg-stone-50 border border-gray-100 p-6 space-y-5"
                       >
-                        {isSubmittingPeerVote ? <Loader2 size={18} className="animate-spin" /> : <ThumbsUp size={18} />}
-                        {isArabic ? 'تصويت إيجابي' : 'Upvote'}
-                      </button>
+                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              <span className="px-3 py-1 bg-[#8b1e1e] text-white rounded-full text-xs font-bold">
+                                {isArabic ? `ترتيب #${index + 1}` : `Rank #${index + 1}`}
+                              </span>
+                              <span className="px-3 py-1 bg-[#f8eeee] text-[#8b1e1e] rounded-full text-xs font-bold border border-[rgba(139,30,30,0.10)]">
+                                {session.category}
+                              </span>
+                            </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handlePeerVote(activePeerReviewSession.firebaseId, 'downvote')}
-                        disabled={isSubmittingPeerVote || isUndoingPeerVote}
-                        className="inline-flex items-center justify-center gap-2 px-6 py-4 bg-red-700 text-white rounded-2xl font-bold hover:bg-red-800 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {isSubmittingPeerVote ? <Loader2 size={18} className="animate-spin" /> : <ThumbsDown size={18} />}
-                        {isArabic ? 'تصويت سلبي' : 'Downvote'}
-                      </button>
-                    </div>
-                  </motion.div>
+                            <h3 className="text-2xl font-bold text-[#641414] leading-snug">
+                              {session.question}
+                            </h3>
+
+                            <p className="text-xs text-gray-400 mt-3 font-bold uppercase tracking-widest">
+                              {isArabic
+                                ? 'أرقام التصويت مخفية أثناء مراجعة الزملاء'
+                                : 'Vote totals hidden during peer review'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {session.notes && (
+                          <div className="bg-white border border-gray-100 rounded-2xl p-4">
+                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
+                              {isArabic ? 'ملاحظات' : 'Notes'}
+                            </h4>
+                            <p className="text-sm leading-relaxed text-[#333]">
+                              {session.notes}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => handlePeerVote(session.firebaseId, 'upvote')}
+                            disabled={isSubmittingPeerVote || isUndoingPeerVote}
+                            className="inline-flex items-center justify-center gap-2 px-6 py-4 bg-green-700 text-white rounded-2xl font-bold hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {isSubmittingPeerVote ? <Loader2 size={18} className="animate-spin" /> : <ThumbsUp size={18} />}
+                            {isArabic ? 'تصويت إيجابي' : 'Upvote'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handlePeerVote(session.firebaseId, 'downvote')}
+                            disabled={isSubmittingPeerVote || isUndoingPeerVote}
+                            className="inline-flex items-center justify-center gap-2 px-6 py-4 bg-red-700 text-white rounded-2xl font-bold hover:bg-red-800 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {isSubmittingPeerVote ? <Loader2 size={18} className="animate-spin" /> : <ThumbsDown size={18} />}
+                            {isArabic ? 'تصويت سلبي' : 'Downvote'}
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
                 )}
               </div>
             </motion.section>
