@@ -220,6 +220,7 @@ export default function AssessmentForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedAssessmentForm, setSelectedAssessmentForm] = useState<AssessmentFormChoice | null>(null);
+  const isArabicUI = dir === 'rtl';
 
   const [trainee, setTrainee] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
@@ -543,10 +544,10 @@ export default function AssessmentForm() {
         >
           <div className="text-center max-w-3xl mx-auto mb-8">
             <h2 className="m-0 text-[#8b1e1e] text-[clamp(1.35rem,4vw,1.9rem)] font-bold">
-              اختر نموذج التقييم
+              {isArabicUI ? 'اختر نموذج التقييم' : 'Choose Assessment Form'}
             </h2>
             <p className="mt-3 mb-0 text-[#666] text-[1rem] leading-relaxed">
-              Choose the assessment form you want to complete.
+              {isArabicUI ? 'اختر نموذج التقييم الذي تريد تعبئته.' : 'Choose the assessment form you want to complete.'}
             </p>
           </div>
 
@@ -560,16 +561,12 @@ export default function AssessmentForm() {
                 <ClipboardList size={22} />
               </div>
 
-              <div className="text-[#8b1e1e] text-[1.28rem] font-bold mb-2">
-                مسارات الخدمة الخمسة
-              </div>
-
-              <div className="text-[#242424] text-[1.05rem] font-bold mb-3">
-                Five Service Pathways
+              <div className="text-[#8b1e1e] text-[1.28rem] font-bold mb-3">
+                {isArabicUI ? 'مسارات الخدمة الخمسة' : 'Five Service Pathways'}
               </div>
 
               <p className="m-0 text-[#666] text-sm leading-relaxed">
-                Continue to the currently implemented LINC assessment form.
+                {isArabicUI ? 'متابعة إلى نموذج التقييم الحالي.' : 'Continue to the currently implemented LINC assessment form.'}
               </p>
             </button>
 
@@ -582,16 +579,12 @@ export default function AssessmentForm() {
                 <ClipboardList size={22} />
               </div>
 
-              <div className="text-[#8b1e1e] text-[1.28rem] font-bold mb-2">
-                تعرف على مواهبك الروحية
-              </div>
-
-              <div className="text-[#242424] text-[1.05rem] font-bold mb-3">
-                Discover Your Spiritual Gifts
+              <div className="text-[#8b1e1e] text-[1.28rem] font-bold mb-3">
+                {isArabicUI ? 'تعرف على مواهبك الروحية' : 'Discover Your Spiritual Gifts'}
               </div>
 
               <p className="m-0 text-[#666] text-sm leading-relaxed">
-                This second assessment form is reserved for the next implementation.
+                {isArabicUI ? 'هذا النموذج الثاني محجوز للتنفيذ القادم.' : 'This second assessment form is reserved for the next implementation.'}
               </p>
             </button>
           </div>
@@ -615,17 +608,11 @@ export default function AssessmentForm() {
           </div>
 
           <h2 className="m-0 text-[#8b1e1e] text-[clamp(1.35rem,4vw,1.9rem)] font-bold">
-            تعرف على مواهبك الروحية
+            {isArabicUI ? 'تعرف على مواهبك الروحية' : 'Discover Your Spiritual Gifts'}
           </h2>
 
-          <p className="mt-3 mb-0 text-[#242424] text-[1.05rem] font-bold">
-            Discover Your Spiritual Gifts
-          </p>
-
           <p className="mt-4 mb-0 text-[#666] leading-relaxed">
-            هذا النموذج لم يتم تنفيذه بعد.
-            <br />
-            This form has not been implemented yet.
+            {isArabicUI ? 'هذا النموذج لم يتم تنفيذه بعد.' : 'This form has not been implemented yet.'}
           </p>
 
           <button
@@ -633,7 +620,7 @@ export default function AssessmentForm() {
             onClick={handleBackToAssessmentChoices}
             className="mt-7 min-h-[48px] px-6 py-3 rounded-[16px] border-none bg-[#8b1e1e] text-white font-bold cursor-pointer shadow-[0_8px_18px_rgba(139,30,30,0.24)] transition-transform hover:-translate-y-[1px]"
           >
-            الرجوع لاختيار التقييم / Back to assessment choices
+            {isArabicUI ? 'الرجوع لاختيار التقييم' : 'Back to assessment choices'}
           </button>
         </motion.div>
       </div>
@@ -700,7 +687,7 @@ export default function AssessmentForm() {
         onClick={handleBackToAssessmentChoices}
         className="mb-[18px] min-h-[46px] px-5 py-3 rounded-[16px] border border-[rgba(139,30,30,0.18)] bg-white text-[#8b1e1e] font-bold cursor-pointer shadow-[0_6px_16px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[1px] hover:bg-[#fffafa]"
       >
-        الرجوع لاختيار التقييم / Back to assessment choices
+        {isArabicUI ? 'الرجوع لاختيار التقييم' : 'Back to assessment choices'}
       </button>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-[22px]">
