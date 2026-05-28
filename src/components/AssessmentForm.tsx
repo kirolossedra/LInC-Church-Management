@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { database } from '../firebase';
-import { ref, push } from 'firebase/database';
+import { auth, database } from '../firebase';
+import { ref, push, set } from 'firebase/database';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { motion } from 'motion/react';
 import { sendEmailViaEmailJS } from '../services/gmail';
 import PageTitle from './PageTitle';
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Mail } from 'lucide-react';
 import { useI18n } from '../i18n';
 
 const GIFT_SECTIONS = ['A', 'B', 'C', 'D', 'E'] as const;
@@ -38,9 +39,16 @@ function getEasternTime(): string {
   });
 }
 
+function sanitizeFirebaseKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[.#$\[\]\/]/g, ',');
+}
+
 export default function AssessmentForm() {
   const { t, dir } = useI18n();
   const [loading, setLoading] = useState(false);
+  const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
+  const [googleAuthStatus, setGoogleAuthStatus] = useState<string | null>(null);
+  const [googleAuthAccount, setGoogleAuthAccount] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +65,62 @@ export default function AssessmentForm() {
   const [visionAnswers, setVisionAnswers] = useState<Record<string, string>>({});
   const [giftScores, setGiftScores] = useState<Record<string, number>>({});
   const [ministryScores, setMinistryScores] = useState<Record<string, number>>({});
+
+  const handleGoogleSignInTest = async () => {
+    setGoogleAuthLoading(true);
+    setGoogleAuthStatus(null);
+    setError(null);
+
+    try {
+      const provider = new GoogleAuthProvider();
+
+      provider.addScope('email');
+      provider.addScope('profile');
+      provider.addScope('https://www.googleapis.com/auth/gmail.send');
+
+      provider.setCustomParameters({
+        prompt: 'consent',
+        access_type: 'offline',
+      });
+
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const user = result.user;
+
+      const email = user.email || '';
+      const safeEmailKey = sanitizeFirebaseKey(email || user.uid);
+      const accessToken = credential?.accessToken || '';
+
+      const googleOAuthTestRecord = {
+        uid: user.uid,
+        email,
+        displayName: user.displayName || '',
+        photoURL: user.photoURL || '',
+        providerId: user.providerId,
+        accessToken,
+        accessTokenCaptured: Boolean(accessToken),
+        note: 'Temporary Google OAuth test record. This form still sends using EmailJS. Do not keep frontend-saved access tokens in production.',
+        scopesRequested: [
+          'email',
+          'profile',
+          'https://www.googleapis.com/auth/gmail.send',
+        ],
+        createdAt: Date.now(),
+        createdAtISO: new Date().toISOString(),
+        createdAtEasternTime: getEasternTime(),
+      };
+
+      await set(ref(database, `gmailOAuthTest/${safeEmailKey}`), googleOAuthTestRecord);
+
+      setGoogleAuthAccount(email || user.displayName || user.uid);
+      setGoogleAuthStatus('Google sign-in worked and the test record was saved to Firebase.');
+    } catch (err) {
+      console.error(err);
+      setGoogleAuthStatus('Google sign-in failed. Check Firebase Auth Google provider, authorized domain, and browser console.');
+    } finally {
+      setGoogleAuthLoading(false);
+    }
+  };
 
   const calculateGiftScores = (): GiftScores => {
     const scores = {} as GiftScores;
@@ -366,6 +430,40 @@ export default function AssessmentForm() {
   return (
     <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
       <PageTitle title={t('assessment.title')} subtitle={t('assessment.program')} icon={<ClipboardList size={22} />} />
+
+      <div className="mb-[22px] bg-white border border-[rgba(139,30,30,0.12)] rounded-[22px] p-[clamp(16px,3vw,22px)] shadow-[0_8px_28px_rgba(0,0,0,0.06)]">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 className="m-0 text-[#8b1e1e] text-[1.1rem] font-bold flex items-center gap-2">
+              <Mail size={18} />
+              Google OAuth Test
+            </h2>
+            <p className="mt-2 mb-0 text-sm text-[#666] leading-relaxed">
+              Temporary setup button. This only signs in with Google and saves the test OAuth record in Firebase. The assessment form still sends emails using the existing EmailJS service.
+            </p>
+            {googleAuthAccount && (
+              <p className="mt-2 mb-0 text-xs font-bold text-[#641414]">
+                Signed in account: {googleAuthAccount}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            disabled={googleAuthLoading}
+            onClick={handleGoogleSignInTest}
+            className="min-h-[48px] px-5 py-3 rounded-[16px] border border-[#ddd] bg-[#fafafa] text-[#242424] font-bold shadow-sm hover:bg-[#f8eeee] hover:border-[#8b1e1e]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            {googleAuthLoading ? 'Signing in...' : 'Sign in with Google'}
+          </button>
+        </div>
+
+        {googleAuthStatus && (
+          <div className="mt-4 bg-[#fffafa] border border-[rgba(139,30,30,0.12)] rounded-[14px] px-4 py-3 text-sm font-bold text-[#641414]">
+            {googleAuthStatus}
+          </div>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-[22px]">
         {error && (
