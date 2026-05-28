@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { auth, database } from '../firebase';
-import { get, ref, push, set } from 'firebase/database';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { database } from '../firebase';
+import { get, ref, push } from 'firebase/database';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
-import { ClipboardList, Mail } from 'lucide-react';
+import { ClipboardList } from 'lucide-react';
 import { useI18n } from '../i18n';
 
 const GIFT_SECTIONS = ['A', 'B', 'C', 'D', 'E'] as const;
@@ -23,7 +22,6 @@ const REQUIRED_TRAINEE = ['fullName', 'email', 'surveyDate', 'age', 'attendance'
 const RESULT_EMAIL_RECIPIENTS = ['kasedra@proton.me', 'rev.ibrahim@lincministry.com'];
 const GMAIL_OAUTH_BRANCH = 'gmailOAuthConfig/current';
 const GMAIL_TOKEN_RENEWAL_MARGIN_MS = 5 * 60 * 1000;
-const GMAIL_ACCESS_TOKEN_TEST_LIFETIME_MS = 50 * 60 * 1000;
 
 interface GiftScores {
   A: number; B: number; C: number; D: number; E: number;
@@ -41,9 +39,6 @@ function getEasternTime(): string {
   });
 }
 
-function sanitizeFirebaseKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[.#$\[\]\/]/g, ',');
-}
 
 function encodeUtf8Base64(value: string): string {
   return btoa(unescape(encodeURIComponent(value)));
@@ -60,20 +55,140 @@ function encodeSubject(subject: string): string {
   return `=?UTF-8?B?${encodeUtf8Base64(subject)}?=`;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function buildAssessmentEmailHtml(params: {
+  lang: 'English' | 'Arabic';
+  fullName: string;
+  surveyDate: string;
+  age: string;
+  interfaceLanguageUsed: string;
+  submittedAt: string;
+  primaryGift: string;
+  secondaryGift: string;
+  recommendedMinistry: string;
+  fullReport: string;
+}): string {
+  const isArabic = params.lang === 'Arabic';
+  const labels = isArabic
+    ? {
+        title: 'نتيجة تقييم المواهب الروحية والدعوة الشخصية',
+        subtitle: 'تم الإرسال من خلال نموذج تقييم المواهب الروحية والدعوة الشخصية',
+        fullName: 'الاسم الكامل',
+        surveyDate: 'تاريخ التقييم',
+        age: 'العمر',
+        languageUsed: 'لغة النموذج المستخدمة',
+        submittedAt: 'وقت الإرسال',
+        assessmentResult: 'نتيجة التقييم',
+        primaryGift: 'الموهبة الأساسية',
+        secondaryGift: 'الموهبة الثانوية',
+        recommendedMinistry: 'مجال الخدمة المقترح',
+        fullResponseReport: 'التقرير الكامل للإجابة',
+        footer: 'تم إنشاء هذا البريد الإلكتروني تلقائياً بعد إرسال نموذج تقييم جديد.',
+      }
+    : {
+        title: 'New LINC Assessment Response',
+        subtitle: 'Submitted through the LINC Spiritual Gifts Assessment form',
+        fullName: 'Full Name',
+        surveyDate: 'Survey Date',
+        age: 'Age',
+        languageUsed: 'Language Used',
+        submittedAt: 'Submitted At',
+        assessmentResult: 'Assessment Result',
+        primaryGift: 'Primary Gift',
+        secondaryGift: 'Secondary Gift',
+        recommendedMinistry: 'Recommended Ministry',
+        fullResponseReport: 'Full Response Report',
+        footer: 'This email was automatically generated after a new form response was submitted.',
+      };
+
+  const direction = isArabic ? 'rtl' : 'ltr';
+  const align = isArabic ? 'right' : 'left';
+  const borderSide = isArabic ? 'border-right' : 'border-left';
+
+  return `
+<div dir="${direction}" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #242424; line-height: 1.6; text-align: ${align};">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">${labels.title}</h2>
+    <div style="margin-top: 6px; font-size: 13px;">${labels.subtitle}</div>
+  </div>
+
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
+      <tr>
+        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">${labels.fullName}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.fullName)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.surveyDate}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.surveyDate)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.age}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.age)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.languageUsed}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.interfaceLanguageUsed)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.submittedAt}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.submittedAt)}</td>
+      </tr>
+    </table>
+
+    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; ${borderSide}: 5px solid #8b1e1e; border-radius: 10px;">
+      <h3 style="margin: 0 0 10px; color: #641414; font-size: 17px;">${labels.assessmentResult}</h3>
+
+      <div style="margin-bottom: 8px;">
+        <strong>${labels.primaryGift}:</strong> ${escapeHtml(params.primaryGift)}
+      </div>
+
+      <div style="margin-bottom: 8px;">
+        <strong>${labels.secondaryGift}:</strong> ${escapeHtml(params.secondaryGift)}
+      </div>
+
+      <div>
+        <strong>${labels.recommendedMinistry}:</strong> ${escapeHtml(params.recommendedMinistry)}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px;">
+      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">${labels.fullResponseReport}</h3>
+
+      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
+${escapeHtml(params.fullReport)}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px; color: #777777; font-size: 12px;">
+      ${labels.footer}
+    </div>
+  </div>
+</div>`;
+}
+
 async function sendEmailViaGmailApi(params: {
   accessToken: string;
   to: string;
   subject: string;
-  body: string;
+  htmlBody: string;
 }) {
   const rawMessage = [
     `To: ${params.to}`,
     `Subject: ${encodeSubject(params.subject)}`,
     'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Type: text/html; charset="UTF-8"',
     'Content-Transfer-Encoding: 8bit',
     '',
-    params.body,
+    params.htmlBody,
   ].join('\r\n');
 
   const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
@@ -95,11 +210,9 @@ async function sendEmailViaGmailApi(params: {
   return response.json();
 }
 
-export default function AssessmentForm() {
+export defaultexport default function AssessmentForm() {
   const { t, dir } = useI18n();
   const [loading, setLoading] = useState(false);
-  const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
-  const [googleAuthStatus, setGoogleAuthStatus] = useState<string | null>(null);
   const [googleAuthAccount, setGoogleAuthAccount] = useState<string | null>(null);
   const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -126,7 +239,6 @@ export default function AssessmentForm() {
     if (!savedOAuth?.accessToken) {
       setGoogleAccessToken(null);
       setGoogleAuthAccount(null);
-      setGoogleAuthStatus('No saved Gmail API token was found in Firebase. Sign in once to create it.');
       return null;
     }
 
@@ -137,89 +249,19 @@ export default function AssessmentForm() {
 
     if (isExpiredOrNearExpiry) {
       setGoogleAccessToken(null);
-      setGoogleAuthStatus('Saved Gmail API token exists in Firebase but is expired or near expiry. Sign in again to renew it.');
       return null;
     }
 
     setGoogleAccessToken(savedOAuth.accessToken);
-    setGoogleAuthStatus(`Loaded saved Gmail API token from Firebase for ${savedOAuth.email || savedOAuth.displayName || 'the saved Google account'}.`);
     return savedOAuth.accessToken;
   };
 
-  useEffect(() => {
+  useEffect  useEffect(() => {
     loadSavedGoogleOAuthFromDatabase().catch((err) => {
       console.error(err);
       setGoogleAccessToken(null);
-      setGoogleAuthStatus('Could not load the saved Gmail API token from Firebase.');
     });
   }, []);
-
-  const handleGoogleSignInTest = async () => {
-    setGoogleAuthLoading(true);
-    setGoogleAuthStatus(null);
-    setError(null);
-
-    try {
-      const provider = new GoogleAuthProvider();
-
-      provider.addScope('email');
-      provider.addScope('profile');
-      provider.addScope('https://www.googleapis.com/auth/gmail.send');
-
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const user = result.user;
-
-      const email = user.email || '';
-      const safeEmailKey = sanitizeFirebaseKey(email || user.uid);
-      const accessToken = credential?.accessToken || '';
-
-      if (!accessToken) {
-        throw new Error('Google sign-in succeeded, but no Gmail API access token was returned.');
-      }
-
-      const expiresAt = Date.now() + GMAIL_ACCESS_TOKEN_TEST_LIFETIME_MS;
-
-      const googleOAuthRecord = {
-        uid: user.uid,
-        email,
-        displayName: user.displayName || '',
-        photoURL: user.photoURL || '',
-        providerId: user.providerId,
-        accessToken,
-        accessTokenCaptured: true,
-        tokenType: 'frontend_google_oauth_access_token',
-        expiresAt,
-        expiresAtISO: new Date(expiresAt).toISOString(),
-        note: 'Temporary Gmail API test token saved in Firebase and fetched from this branch on later page loads. For production, replace this with a backend refresh-token flow.',
-        scopesRequested: [
-          'email',
-          'profile',
-          'https://www.googleapis.com/auth/gmail.send',
-        ],
-        updatedAt: Date.now(),
-        updatedAtISO: new Date().toISOString(),
-        updatedAtEasternTime: getEasternTime(),
-      };
-
-      await set(ref(database, GMAIL_OAUTH_BRANCH), googleOAuthRecord);
-
-      await push(ref(database, 'gmailOAuthConfig/history/'), {
-        ...googleOAuthRecord,
-        safeEmailKey,
-      });
-
-      setGoogleAccessToken(accessToken);
-      setGoogleAuthAccount(email || user.displayName || user.uid);
-      setGoogleAuthStatus('Google sign-in worked. Gmail API token was saved to Firebase and will be fetched from the same branch on later page loads.');
-    } catch (err) {
-      console.error(err);
-      setGoogleAccessToken(null);
-      setGoogleAuthStatus('Google sign-in failed. Check Firebase Auth Google provider, Gmail API scope, authorized domain, and browser console.');
-    } finally {
-      setGoogleAuthLoading(false);
-    }
-  };
 
   const calculateGiftScores = (): GiftScores => {
     const scores = {} as GiftScores;
@@ -434,13 +476,28 @@ export default function AssessmentForm() {
             await sendEmailViaGmailApi({
               accessToken: activeGoogleAccessToken,
               to: recipientEmail,
-              subject: `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
-              body: fullReport,
+              subject: isAr
+                ? `نتيجة تقييم المواهب الروحية والدعوة الشخصية - ${trainee.fullName}`
+                : `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
+              htmlBody: buildAssessmentEmailHtml({
+                lang,
+                fullName: trainee.fullName,
+                surveyDate: trainee.surveyDate,
+                age: trainee.age,
+                interfaceLanguageUsed: lang,
+                submittedAt,
+                primaryGift: pg,
+                secondaryGift: sg,
+                recommendedMinistry: rm,
+                fullReport,
+              }),
             });
 
             await push(ref(database, 'gmailSendTestLogs/'), {
               recipientEmail,
-              subject: `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
+              subject: isAr
+                ? `نتيجة تقييم المواهب الروحية والدعوة الشخصية - ${trainee.fullName}`
+                : `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
               sentUsing: 'Gmail API',
               sentAt: Date.now(),
               sentAtISO: new Date().toISOString(),
@@ -518,40 +575,6 @@ export default function AssessmentForm() {
   return (
     <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
       <PageTitle title={t('assessment.title')} subtitle={t('assessment.program')} icon={<ClipboardList size={22} />} />
-
-      <div className="mb-[22px] bg-white border border-[rgba(139,30,30,0.12)] rounded-[22px] p-[clamp(16px,3vw,22px)] shadow-[0_8px_28px_rgba(0,0,0,0.06)]">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h2 className="m-0 text-[#8b1e1e] text-[1.1rem] font-bold flex items-center gap-2">
-              <Mail size={18} />
-              Google Gmail API Test
-            </h2>
-            <p className="mt-2 mb-0 text-sm text-[#666] leading-relaxed">
-              Temporary setup button. Sign in once to save Gmail API access in Firebase. Later submissions fetch it from the saved Firebase branch.
-            </p>
-            {googleAuthAccount && (
-              <p className="mt-2 mb-0 text-xs font-bold text-[#641414]">
-                Signed in account: {googleAuthAccount}
-              </p>
-            )}
-          </div>
-
-          <button
-            type="button"
-            disabled={googleAuthLoading}
-            onClick={handleGoogleSignInTest}
-            className="min-h-[48px] px-5 py-3 rounded-[16px] border border-[#ddd] bg-[#fafafa] text-[#242424] font-bold shadow-sm hover:bg-[#f8eeee] hover:border-[#8b1e1e]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
-          >
-            {googleAuthLoading ? 'Signing in...' : googleAccessToken ? 'Renew Google Gmail Access' : 'Sign in with Google'}
-          </button>
-        </div>
-
-        {googleAuthStatus && (
-          <div className="mt-4 bg-[#fffafa] border border-[rgba(139,30,30,0.12)] rounded-[14px] px-4 py-3 text-sm font-bold text-[#641414]">
-            {googleAuthStatus}
-          </div>
-        )}
-      </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-[22px]">
         {error && (
