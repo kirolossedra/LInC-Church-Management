@@ -3,7 +3,6 @@ import { auth, database } from '../firebase';
 import { ref, push, set } from 'firebase/database';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { motion } from 'motion/react';
-import { sendEmailViaEmailJS } from '../services/gmail';
 import PageTitle from './PageTitle';
 import { ClipboardList, Mail } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -43,12 +42,63 @@ function sanitizeFirebaseKey(value: string): string {
   return value.trim().toLowerCase().replace(/[.#$\[\]\/]/g, ',');
 }
 
+function encodeUtf8Base64(value: string): string {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function encodeBase64Url(value: string): string {
+  return encodeUtf8Base64(value)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function encodeSubject(subject: string): string {
+  return `=?UTF-8?B?${encodeUtf8Base64(subject)}?=`;
+}
+
+async function sendEmailViaGmailApi(params: {
+  accessToken: string;
+  to: string;
+  subject: string;
+  body: string;
+}) {
+  const rawMessage = [
+    `To: ${params.to}`,
+    `Subject: ${encodeSubject(params.subject)}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    params.body,
+  ].join('\r\n');
+
+  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      raw: encodeBase64Url(rawMessage),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gmail API send failed: ${response.status} ${errorText}`);
+  }
+
+  return response.json();
+}
+
 export default function AssessmentForm() {
   const { t, dir } = useI18n();
   const [loading, setLoading] = useState(false);
   const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
   const [googleAuthStatus, setGoogleAuthStatus] = useState<string | null>(null);
   const [googleAuthAccount, setGoogleAuthAccount] = useState<string | null>(null);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,7 +130,6 @@ export default function AssessmentForm() {
 
       provider.setCustomParameters({
         prompt: 'consent',
-        access_type: 'offline',
       });
 
       const result = await signInWithPopup(auth, provider);
@@ -91,6 +140,10 @@ export default function AssessmentForm() {
       const safeEmailKey = sanitizeFirebaseKey(email || user.uid);
       const accessToken = credential?.accessToken || '';
 
+      if (!accessToken) {
+        throw new Error('Google sign-in succeeded, but no access token was returned.');
+      }
+
       const googleOAuthTestRecord = {
         uid: user.uid,
         email,
@@ -98,8 +151,8 @@ export default function AssessmentForm() {
         photoURL: user.photoURL || '',
         providerId: user.providerId,
         accessToken,
-        accessTokenCaptured: Boolean(accessToken),
-        note: 'Temporary Google OAuth test record. This form still sends using EmailJS. Do not keep frontend-saved access tokens in production.',
+        accessTokenCaptured: true,
+        note: 'Temporary Google OAuth/Gmail API test record. This access token is frontend-captured and should not be kept this way in production.',
         scopesRequested: [
           'email',
           'profile',
@@ -112,11 +165,13 @@ export default function AssessmentForm() {
 
       await set(ref(database, `gmailOAuthTest/${safeEmailKey}`), googleOAuthTestRecord);
 
+      setGoogleAccessToken(accessToken);
       setGoogleAuthAccount(email || user.displayName || user.uid);
-      setGoogleAuthStatus('Google sign-in worked and the test record was saved to Firebase.');
+      setGoogleAuthStatus('Google sign-in worked. Gmail API token saved for this test session.');
     } catch (err) {
       console.error(err);
-      setGoogleAuthStatus('Google sign-in failed. Check Firebase Auth Google provider, authorized domain, and browser console.');
+      setGoogleAccessToken(null);
+      setGoogleAuthStatus('Google sign-in failed. Check Firebase Auth Google provider, Gmail API scope, authorized domain, and browser console.');
     } finally {
       setGoogleAuthLoading(false);
     }
@@ -167,6 +222,11 @@ export default function AssessmentForm() {
 
     if (!allRequiredTrainee || !allFaithAnswered || !allGiftAnswered || !allMinistryAnswered || !allVisionAnswered) {
       setError(t('assessment.completeFields'));
+      return;
+    }
+
+    if (!googleAccessToken) {
+      setError('Sign in with Google first. The form now sends emails through Gmail API, not EmailJS.');
       return;
     }
 
@@ -271,30 +331,6 @@ export default function AssessmentForm() {
         const sep = '=========================================';
         const ssep = '-------------------------------';
 
-        const primaryGiftKey = sortedGifts[0][0];
-        const secondaryGiftKey = sortedGifts[1][0];
-        const topMinistryKey = sortedMinistry[0][0];
-
-        const giftRecMap: Record<string, { en: string; ar: string }> = {
-          A: { en: 'Apostolic / Pioneering Leadership', ar: 'قيادة رسولية / خدمة رائدة' },
-          B: { en: 'Prophetic / Intercession Ministry', ar: 'خدمة نبوية / شفاعة' },
-          C: { en: 'Evangelism and Outreach', ar: 'التبشير والكرازة' },
-          D: { en: 'Pastoral Care and Shepherding', ar: 'الرعاية الروحية وقلب الراعي' },
-          E: { en: 'Teaching, Training, and Discipleship', ar: 'التعليم والتدريب والتلمذة' },
-        };
-        const ministryMap: Record<string, { en: string; ar: string }> = {
-          F1: { en: 'Prayer and Intercession', ar: 'الصلاة والشفاعة' },
-          F2: { en: 'Evangelism and Outreach', ar: 'التبشير والتواصل' },
-          F3: { en: 'Bible Teaching and Discipleship', ar: 'تعليم الكتاب المقدس والتلمذة' },
-          F4: { en: 'Spiritual Care and Follow-up', ar: 'الرعاية الروحية والمتابعة' },
-          F5: { en: 'Worship', ar: 'العبادة' },
-          F6: { en: "Children's Ministry", ar: 'خدمة الأطفال' },
-          F7: { en: 'Youth Ministry', ar: 'خدمة الشباب' },
-          F8: { en: 'Media and Technology', ar: 'الإعلام والتكنولوجيا' },
-          F9: { en: 'Administration and Oversight', ar: 'الإدارة والإشراف' },
-          F10: { en: 'Hospitality and Welcome', ar: 'الضيافة والترحيب' },
-        };
-
         const langResult = results[lang];
         const pg = giftRecMap[primaryGiftKey]?.[isAr ? 'ar' : 'en'] || primaryGiftKey;
         const sg = giftRecMap[secondaryGiftKey]?.[isAr ? 'ar' : 'en'] || secondaryGiftKey;
@@ -349,19 +385,25 @@ export default function AssessmentForm() {
 
         for (const recipientEmail of resultEmailRecipients) {
           try {
-            await sendEmailViaEmailJS(recipientEmail, {
-              fullName: trainee.fullName,
-              surveyDate: trainee.surveyDate,
-              age: trainee.age,
-              interfaceLanguageUsed: lang,
-              submittedAt,
-              primaryGift: pg,
-              secondaryGift: sg,
-              recommendedMinistry: rm,
-              fullReport,
+            await sendEmailViaGmailApi({
+              accessToken: googleAccessToken,
+              to: recipientEmail,
+              subject: `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
+              body: fullReport,
+            });
+
+            await push(ref(database, 'gmailSendTestLogs/'), {
+              recipientEmail,
+              subject: `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
+              sentUsing: 'Gmail API',
+              sentAt: Date.now(),
+              sentAtISO: new Date().toISOString(),
+              sentAtEasternTime: getEasternTime(),
+              googleAuthAccount,
             });
           } catch (emailErr) {
-            console.error(`Email send failed for ${recipientEmail}:`, emailErr);
+            console.error(`Gmail API email send failed for ${recipientEmail}:`, emailErr);
+            throw emailErr;
           }
         }
       }
@@ -370,7 +412,7 @@ export default function AssessmentForm() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error(err);
-      setError(t('assessment.failed'));
+      setError('The form was processed, but Gmail API sending failed. Check Google consent, Gmail API enablement, and browser console.');
     } finally {
       setLoading(false);
     }
@@ -436,10 +478,10 @@ export default function AssessmentForm() {
           <div>
             <h2 className="m-0 text-[#8b1e1e] text-[1.1rem] font-bold flex items-center gap-2">
               <Mail size={18} />
-              Google OAuth Test
+              Google Gmail API Test
             </h2>
             <p className="mt-2 mb-0 text-sm text-[#666] leading-relaxed">
-              Temporary setup button. This only signs in with Google and saves the test OAuth record in Firebase. The assessment form still sends emails using the existing EmailJS service.
+              Temporary setup button. Sign in once, then this page sends assessment emails using Gmail API instead of EmailJS.
             </p>
             {googleAuthAccount && (
               <p className="mt-2 mb-0 text-xs font-bold text-[#641414]">
