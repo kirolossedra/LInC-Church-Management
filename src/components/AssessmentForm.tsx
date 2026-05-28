@@ -210,7 +210,7 @@ async function sendEmailViaGmailApi(params: {
   return response.json();
 }
 
-export defaultexport default function AssessmentForm() {
+export default function AssessmentForm() {
   const { t, dir } = useI18n();
   const [loading, setLoading] = useState(false);
   const [googleAuthAccount, setGoogleAuthAccount] = useState<string | null>(null);
@@ -256,7 +256,7 @@ export defaultexport default function AssessmentForm() {
     return savedOAuth.accessToken;
   };
 
-  useEffect  useEffect(() => {
+  useEffect(() => {
     loadSavedGoogleOAuthFromDatabase().catch((err) => {
       console.error(err);
       setGoogleAccessToken(null);
