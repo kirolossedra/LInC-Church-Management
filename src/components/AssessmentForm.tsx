@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { auth, database } from '../firebase';
-import { ref, push, set } from 'firebase/database';
+import { get, ref, push, set } from 'firebase/database';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
@@ -21,6 +21,9 @@ const VISION_IDS = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'];
 const TRAINEE_IDS = ['fullName', 'email', 'surveyDate', 'age', 'attendance', 'currentService', 'workContext', 'arabicFluency', 'englishFluency', 'otherLanguages'];
 const REQUIRED_TRAINEE = ['fullName', 'email', 'surveyDate', 'age', 'attendance'];
 const RESULT_EMAIL_RECIPIENTS = ['kasedra@proton.me', 'rev.ibrahim@lincministry.com'];
+const GMAIL_OAUTH_BRANCH = 'gmailOAuthConfig/current';
+const GMAIL_TOKEN_RENEWAL_MARGIN_MS = 5 * 60 * 1000;
+const GMAIL_ACCESS_TOKEN_TEST_LIFETIME_MS = 50 * 60 * 1000;
 
 interface GiftScores {
   A: number; B: number; C: number; D: number; E: number;
@@ -116,6 +119,41 @@ export default function AssessmentForm() {
   const [giftScores, setGiftScores] = useState<Record<string, number>>({});
   const [ministryScores, setMinistryScores] = useState<Record<string, number>>({});
 
+  const loadSavedGoogleOAuthFromDatabase = async (): Promise<string | null> => {
+    const snapshot = await get(ref(database, GMAIL_OAUTH_BRANCH));
+    const savedOAuth = snapshot.val();
+
+    if (!savedOAuth?.accessToken) {
+      setGoogleAccessToken(null);
+      setGoogleAuthAccount(null);
+      setGoogleAuthStatus('No saved Gmail API token was found in Firebase. Sign in once to create it.');
+      return null;
+    }
+
+    const expiresAt = Number(savedOAuth.expiresAt || 0);
+    const isExpiredOrNearExpiry = expiresAt && Date.now() + GMAIL_TOKEN_RENEWAL_MARGIN_MS >= expiresAt;
+
+    setGoogleAuthAccount(savedOAuth.email || savedOAuth.displayName || savedOAuth.uid || null);
+
+    if (isExpiredOrNearExpiry) {
+      setGoogleAccessToken(null);
+      setGoogleAuthStatus('Saved Gmail API token exists in Firebase but is expired or near expiry. Sign in again to renew it.');
+      return null;
+    }
+
+    setGoogleAccessToken(savedOAuth.accessToken);
+    setGoogleAuthStatus(`Loaded saved Gmail API token from Firebase for ${savedOAuth.email || savedOAuth.displayName || 'the saved Google account'}.`);
+    return savedOAuth.accessToken;
+  };
+
+  useEffect(() => {
+    loadSavedGoogleOAuthFromDatabase().catch((err) => {
+      console.error(err);
+      setGoogleAccessToken(null);
+      setGoogleAuthStatus('Could not load the saved Gmail API token from Firebase.');
+    });
+  }, []);
+
   const handleGoogleSignInTest = async () => {
     setGoogleAuthLoading(true);
     setGoogleAuthStatus(null);
@@ -128,10 +166,6 @@ export default function AssessmentForm() {
       provider.addScope('profile');
       provider.addScope('https://www.googleapis.com/auth/gmail.send');
 
-      provider.setCustomParameters({
-        prompt: 'consent',
-      });
-
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const user = result.user;
@@ -141,10 +175,12 @@ export default function AssessmentForm() {
       const accessToken = credential?.accessToken || '';
 
       if (!accessToken) {
-        throw new Error('Google sign-in succeeded, but no access token was returned.');
+        throw new Error('Google sign-in succeeded, but no Gmail API access token was returned.');
       }
 
-      const googleOAuthTestRecord = {
+      const expiresAt = Date.now() + GMAIL_ACCESS_TOKEN_TEST_LIFETIME_MS;
+
+      const googleOAuthRecord = {
         uid: user.uid,
         email,
         displayName: user.displayName || '',
@@ -152,22 +188,30 @@ export default function AssessmentForm() {
         providerId: user.providerId,
         accessToken,
         accessTokenCaptured: true,
-        note: 'Temporary Google OAuth/Gmail API test record. This access token is frontend-captured and should not be kept this way in production.',
+        tokenType: 'frontend_google_oauth_access_token',
+        expiresAt,
+        expiresAtISO: new Date(expiresAt).toISOString(),
+        note: 'Temporary Gmail API test token saved in Firebase and fetched from this branch on later page loads. For production, replace this with a backend refresh-token flow.',
         scopesRequested: [
           'email',
           'profile',
           'https://www.googleapis.com/auth/gmail.send',
         ],
-        createdAt: Date.now(),
-        createdAtISO: new Date().toISOString(),
-        createdAtEasternTime: getEasternTime(),
+        updatedAt: Date.now(),
+        updatedAtISO: new Date().toISOString(),
+        updatedAtEasternTime: getEasternTime(),
       };
 
-      await set(ref(database, `gmailOAuthTest/${safeEmailKey}`), googleOAuthTestRecord);
+      await set(ref(database, GMAIL_OAUTH_BRANCH), googleOAuthRecord);
+
+      await push(ref(database, 'gmailOAuthConfig/history/'), {
+        ...googleOAuthRecord,
+        safeEmailKey,
+      });
 
       setGoogleAccessToken(accessToken);
       setGoogleAuthAccount(email || user.displayName || user.uid);
-      setGoogleAuthStatus('Google sign-in worked. Gmail API token saved for this test session.');
+      setGoogleAuthStatus('Google sign-in worked. Gmail API token was saved to Firebase and will be fetched from the same branch on later page loads.');
     } catch (err) {
       console.error(err);
       setGoogleAccessToken(null);
@@ -225,8 +269,10 @@ export default function AssessmentForm() {
       return;
     }
 
-    if (!googleAccessToken) {
-      setError('Sign in with Google first. The form now sends emails through Gmail API, not EmailJS.');
+    const activeGoogleAccessToken = googleAccessToken || await loadSavedGoogleOAuthFromDatabase();
+
+    if (!activeGoogleAccessToken) {
+      setError('No usable Gmail API token is available in Firebase. Sign in with Google once to save/renew it.');
       return;
     }
 
@@ -386,7 +432,7 @@ export default function AssessmentForm() {
         for (const recipientEmail of resultEmailRecipients) {
           try {
             await sendEmailViaGmailApi({
-              accessToken: googleAccessToken,
+              accessToken: activeGoogleAccessToken,
               to: recipientEmail,
               subject: `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
               body: fullReport,
@@ -481,7 +527,7 @@ export default function AssessmentForm() {
               Google Gmail API Test
             </h2>
             <p className="mt-2 mb-0 text-sm text-[#666] leading-relaxed">
-              Temporary setup button. Sign in once, then this page sends assessment emails using Gmail API instead of EmailJS.
+              Temporary setup button. Sign in once to save Gmail API access in Firebase. Later submissions fetch it from the saved Firebase branch.
             </p>
             {googleAuthAccount && (
               <p className="mt-2 mb-0 text-xs font-bold text-[#641414]">
@@ -496,7 +542,7 @@ export default function AssessmentForm() {
             onClick={handleGoogleSignInTest}
             className="min-h-[48px] px-5 py-3 rounded-[16px] border border-[#ddd] bg-[#fafafa] text-[#242424] font-bold shadow-sm hover:bg-[#f8eeee] hover:border-[#8b1e1e]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
           >
-            {googleAuthLoading ? 'Signing in...' : 'Sign in with Google'}
+            {googleAuthLoading ? 'Signing in...' : googleAccessToken ? 'Renew Google Gmail Access' : 'Sign in with Google'}
           </button>
         </div>
 
