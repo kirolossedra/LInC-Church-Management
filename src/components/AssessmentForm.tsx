@@ -927,14 +927,21 @@ export default function AssessmentForm() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px]">
-            {FORMS.map(item => (
+            {FORMS.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => selectForm(item.id)}
-                className="group text-start min-h-[190px] bg-[#fffafa] border-2 border-[rgba(139,30,30,0.16)] rounded-[22px] p-[22px] cursor-pointer shadow-[0_8px_18px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[2px] hover:border-[#8b1e1e] hover:shadow-[0_12px_28px_rgba(139,30,30,0.16)]"
+                className="group relative text-start min-h-[190px] bg-[#fffafa] border-2 border-[rgba(139,30,30,0.16)] rounded-[22px] p-[22px] cursor-pointer shadow-[0_8px_18px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[2px] hover:border-[#8b1e1e] hover:shadow-[0_12px_28px_rgba(139,30,30,0.16)]"
               >
-                <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center mb-5 shadow-[0_8px_18px_rgba(139,30,30,0.22)]">
+                <div
+                  className="absolute top-4 w-9 h-9 rounded-full bg-[#8b1e1e] text-white grid place-items-center text-[1rem] font-bold shadow-[0_8px_18px_rgba(139,30,30,0.24)]"
+                  style={dir === 'rtl' ? { right: '16px' } : { left: '16px' }}
+                >
+                  {index + 1}
+                </div>
+
+                <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center mb-5 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
                   <ClipboardList size={22} />
                 </div>
 
