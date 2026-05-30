@@ -1,0 +1,592 @@
+id: five-service-pathways
+version: 1
+status: active
+
+firebase:
+  path: form
+  tableNameEquivalent: form
+
+card:
+  titleKey: assessment.fiveServicePaths.title
+  descriptionKey: assessment.fiveServicePaths.description
+  icon: ClipboardList
+
+page:
+  titleKey: assessment.title
+  subtitleKey: assessment.program
+  confidentialKey: assessment.confidential
+
+email:
+  enabled: true
+  provider: brevo
+  recipients:
+    - kasedra@proton.me
+    - rev.ibrahim@lincministry.com
+  includeSubmitter: true
+  subject:
+    en: "LINC Spiritual Gifts Assessment Response - {{fullName}}"
+    ar: "نتيجة تقييم المواهب الروحية والدعوة الشخصية - {{fullName}}"
+
+defaults:
+  languageSource: interfaceDirection
+  timezone: America/Toronto
+  ratingScale:
+    min: 1
+    max: 5
+
+sections:
+  - id: trainee
+    type: fields
+    titleKey: assessment.traineeInfo
+    layout: twoColumns
+    fields:
+      - id: fullName
+        type: text
+        required: true
+        labelKey: trainee.fullName
+
+      - id: email
+        type: email
+        required: true
+        labelKey: trainee.email
+
+      - id: surveyDate
+        type: date
+        required: true
+        default: today
+        labelKey: trainee.surveyDate
+
+      - id: age
+        type: number
+        required: true
+        default: "18"
+        labelKey: trainee.age
+
+      - id: attendance
+        type: textarea
+        required: true
+        labelKey: trainee.attendance
+
+      - id: currentService
+        type: textarea
+        required: false
+        labelKey: trainee.currentService
+
+      - id: workContext
+        type: text
+        required: false
+        labelKey: trainee.workContext
+
+      - id: arabicFluency
+        type: text
+        required: false
+        labelKey: trainee.arabicFluency
+
+      - id: englishFluency
+        type: text
+        required: false
+        labelKey: trainee.englishFluency
+
+      - id: otherLanguages
+        type: text
+        required: false
+        labelKey: trainee.otherLanguages
+
+  - id: faith
+    type: fields
+    titleKey: assessment.part1
+    layout: singleColumn
+    fields:
+      - id: q1_1
+        type: textarea
+        required: true
+        labelKey: faith.q1_1
+
+      - id: q1_2
+        type: textarea
+        required: true
+        labelKey: faith.q1_2
+
+      - id: q1_3
+        type: textarea
+        required: true
+        labelKey: faith.q1_3
+
+      - id: q1_4
+        type: textarea
+        required: true
+        labelKey: faith.q1_4
+
+      - id: q1_5
+        type: textarea
+        required: true
+        labelKey: faith.q1_5
+
+  - id: gifts
+    type: groupedRating
+    titleKey: assessment.part2
+    guideKeys:
+      - assessment.rateGuide
+      - assessment.scale
+    ratingScale:
+      min: 1
+      max: 5
+    groups:
+      - id: A
+        titleKey: gift.A.title
+        result:
+          en: Apostolic / Pioneering Leadership
+          ar: قيادة رسولية / خدمة رائدة
+        fields:
+          - id: A1
+            type: rating
+            required: true
+            labelKey: gift.A1
+          - id: A2
+            type: rating
+            required: true
+            labelKey: gift.A2
+          - id: A3
+            type: rating
+            required: true
+            labelKey: gift.A3
+          - id: A4
+            type: rating
+            required: true
+            labelKey: gift.A4
+          - id: A5
+            type: rating
+            required: true
+            labelKey: gift.A5
+
+      - id: B
+        titleKey: gift.B.title
+        result:
+          en: Prophetic / Intercession Ministry
+          ar: خدمة نبوية / شفاعة
+        fields:
+          - id: B1
+            type: rating
+            required: true
+            labelKey: gift.B1
+          - id: B2
+            type: rating
+            required: true
+            labelKey: gift.B2
+          - id: B3
+            type: rating
+            required: true
+            labelKey: gift.B3
+          - id: B4
+            type: rating
+            required: true
+            labelKey: gift.B4
+          - id: B5
+            type: rating
+            required: true
+            labelKey: gift.B5
+
+      - id: C
+        titleKey: gift.C.title
+        result:
+          en: Evangelism and Outreach
+          ar: التبشير والكرازة
+        fields:
+          - id: C1
+            type: rating
+            required: true
+            labelKey: gift.C1
+          - id: C2
+            type: rating
+            required: true
+            labelKey: gift.C2
+          - id: C3
+            type: rating
+            required: true
+            labelKey: gift.C3
+          - id: C4
+            type: rating
+            required: true
+            labelKey: gift.C4
+          - id: C5
+            type: rating
+            required: true
+            labelKey: gift.C5
+
+      - id: D
+        titleKey: gift.D.title
+        result:
+          en: Pastoral Care and Shepherding
+          ar: الرعاية الروحية وقلب الراعي
+        fields:
+          - id: D1
+            type: rating
+            required: true
+            labelKey: gift.D1
+          - id: D2
+            type: rating
+            required: true
+            labelKey: gift.D2
+          - id: D3
+            type: rating
+            required: true
+            labelKey: gift.D3
+          - id: D4
+            type: rating
+            required: true
+            labelKey: gift.D4
+          - id: D5
+            type: rating
+            required: true
+            labelKey: gift.D5
+
+      - id: E
+        titleKey: gift.E.title
+        result:
+          en: Teaching, Training, and Discipleship
+          ar: التعليم والتدريب والتلمذة
+        fields:
+          - id: E1
+            type: rating
+            required: true
+            labelKey: gift.E1
+          - id: E2
+            type: rating
+            required: true
+            labelKey: gift.E2
+          - id: E3
+            type: rating
+            required: true
+            labelKey: gift.E3
+          - id: E4
+            type: rating
+            required: true
+            labelKey: gift.E4
+          - id: E5
+            type: rating
+            required: true
+            labelKey: gift.E5
+
+  - id: ministry
+    type: ratingList
+    titleKey: assessment.part3
+    guideKeys:
+      - assessment.rateGuide
+      - assessment.scale
+    ratingScale:
+      min: 1
+      max: 5
+    fields:
+      - id: F1
+        type: rating
+        required: true
+        labelKey: ministry.F1
+        result:
+          en: Prayer and Intercession
+          ar: الصلاة والشفاعة
+
+      - id: F2
+        type: rating
+        required: true
+        labelKey: ministry.F2
+        result:
+          en: Evangelism and Outreach
+          ar: التبشير والتواصل
+
+      - id: F3
+        type: rating
+        required: true
+        labelKey: ministry.F3
+        result:
+          en: Bible Teaching and Discipleship
+          ar: تعليم الكتاب المقدس والتلمذة
+
+      - id: F4
+        type: rating
+        required: true
+        labelKey: ministry.F4
+        result:
+          en: Spiritual Care and Follow-up
+          ar: الرعاية الروحية والمتابعة
+
+      - id: F5
+        type: rating
+        required: true
+        labelKey: ministry.F5
+        result:
+          en: Worship
+          ar: العبادة
+
+      - id: F6
+        type: rating
+        required: true
+        labelKey: ministry.F6
+        result:
+          en: Children's Ministry
+          ar: خدمة الأطفال
+
+      - id: F7
+        type: rating
+        required: true
+        labelKey: ministry.F7
+        result:
+          en: Youth Ministry
+          ar: خدمة الشباب
+
+      - id: F8
+        type: rating
+        required: true
+        labelKey: ministry.F8
+        result:
+          en: Media and Technology
+          ar: الإعلام والتكنولوجيا
+
+      - id: F9
+        type: rating
+        required: true
+        labelKey: ministry.F9
+        result:
+          en: Administration and Oversight
+          ar: الإدارة والإشراف
+
+      - id: F10
+        type: rating
+        required: true
+        labelKey: ministry.F10
+        result:
+          en: Hospitality and Welcome
+          ar: الضيافة والترحيب
+
+  - id: vision
+    type: fields
+    titleKey: assessment.part4
+    layout: singleColumn
+    fields:
+      - id: v1
+        type: textarea
+        required: true
+        labelKey: vision.v1
+
+      - id: v2
+        type: textarea
+        required: true
+        labelKey: vision.v2
+
+      - id: v3
+        type: textarea
+        required: true
+        labelKey: vision.v3
+
+      - id: v4
+        type: textarea
+        required: true
+        labelKey: vision.v4
+
+      - id: v5
+        type: textarea
+        required: true
+        labelKey: vision.v5
+
+      - id: v6
+        type: textarea
+        required: false
+        labelKey: vision.v6
+
+validation:
+  errorKey: assessment.completeFields
+  rules:
+    - type: requiredFields
+      section: trainee
+      fields:
+        - fullName
+        - email
+        - surveyDate
+        - age
+        - attendance
+
+    - type: requiredSectionFields
+      section: faith
+
+    - type: requiredGroupedRating
+      section: gifts
+
+    - type: requiredSectionFields
+      section: ministry
+
+    - type: requiredFields
+      section: vision
+      fields:
+        - v1
+        - v2
+        - v3
+        - v4
+        - v5
+
+calculations:
+  - id: giftTotals
+    type: sumGroups
+    sourceSection: gifts
+
+  - id: ministryTotals
+    type: fieldScores
+    sourceSection: ministry
+
+  - id: rankedGifts
+    type: rankGroups
+    sourceCalculation: giftTotals
+    order: descending
+
+  - id: rankedMinistry
+    type: rankFields
+    sourceCalculation: ministryTotals
+    order: descending
+
+  - id: primaryGift
+    type: topGroup
+    sourceCalculation: rankedGifts
+    rank: 1
+    resultSource: gifts.groups.result
+
+  - id: secondaryGift
+    type: topGroup
+    sourceCalculation: rankedGifts
+    rank: 2
+    resultSource: gifts.groups.result
+
+  - id: recommendedMinistry
+    type: topField
+    sourceCalculation: rankedMinistry
+    rank: 1
+    resultSource: ministry.fields.result
+
+results:
+  display:
+    titleKey: assessment.assessmentResults
+    cards:
+      - id: primaryGift
+        labelKey: assessment.primaryGift
+        valueFrom: calculations.primaryGift
+
+      - id: secondaryGift
+        labelKey: assessment.secondaryGift
+        valueFrom: calculations.secondaryGift
+
+      - id: recommendedMinistry
+        labelKey: assessment.recommendedMinistry
+        valueFrom: calculations.recommendedMinistry
+
+    summary:
+      en: "The strongest result is {{primaryGift}}. The secondary result is {{secondaryGift}}. The most aligned ministry area is {{recommendedMinistry}}."
+      ar: "أقوى نتيجة هي {{primaryGift}}. النتيجة الثانوية هي {{secondaryGift}}. مجال الخدمة الأكثر توافقاً هو {{recommendedMinistry}}."
+
+    scoreBlocks:
+      - id: giftScores
+        titleKey: assessment.giftScores
+        sourceCalculation: giftTotals
+        maxScore: 25
+        labelSource: gifts.groups.titleKey
+
+      - id: ministryScores
+        titleKey: assessment.ministryScores
+        sourceCalculation: ministryTotals
+        maxScore: 5
+        labelSource: ministry.fields.labelKey
+
+firebaseRecord:
+  include:
+    - metadata
+    - fields
+    - scores
+    - results
+
+  metadata:
+    createdAt: serverTimestampMilliseconds
+    createdAtISO: clientISO
+    createdAtEasternTime: clientEasternTime
+    interfaceLanguageUsed: currentLanguage
+
+  fields:
+    trainee:
+      sourceSection: trainee
+      saveLabels: true
+
+    faith:
+      sourceSection: faith
+      saveLabels: true
+
+    gifts:
+      sourceSection: gifts
+      saveLabels: true
+      saveGroupTitles: true
+
+    ministry:
+      sourceSection: ministry
+      saveLabels: true
+
+    vision:
+      sourceSection: vision
+      saveLabels: true
+
+  scores:
+    gifts: giftTotals
+    ministry: ministryTotals
+
+  results:
+    primaryGift: primaryGift
+    secondaryGift: secondaryGift
+    recommendedMinistry: recommendedMinistry
+    summary: results.display.summary
+
+emailReport:
+  sections:
+    - id: header
+      type: metadata
+      fields:
+        - submittedAt
+        - interfaceLanguageUsed
+
+    - id: traineeInfo
+      title:
+        en: TRAINEE INFORMATION
+        ar: معلومات المتدرب
+      sourceSection: trainee
+
+    - id: assessmentResults
+      title:
+        en: ASSESSMENT RESULTS
+        ar: نتائج التقييم
+      fields:
+        - primaryGift
+        - secondaryGift
+        - recommendedMinistry
+        - summary
+
+    - id: faithJourney
+      title:
+        en: FAITH JOURNEY AND WALK WITH GOD
+        ar: الرحلة الإيمانية والمسيرة مع الله
+      sourceSection: faith
+
+    - id: personalGifts
+      title:
+        en: PERSONAL GIFTS ASSESSMENT
+        ar: تقييم المواهب الشخصية
+      sourceSection: gifts
+      includeScores: true
+      scoreSource: giftTotals
+      maxScore: 25
+
+    - id: ministryAlignment
+      title:
+        en: MINISTRY ALIGNMENT AND EXPERIENCE
+        ar: التوافق والخبرة نحو الخدمة
+      sourceSection: ministry
+      includeScores: true
+      scoreSource: ministryTotals
+      maxScore: 5
+
+    - id: callingVision
+      title:
+        en: CALLING AND VISION QUESTIONS
+        ar: أسئلة الدعوة والرؤية
+      sourceSection: vision
