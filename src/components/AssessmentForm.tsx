@@ -324,7 +324,11 @@ function runCalculations(form: FormDef, answers: Answers): Record<string, Calcul
 }
 
 function isResultItem(value: CalculationValue): value is ResultItem {
-  return Boolean(value) && !Array.isArray(value) && typeof value === 'object' && 'id' in value && 'sourceType' in value;
+  if (value === null || Array.isArray(value) || typeof value !== 'object') {
+    return false;
+  }
+
+  return 'id' in value && 'sourceType' in value;
 }
 
 function calculationDisplayValue(t: (key: string) => string, value: CalculationValue, lang: Lang): string {
