@@ -1,0 +1,620 @@
+id: spiritual-gifts-discovery
+version: 1
+status: active
+
+firebase:
+  path: form
+  tableNameEquivalent: spiritual_gifts_discovery
+
+card:
+  title:
+    en: Spiritual Gifts Discovery
+    ar: اكتشاف المواهب الروحية
+  description:
+    en: Discover and rank your strongest spiritual gifts through a 42-question assessment.
+    ar: اكتشف ورتّب أقوى مواهبك الروحية من خلال تقييم مكوّن من ٤٢ سؤالاً.
+  icon: ClipboardList
+
+page:
+  title:
+    en: Spiritual Gifts Discovery
+    ar: اكتشاف المواهب الروحية
+  subtitle:
+    en: Questionnaire & Growth Guidelines for Leaders and Servants of the Lord
+    ar: استبيان وإرشادات نمو للقادة وخدام الرب
+  confidentialKey: assessment.confidential
+
+email:
+  enabled: true
+  provider: brevo
+  recipients:
+    - kasedra@proton.me
+    - rev.ibrahim@lincministry.com
+  includeSubmitter: true
+  subject:
+    en: "LINC Spiritual Gifts Discovery Response - {{fullName}}"
+    ar: "نتيجة اكتشاف المواهب الروحية - {{fullName}}"
+
+defaults:
+  languageSource: interfaceDirection
+  timezone: America/Toronto
+  ratingScale:
+    min: 1
+    max: 5
+
+sections:
+  - id: trainee
+    type: fields
+    title:
+      en: Participant Information
+      ar: معلومات المشارك
+    layout: twoColumns
+    fields:
+      - id: fullName
+        type: text
+        required: true
+        label:
+          en: Name
+          ar: الاسم
+
+      - id: surveyDate
+        type: date
+        required: true
+        default: today
+        label:
+          en: Date
+          ar: التاريخ
+
+      - id: email
+        type: email
+        required: true
+        label:
+          en: Email
+          ar: البريد الإلكتروني
+
+      - id: ministryRole
+        type: text
+        required: false
+        label:
+          en: Ministry Role
+          ar: الدور في الخدمة
+
+  - id: spiritualGifts
+    type: groupedRating
+    title:
+      en: Spiritual Gifts Questionnaire
+      ar: استبيان المواهب الروحية
+    guide:
+      en: "Rate each statement from 1 to 5: 1 = This does not describe me at all, 2 = This rarely describes me, 3 = This sometimes describes me, 4 = This often describes me, 5 = This consistently and strongly describes me."
+      ar: "قيّم كل عبارة من ١ إلى ٥: ١ = لا تصفني إطلاقاً، ٢ = نادراً ما تصفني، ٣ = أحياناً تصفني، ٤ = غالباً تصفني، ٥ = تصفني باستمرار وبقوة."
+    ratingScale:
+      min: 1
+      max: 5
+    groups:
+      - id: prophecy
+        title:
+          en: Prophecy
+          ar: النبوة
+        result:
+          en: Prophecy
+          ar: النبوة
+        fields:
+          - id: q1
+            type: rating
+            required: true
+            label:
+              en: I feel a strong inner compulsion to speak God's truth even when it is difficult or unpopular.
+              ar: أشعر بدافع داخلي قوي لأتكلم بحق الله حتى عندما يكون ذلك صعباً أو غير مقبول.
+          - id: q2
+            type: rating
+            required: true
+            label:
+              en: People around me often say that my words have convicted them or brought them back to the right path.
+              ar: كثيراً ما يقول من حولي إن كلماتي وبّختهم أو أعادتهم إلى الطريق الصحيح.
+          - id: q3
+            type: rating
+            required: true
+            label:
+              en: I can discern when the spiritual atmosphere in a group or meeting is unhealthy or off-course.
+              ar: أستطيع تمييز متى يكون الجو الروحي في مجموعة أو اجتماع غير صحي أو خارج المسار.
+
+      - id: servingHelps
+        title:
+          en: Serving / Helps
+          ar: الخدمة / المساعدة
+        result:
+          en: Serving / Helps
+          ar: الخدمة / المساعدة
+        fields:
+          - id: q4
+            type: rating
+            required: true
+            label:
+              en: I find genuine joy in meeting practical needs behind the scenes without seeking recognition.
+              ar: أجد فرحاً حقيقياً في تلبية الاحتياجات العملية من وراء الكواليس دون طلب الاعتراف.
+          - id: q5
+            type: rating
+            required: true
+            label:
+              en: I notice unmet needs quickly and take initiative to address them before being asked.
+              ar: ألاحظ الاحتياجات غير الملباة بسرعة وأبادر لمعالجتها قبل أن يُطلب مني ذلك.
+          - id: q6
+            type: rating
+            required: true
+            label:
+              en: I feel fulfilled when I support others so they can focus on their primary calling.
+              ar: أشعر بالاكتفاء عندما أساند الآخرين حتى يركزوا على دعوتهم الأساسية.
+
+      - id: teaching
+        title:
+          en: Teaching
+          ar: التعليم
+        result:
+          en: Teaching
+          ar: التعليم
+        fields:
+          - id: q7
+            type: rating
+            required: true
+            label:
+              en: I can take complex biblical truths and explain them in clear, understandable ways to others.
+              ar: أستطيع أخذ الحقائق الكتابية المعقدة وشرحها للآخرين بطريقة واضحة ومفهومة.
+          - id: q8
+            type: rating
+            required: true
+            label:
+              en: I love to study Scripture deeply and find great satisfaction in communicating what I learn.
+              ar: أحب دراسة الكتاب المقدس بعمق وأجد رضاً كبيراً في توصيل ما أتعلمه.
+          - id: q9
+            type: rating
+            required: true
+            label:
+              en: People often tell me that my explanations opened their eyes to something they never understood before.
+              ar: كثيراً ما يقول لي الناس إن شرحي فتح أعينهم على شيء لم يفهموه من قبل.
+
+      - id: encouragement
+        title:
+          en: Encouragement / Exhortation
+          ar: التشجيع / الوعظ العملي
+        result:
+          en: Encouragement / Exhortation
+          ar: التشجيع / الوعظ العملي
+        fields:
+          - id: q10
+            type: rating
+            required: true
+            label:
+              en: I am naturally drawn to people who are struggling and feel called to come alongside them.
+              ar: أنجذب طبيعياً إلى الأشخاص الذين يعانون وأشعر بدعوة للوقوف بجانبهم.
+          - id: q11
+            type: rating
+            required: true
+            label:
+              en: I can identify practical steps that help people grow or overcome a difficulty in their lives.
+              ar: أستطيع تحديد خطوات عملية تساعد الناس على النمو أو تجاوز صعوبة في حياتهم.
+          - id: q12
+            type: rating
+            required: true
+            label:
+              en: Others often seek me out for counsel, and they leave our conversations feeling strengthened.
+              ar: كثيراً ما يطلبني الآخرون للمشورة ويخرجون من الحديث معي وهم يشعرون بالقوة.
+
+      - id: giving
+        title:
+          en: Giving
+          ar: العطاء
+        result:
+          en: Giving
+          ar: العطاء
+        fields:
+          - id: q13
+            type: rating
+            required: true
+            label:
+              en: I feel a deep sense of purpose when I give generously to God's work or to those in need.
+              ar: أشعر بإحساس عميق بالهدف عندما أعطي بسخاء لعمل الله أو للمحتاجين.
+          - id: q14
+            type: rating
+            required: true
+            label:
+              en: I am strategic and prayerful about how I manage resources so I can give more freely.
+              ar: أدير الموارد بتخطيط وصلاة حتى أستطيع أن أعطي بحرية أكبر.
+          - id: q15
+            type: rating
+            required: true
+            label:
+              en: I trust God to provide for my needs and I find it easy to let go of financial resources cheerfully.
+              ar: أثق أن الله يسدد احتياجاتي وأجد سهولة في التخلي عن الموارد المالية بفرح.
+
+      - id: leadership
+        title:
+          en: Leadership
+          ar: القيادة
+        result:
+          en: Leadership
+          ar: القيادة
+        fields:
+          - id: q16
+            type: rating
+            required: true
+            label:
+              en: I can see a clear vision for a ministry or project and inspire others to move toward it.
+              ar: أستطيع رؤية واضحة لخدمة أو مشروع وأُلهم الآخرين للتحرك نحوها.
+          - id: q17
+            type: rating
+            required: true
+            label:
+              en: I am able to delegate tasks effectively and organize people around a shared goal.
+              ar: أستطيع تفويض المهام بفاعلية وتنظيم الناس حول هدف مشترك.
+          - id: q18
+            type: rating
+            required: true
+            label:
+              en: People tend to follow my direction naturally and trust my judgment in group settings.
+              ar: يميل الناس طبيعياً إلى اتباع توجيهي والثقة بحكمي في المجموعات.
+
+      - id: mercy
+        title:
+          en: Mercy / Compassion
+          ar: الرحمة / الشفقة
+        result:
+          en: Mercy / Compassion
+          ar: الرحمة / الشفقة
+        fields:
+          - id: q19
+            type: rating
+            required: true
+            label:
+              en: I am deeply moved by the suffering of others and feel compelled to offer comfort and care.
+              ar: أتأثر بعمق بمعاناة الآخرين وأشعر بدافع لتقديم التعزية والرعاية.
+          - id: q20
+            type: rating
+            required: true
+            label:
+              en: I do not judge people quickly but instead seek to understand their pain and show grace.
+              ar: لا أحكم على الناس بسرعة بل أسعى لفهم ألمهم وإظهار النعمة.
+          - id: q21
+            type: rating
+            required: true
+            label:
+              en: I invest time and emotional energy in people who feel forgotten or marginalized in society.
+              ar: أستثمر وقتاً وطاقة عاطفية في الأشخاص الذين يشعرون بأنهم منسيون أو مهمشون.
+
+      - id: wisdom
+        title:
+          en: Wisdom
+          ar: الحكمة
+        result:
+          en: Wisdom
+          ar: الحكمة
+        fields:
+          - id: q22
+            type: rating
+            required: true
+            label:
+              en: People often come to me when they need to make an important decision or navigate a conflict.
+              ar: كثيراً ما يأتي إليّ الناس عندما يحتاجون إلى اتخاذ قرار مهم أو التعامل مع نزاع.
+          - id: q23
+            type: rating
+            required: true
+            label:
+              en: I can apply Scripture practically to real-life situations and help others see the wisest path forward.
+              ar: أستطيع تطبيق الكتاب المقدس عملياً على مواقف الحياة ومساعدة الآخرين على رؤية الطريق الأكثر حكمة.
+          - id: q24
+            type: rating
+            required: true
+            label:
+              en: I am patient and prefer to seek God's guidance before speaking or acting.
+              ar: أنا صبور وأفضل طلب إرشاد الله قبل الكلام أو التصرف.
+
+      - id: knowledge
+        title:
+          en: Knowledge
+          ar: المعرفة
+        result:
+          en: Knowledge
+          ar: المعرفة
+        fields:
+          - id: q25
+            type: rating
+            required: true
+            label:
+              en: I have a strong hunger to research and understand biblical truths at a deep level.
+              ar: لدي رغبة قوية في البحث وفهم الحقائق الكتابية على مستوى عميق.
+          - id: q26
+            type: rating
+            required: true
+            label:
+              en: God has revealed truths or insights to me that later proved to be accurate and helpful to others.
+              ar: كشف الله لي حقائق أو بصائر ثبت لاحقاً أنها دقيقة ومفيدة للآخرين.
+          - id: q27
+            type: rating
+            required: true
+            label:
+              en: I enjoy synthesizing information from the Bible and connecting truths that others might miss.
+              ar: أستمتع بجمع المعلومات من الكتاب المقدس وربط حقائق قد لا يلاحظها الآخرون.
+
+      - id: faith
+        title:
+          en: Faith
+          ar: الإيمان
+        result:
+          en: Faith
+          ar: الإيمان
+        fields:
+          - id: q28
+            type: rating
+            required: true
+            label:
+              en: I believe God for great things even when circumstances seem impossible.
+              ar: أؤمن بالله لأجل أمور عظيمة حتى عندما تبدو الظروف مستحيلة.
+          - id: q29
+            type: rating
+            required: true
+            label:
+              en: I have a strong sense of peace and confidence in God's promises that steadies those around me.
+              ar: لدي سلام وثقة قويان في وعود الله مما يثبت من حولي.
+          - id: q30
+            type: rating
+            required: true
+            label:
+              en: I often pray bold prayers and see God move in remarkable ways in response.
+              ar: كثيراً ما أصلي صلوات جريئة وأرى الله يتحرك بطرق مميزة استجابة لها.
+
+      - id: administration
+        title:
+          en: Administration
+          ar: الإدارة
+        result:
+          en: Administration
+          ar: الإدارة
+        fields:
+          - id: q31
+            type: rating
+            required: true
+            label:
+              en: I love to create systems, plans, and processes that help a ministry run effectively.
+              ar: أحب إنشاء أنظمة وخطط وعمليات تساعد الخدمة على العمل بفاعلية.
+          - id: q32
+            type: rating
+            required: true
+            label:
+              en: I can break a large vision into clear, actionable steps and assign responsibilities well.
+              ar: أستطيع تقسيم رؤية كبيرة إلى خطوات واضحة قابلة للتنفيذ وتوزيع المسؤوليات جيداً.
+          - id: q33
+            type: rating
+            required: true
+            label:
+              en: I enjoy tracking details and ensuring that projects are completed well and on time.
+              ar: أستمتع بمتابعة التفاصيل والتأكد من إتمام المشاريع جيداً وفي وقتها.
+
+      - id: evangelism
+        title:
+          en: Evangelism
+          ar: الكرازة
+        result:
+          en: Evangelism
+          ar: الكرازة
+        fields:
+          - id: q34
+            type: rating
+            required: true
+            label:
+              en: I feel a strong burden for people who do not yet know Christ and look for opportunities to share the Gospel.
+              ar: أشعر بحمل قوي تجاه الذين لا يعرفون المسيح بعد وأبحث عن فرص لمشاركة الإنجيل.
+          - id: q35
+            type: rating
+            required: true
+            label:
+              en: I find it natural to bring spiritual conversations into everyday interactions with non-believers.
+              ar: أجد من الطبيعي إدخال الأحاديث الروحية في التعاملات اليومية مع غير المؤمنين.
+          - id: q36
+            type: rating
+            required: true
+            label:
+              en: I celebrate when someone comes to faith and I feel energized to reach more people for Christ.
+              ar: أفرح عندما يأتي شخص إلى الإيمان وأشعر بالحماس للوصول إلى المزيد لأجل المسيح.
+
+      - id: pastoring
+        title:
+          en: Pastoring / Shepherding
+          ar: الرعاية / الرعي
+        result:
+          en: Pastoring / Shepherding
+          ar: الرعاية / الرعي
+        fields:
+          - id: q37
+            type: rating
+            required: true
+            label:
+              en: I feel responsible for the spiritual health and growth of those God has placed around me.
+              ar: أشعر بالمسؤولية عن الصحة والنمو الروحي لمن وضعهم الله حولي.
+          - id: q38
+            type: rating
+            required: true
+            label:
+              en: I am committed for the long term to people in my care and I walk with them through all seasons of life.
+              ar: أنا ملتزم على المدى الطويل بالناس الذين في رعايتي وأسير معهم في كل مواسم الحياة.
+          - id: q39
+            type: rating
+            required: true
+            label:
+              en: I notice when someone in my group is drifting spiritually and I reach out to restore them.
+              ar: ألاحظ عندما يبدأ شخص في مجموعتي بالابتعاد روحياً وأتواصل معه لاستعادته.
+
+      - id: hospitality
+        title:
+          en: Hospitality
+          ar: الضيافة
+        result:
+          en: Hospitality
+          ar: الضيافة
+        fields:
+          - id: q40
+            type: rating
+            required: true
+            label:
+              en: I love creating a warm, welcoming environment where people feel they truly belong.
+              ar: أحب خلق بيئة دافئة ومرحبة يشعر فيها الناس أنهم ينتمون حقاً.
+          - id: q41
+            type: rating
+            required: true
+            label:
+              en: I enjoy opening my home or organizing gatherings where community and connection are built.
+              ar: أستمتع بفتح بيتي أو تنظيم لقاءات تُبنى فيها الشركة والعلاقات.
+          - id: q42
+            type: rating
+            required: true
+            label:
+              en: I am attentive to newcomers or strangers and take deliberate steps to include them.
+              ar: أنتبه للقادمين الجدد أو الغرباء وأتخذ خطوات مقصودة لاحتوائهم.
+
+validation:
+  errorKey: assessment.completeFields
+  rules:
+    - type: requiredSectionFields
+      section: trainee
+    - type: requiredGroupedRating
+      section: spiritualGifts
+
+calculations:
+  - id: giftTotals
+    type: sumGroups
+    sourceSection: spiritualGifts
+
+  - id: rankedGifts
+    type: rankGroups
+    sourceCalculation: giftTotals
+    order: descending
+
+  - id: primaryGift
+    type: topGroup
+    sourceCalculation: rankedGifts
+    rank: 1
+    resultSource: spiritualGifts.groups.result
+
+  - id: secondaryGift
+    type: topGroup
+    sourceCalculation: rankedGifts
+    rank: 2
+    resultSource: spiritualGifts.groups.result
+
+  - id: thirdGift
+    type: topGroup
+    sourceCalculation: rankedGifts
+    rank: 3
+    resultSource: spiritualGifts.groups.result
+
+results:
+  display:
+    title:
+      en: Spiritual Gifts Discovery Results
+      ar: نتائج اكتشاف المواهب الروحية
+    cards:
+      - id: primaryGift
+        label:
+          en: Primary Gift
+          ar: الموهبة الأساسية
+        valueFrom: calculations.primaryGift
+
+      - id: secondaryGift
+        label:
+          en: Secondary Gift
+          ar: الموهبة الثانوية
+        valueFrom: calculations.secondaryGift
+
+      - id: thirdGift
+        label:
+          en: Third Gift
+          ar: الموهبة الثالثة
+        valueFrom: calculations.thirdGift
+
+    summary:
+      en: "Your top three gifts are {{primaryGift}}, {{secondaryGift}}, and {{thirdGift}}."
+      ar: "أعلى ثلاث مواهب لديك هي {{primaryGift}}، {{secondaryGift}}، و{{thirdGift}}."
+
+    interpretation:
+      en:
+        - "13–15 points: Very strong gifting — likely a primary gift."
+        - "10–12 points: Strong gifting — likely a primary or secondary gift."
+        - "7–9 points: Moderate gifting — may be developing or a supporting gift."
+        - "Below 7: Likely not a primary gift area at this time."
+      ar:
+        - "١٣–١٥ نقطة: موهبة قوية جداً — غالباً موهبة أساسية."
+        - "١٠–١٢ نقطة: موهبة قوية — غالباً موهبة أساسية أو ثانوية."
+        - "٧–٩ نقاط: موهبة متوسطة — قد تكون في طور النمو أو موهبة مساندة."
+        - "أقل من ٧: غالباً ليست موهبة أساسية في هذا الوقت."
+
+    scoreBlocks:
+      - id: giftScores
+        title:
+          en: Gift Scores
+          ar: درجات المواهب
+        sourceCalculation: giftTotals
+        maxScore: 15
+        labelSource: spiritualGifts.groups.title
+
+firebaseRecord:
+  include:
+    - metadata
+    - fields
+    - scores
+    - results
+
+  metadata:
+    createdAt: serverTimestampMilliseconds
+    createdAtISO: clientISO
+    createdAtEasternTime: clientEasternTime
+    interfaceLanguageUsed: currentLanguage
+
+  fields:
+    trainee:
+      sourceSection: trainee
+      saveLabels: true
+
+    spiritualGifts:
+      sourceSection: spiritualGifts
+      saveLabels: true
+      saveGroupTitles: true
+
+  scores:
+    gifts: giftTotals
+
+  results:
+    primaryGift: primaryGift
+    secondaryGift: secondaryGift
+    thirdGift: thirdGift
+    summary: results.display.summary
+
+emailReport:
+  sections:
+    - id: header
+      type: metadata
+      fields:
+        - submittedAt
+        - interfaceLanguageUsed
+
+    - id: traineeInfo
+      title:
+        en: PARTICIPANT INFORMATION
+        ar: معلومات المشارك
+      sourceSection: trainee
+
+    - id: assessmentResults
+      title:
+        en: SPIRITUAL GIFTS RESULTS
+        ar: نتائج المواهب الروحية
+      fields:
+        - primaryGift
+        - secondaryGift
+        - thirdGift
+        - summary
+
+    - id: spiritualGifts
+      title:
+        en: SPIRITUAL GIFTS QUESTIONNAIRE
+        ar: استبيان المواهب الروحية
+      sourceSection: spiritualGifts
+      includeScores: true
+      scoreSource: giftTotals
+      maxScore: 15
