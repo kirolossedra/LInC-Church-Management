@@ -7,13 +7,21 @@ firebase:
   tableNameEquivalent: form
 
 card:
-  titleKey: assessment.fiveServicePaths.title
-  descriptionKey: assessment.fiveServicePaths.description
+  title:
+    en: Five Service Pathways
+    ar: مسارات الخدمة الخمسة
+  description:
+    en: LINC spiritual gifts and ministry alignment assessment.
+    ar: تقييم المواهب الروحية والتوافق مع مجالات الخدمة في LINC.
   icon: ClipboardList
 
 page:
-  titleKey: assessment.title
-  subtitleKey: assessment.program
+  title:
+    en: Five Service Pathways
+    ar: مسارات الخدمة الخمسة
+  subtitle:
+    en: LINC Spiritual Gifts and Ministry Alignment Assessment
+    ar: تقييم المواهب الروحية والتوافق مع مجالات الخدمة في LINC
   confidentialKey: assessment.confidential
 
 email:
@@ -461,18 +469,26 @@ calculations:
 
 results:
   display:
-    titleKey: assessment.assessmentResults
+    title:
+      en: Assessment Results
+      ar: نتائج التقييم
     cards:
       - id: primaryGift
-        labelKey: assessment.primaryGift
+        label:
+          en: Primary Gift
+          ar: الموهبة الأساسية
         valueFrom: calculations.primaryGift
 
       - id: secondaryGift
-        labelKey: assessment.secondaryGift
+        label:
+          en: Secondary Gift
+          ar: الموهبة الثانوية
         valueFrom: calculations.secondaryGift
 
       - id: recommendedMinistry
-        labelKey: assessment.recommendedMinistry
+        label:
+          en: Recommended Ministry
+          ar: مجال الخدمة المقترح
         valueFrom: calculations.recommendedMinistry
 
     summary:
@@ -481,13 +497,17 @@ results:
 
     scoreBlocks:
       - id: giftScores
-        titleKey: assessment.giftScores
+        title:
+          en: Gift Scores
+          ar: درجات المواهب
         sourceCalculation: giftTotals
         maxScore: 25
         labelSource: gifts.groups.titleKey
 
       - id: ministryScores
-        titleKey: assessment.ministryScores
+        title:
+          en: Ministry Scores
+          ar: درجات مجالات الخدمة
         sourceCalculation: ministryTotals
         maxScore: 5
         labelSource: ministry.fields.labelKey
