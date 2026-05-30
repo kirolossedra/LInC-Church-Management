@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import YAML from 'yaml';
+import emailjs from '@emailjs/browser';
 import { database } from '../firebase';
-import { ref, push, set, get } from 'firebase/database';
+import { ref, push } from 'firebase/database';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
@@ -9,10 +10,9 @@ import { useI18n } from '../i18n';
 import fiveServicePathwaysYaml from './five-service-pathways.yml?raw';
 import spiritualGiftsDiscoveryYaml from './spiritual-gifts-discovery.yml?raw';
 
-const BREVO_API_KEY_DATABASE_PATH = 'appSettings/brevoApiKey';
-const BREVO_SEND_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
-const BREVO_SENDER_NAME = 'Linc ministry';
-const BREVO_SENDER_EMAIL = 'lincministry.ca@gmail.com';
+const EMAILJS_SERVICE_ID = 'service_v47g6or';
+const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
+const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
 type Lang = 'en' | 'ar';
 type InterfaceLang = 'English' | 'Arabic';
@@ -643,66 +643,25 @@ function buildAssessmentEmailHtml(params: {
 </div>`;
 }
 
-async function saveBrevoApiKeyToDatabase(apiKey: string) {
-  const cleanedApiKey = apiKey.trim();
-
-  if (!cleanedApiKey) {
-    throw new Error('Brevo API key cannot be empty.');
-  }
-
-  await set(ref(database, BREVO_API_KEY_DATABASE_PATH), {
-    value: cleanedApiKey,
-    updatedAt: Date.now(),
-    updatedAtISO: new Date().toISOString(),
-  });
-}
-
-async function getBrevoApiKeyFromDatabase(): Promise<string> {
-  const snapshot = await get(ref(database, BREVO_API_KEY_DATABASE_PATH));
-  const value = snapshot.val();
-  const apiKey = typeof value === 'string' ? value : String(value?.value || '').trim();
-
-  if (!apiKey) {
-    throw new Error('Brevo API key is missing from Firebase database.');
-  }
-
-  return apiKey;
-}
-
-async function sendEmailViaBrevoApi(params: {
+async function sendEmailViaEmailJs(params: {
   to: string;
   subject: string;
+  fullName: string;
   htmlBody: string;
-  apiKey: string;
   replyToEmail?: string;
-  replyToName?: string;
 }) {
-  const payload: Record<string, unknown> = {
-    sender: { name: BREVO_SENDER_NAME, email: BREVO_SENDER_EMAIL },
-    to: [{ email: params.to }],
-    subject: params.subject,
-    htmlContent: params.htmlBody,
-  };
-
-  if (params.replyToEmail) {
-    payload.replyTo = { email: params.replyToEmail, name: params.replyToName || params.replyToEmail };
-  }
-
-  const response = await fetch(BREVO_SEND_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'api-key': params.apiKey,
-      'content-type': 'application/json',
+  return emailjs.send(
+    EMAILJS_SERVICE_ID,
+    EMAILJS_TEMPLATE_ID,
+    {
+      to_email: params.to,
+      subject: params.subject,
+      fullName: params.fullName,
+      message_html: params.htmlBody,
+      reply_to: params.replyToEmail || '',
     },
-    body: JSON.stringify(payload),
-  });
-
-  const responseText = await response.text();
-
-  if (!response.ok) throw new Error(`Brevo API send failed: ${response.status} ${responseText}`);
-
-  return responseText ? JSON.parse(responseText) : {};
+    EMAILJS_PUBLIC_KEY,
+  );
 }
 
 export default function AssessmentForm() {
@@ -719,8 +678,6 @@ export default function AssessmentForm() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [apiKeySaving, setApiKeySaving] = useState(false);
-  const [apiKeyMessage, setApiKeyMessage] = useState<string | null>(null);
 
   const answers = selectedForm ? answersByForm[selectedForm.id] || initialAnswers(selectedForm) : {};
   const result = useMemo(
@@ -760,28 +717,6 @@ export default function AssessmentForm() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSaveBrevoApiKey = async () => {
-    const apiKey = window.prompt(
-      isArabicUI
-        ? 'أدخل مفتاح Brevo API المؤقت لحفظه في قاعدة البيانات'
-        : 'Enter the temporary Brevo API key to save it in the database',
-    );
-
-    if (apiKey === null) return;
-
-    setApiKeySaving(true);
-    setApiKeyMessage(null);
-
-    try {
-      await saveBrevoApiKeyToDatabase(apiKey);
-      setApiKeyMessage(isArabicUI ? 'تم حفظ مفتاح Brevo في قاعدة البيانات.' : 'Brevo API key was saved to the database.');
-    } catch (err) {
-      console.error(err);
-      setApiKeyMessage(isArabicUI ? 'فشل حفظ مفتاح Brevo.' : 'Failed to save Brevo API key.');
-    } finally {
-      setApiKeySaving(false);
-    }
-  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -832,8 +767,8 @@ export default function AssessmentForm() {
       const emailField = String(answers.email || '').trim();
       if (selectedForm.email?.enabled && emailField) {
         const fullName = String(answers.fullName || answers.name || '');
-        const subjectTemplate = localText(selectedForm.email.subject, langCode, `LINC Assessment Response - {{fullName}}`);
-        const emailSubject = template(subjectTemplate, { fullName });
+        const formName = cardTitle(selectedForm, t, langCode);
+        const emailSubject = formName;
 
         const fullReportHtml = buildFullReportHtml({
           form: selectedForm,
@@ -868,29 +803,30 @@ export default function AssessmentForm() {
           ].filter(Boolean)),
         );
 
-        const brevoApiKey = await getBrevoApiKeyFromDatabase();
-
         for (const recipientEmail of recipients) {
-          const brevoResponse = await sendEmailViaBrevoApi({
+          const emailJsResponse = await sendEmailViaEmailJs({
             to: recipientEmail,
             subject: emailSubject,
+            fullName,
             htmlBody,
-            apiKey: brevoApiKey,
             replyToEmail: emailField,
-            replyToName: fullName,
           });
 
-          await push(ref(database, 'brevoSendLogs/'), {
+          await push(ref(database, 'emailJsSendLogs/'), {
             recipientEmail,
             subject: emailSubject,
-            sentUsing: 'Brevo API',
-            senderName: BREVO_SENDER_NAME,
-            senderEmail: BREVO_SENDER_EMAIL,
+            fullName,
+            sentUsing: 'EmailJS',
+            serviceId: EMAILJS_SERVICE_ID,
+            templateId: EMAILJS_TEMPLATE_ID,
             formId: selectedForm.id,
             sentAt: Date.now(),
             sentAtISO: new Date().toISOString(),
             sentAtEasternTime: getEasternTime(selectedForm),
-            brevoResponse,
+            emailJsResponse: {
+              status: emailJsResponse.status,
+              text: emailJsResponse.text,
+            },
           });
         }
       }
@@ -899,7 +835,7 @@ export default function AssessmentForm() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error(err);
-      setError('The form was saved, but Brevo email sending failed. Check the Brevo sender/API key and browser console.');
+      setError('The form was saved, but EmailJS sending failed. Check the EmailJS service ID, template ID, public key, and browser console.');
     } finally {
       setLoading(false);
     }
@@ -1030,24 +966,7 @@ export default function AssessmentForm() {
       <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
         <PageTitle title={firstForm ? pageTitle(firstForm, t, langCode) : t('assessment.title')} subtitle={firstForm ? pageSubtitle(firstForm, t, langCode) : t('assessment.program')} icon={<ClipboardList size={22} />} />
 
-        <div className="mb-5 bg-[#fffafa] border border-[rgba(139,30,30,0.16)] rounded-[18px] p-4 shadow-[0_6px_16px_rgba(0,0,0,0.05)]">
-          <button
-            type="button"
-            onClick={handleSaveBrevoApiKey}
-            disabled={apiKeySaving}
-            className="min-h-[46px] px-5 py-3 rounded-[16px] border-none bg-[#8b1e1e] text-white font-bold cursor-pointer shadow-[0_6px_16px_rgba(139,30,30,0.18)] transition-all hover:-translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-70 disabled:translate-y-0"
-          >
-            {apiKeySaving
-              ? (isArabicUI ? 'جارٍ حفظ مفتاح Brevo...' : 'Saving Brevo key...')
-              : (isArabicUI ? 'زر مؤقت: حفظ مفتاح Brevo' : 'Temporary Button: Save Brevo Key')}
-          </button>
 
-          {apiKeyMessage && (
-            <div className="mt-3 text-sm font-bold text-[#641414]">
-              {apiKeyMessage}
-            </div>
-          )}
-        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 18 }}
