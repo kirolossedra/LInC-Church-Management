@@ -437,7 +437,7 @@ function buildFieldsPayload(form: FormDef, answers: Answers, t: (key: string) =>
   );
 }
 
-function buildFullReport(params: {
+function buildFullReportHtml(params: {
   form: FormDef;
   answers: Answers;
   result: RuntimeResult;
@@ -447,72 +447,135 @@ function buildFullReport(params: {
   t: (key: string) => string;
 }): string {
   const { form, answers, result, lang, langCode, submittedAt, t } = params;
-  const labels = lang === 'Arabic'
+  const isArabic = lang === 'Arabic';
+
+  const labels = isArabic
     ? {
-        title: localText(form.results?.display?.title, 'ar', 'نتيجة التقييم'),
         submittedAt: 'وقت الإرسال',
         interfaceLanguageUsed: 'لغة النموذج المستخدمة',
         results: 'النتائج',
+        section: 'القسم',
         answer: 'الإجابة',
         score: 'الدرجة',
         totalScore: 'الدرجة الإجمالية',
         notAvailable: 'غير متوفر',
       }
     : {
-        title: localText(form.results?.display?.title, 'en', 'ASSESSMENT RESPONSE'),
         submittedAt: 'Submitted At',
         interfaceLanguageUsed: 'Interface Language Used',
-        results: 'RESULTS',
+        results: 'Results',
+        section: 'Section',
         answer: 'Answer',
         score: 'Score',
         totalScore: 'Total Score',
         notAvailable: 'N/A',
       };
 
-  const lines: string[] = [
-    labels.title,
-    '=========================================',
-    '',
-    `${labels.submittedAt}: ${submittedAt}`,
-    `${labels.interfaceLanguageUsed}: ${lang}`,
-    '',
-    labels.results,
-    '-------------------------------',
+  const direction = isArabic ? 'rtl' : 'ltr';
+  const align = isArabic ? 'right' : 'left';
+  const borderSide = isArabic ? 'border-right' : 'border-left';
+  const maxScore = form.defaults?.ratingScale?.max || 5;
+
+  const infoRows = [
+    { label: labels.submittedAt, value: submittedAt },
+    { label: labels.interfaceLanguageUsed, value: lang },
   ];
 
-  (form.results?.display?.cards || []).forEach(card => {
-    lines.push(`${resultCardLabel(t, card, langCode)}: ${result.cardValues[card.id] || labels.notAvailable}`);
-  });
+  const resultCardsHtml = (form.results?.display?.cards || [])
+    .map(card => `
+      <div style="background-color:#fffafa; border:1px solid #ead1d1; border-radius:14px; padding:14px;">
+        <div style="font-size:12px; color:#777777; font-weight:700; margin-bottom:4px;">${escapeHtml(resultCardLabel(t, card, langCode))}</div>
+        <div style="font-size:15px; color:#641414; font-weight:800;">${escapeHtml(result.cardValues[card.id] || labels.notAvailable)}</div>
+      </div>
+    `)
+    .join('');
 
-  lines.push('', result.summary, '');
-
-  for (const section of form.sections) {
-    lines.push('', sectionTitle(t, section, langCode).toUpperCase(), '-------------------------------');
+  const sectionsHtml = form.sections.map(section => {
+    const title = sectionTitle(t, section, langCode);
 
     if (section.type === 'fields') {
-      (section.fields || []).forEach(field => lines.push(`${fieldLabel(t, field, langCode)}: ${answers[field.id] || labels.notAvailable}`));
-      continue;
+      const rows = (section.fields || []).map(field => `
+        <tr>
+          <td style="padding:10px 12px; border-bottom:1px solid #eeeeee; color:#555555; font-weight:700; width:42%;">${escapeHtml(fieldLabel(t, field, langCode))}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #eeeeee; color:#242424;">${escapeHtml(String(answers[field.id] || labels.notAvailable))}</td>
+        </tr>
+      `).join('');
+
+      return `
+        <div style="margin-top:18px; border:1px solid #ead1d1; border-radius:16px; overflow:hidden; background-color:#ffffff;">
+          <div style="padding:13px 15px; background-color:#f8eeee; color:#641414; font-weight:800; font-size:15px;">${escapeHtml(title)}</div>
+          <table role="presentation" style="width:100%; border-collapse:collapse;">${rows}</table>
+        </div>
+      `;
     }
 
     if (section.type === 'groupedRating') {
       const totalCalculation = form.calculations?.find(rule => rule.type === 'sumGroups' && rule.sourceSection === section.id)?.id || '';
       const totals = scoreMap(result.calculations[totalCalculation]);
 
-      (section.groups || []).forEach(group => {
-        const max = (section.ratingScale?.max || form.defaults?.ratingScale?.max || 5) * (group.fields || []).length;
-        lines.push(`${groupTitle(t, group, langCode)}\n${labels.totalScore}: ${totals[group.id] || 0}/${max}`);
-        (group.fields || []).forEach(field => lines.push(`  ${field.id}. ${fieldLabel(t, field, langCode)}\n  ${labels.score}: ${numberValue(answers[field.id])}/${section.ratingScale?.max || form.defaults?.ratingScale?.max || 5}`));
-        lines.push('');
-      });
-      continue;
+      const groupsHtml = (section.groups || []).map(group => {
+        const groupMax = (section.ratingScale?.max || maxScore) * (group.fields || []).length;
+        const questionsHtml = (group.fields || []).map(field => `
+          <div style="padding:10px 12px; border-top:1px solid #eeeeee;">
+            <div style="font-weight:700; color:#333333; margin-bottom:6px;">${escapeHtml(field.id)}. ${escapeHtml(fieldLabel(t, field, langCode))}</div>
+            <div style="display:inline-block; padding:5px 10px; background-color:#f8eeee; border-radius:999px; color:#641414; font-size:12px; font-weight:800;">${labels.score}: ${numberValue(answers[field.id])}/${section.ratingScale?.max || maxScore}</div>
+          </div>
+        `).join('');
+
+        return `
+          <div style="margin:12px 0; border:1px solid #eeeeee; border-radius:14px; overflow:hidden; background-color:#ffffff;">
+            <div style="padding:12px; background-color:#fffafa;">
+              <div style="font-weight:800; color:#641414; font-size:14px;">${escapeHtml(groupTitle(t, group, langCode))}</div>
+              <div style="margin-top:6px; display:inline-block; padding:5px 10px; background-color:#8b1e1e; color:#ffffff; border-radius:999px; font-size:12px; font-weight:800;">${labels.totalScore}: ${totals[group.id] || 0}/${groupMax}</div>
+            </div>
+            ${questionsHtml}
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div style="margin-top:18px; border:1px solid #ead1d1; border-radius:16px; overflow:hidden; background-color:#ffffff;">
+          <div style="padding:13px 15px; background-color:#f8eeee; color:#641414; font-weight:800; font-size:15px;">${escapeHtml(title)}</div>
+          <div style="padding:12px;">${groupsHtml}</div>
+        </div>
+      `;
     }
 
-    if (section.type === 'ratingList') {
-      (section.fields || []).forEach(field => lines.push(`${fieldLabel(t, field, langCode)}: ${numberValue(answers[field.id])}/${section.ratingScale?.max || form.defaults?.ratingScale?.max || 5}`));
-    }
-  }
+    const ratingRows = (section.fields || []).map(field => `
+      <tr>
+        <td style="padding:10px 12px; border-bottom:1px solid #eeeeee; color:#333333; font-weight:700;">${escapeHtml(field.id)}. ${escapeHtml(fieldLabel(t, field, langCode))}</td>
+        <td style="padding:10px 12px; border-bottom:1px solid #eeeeee; color:#641414; font-weight:800; white-space:nowrap;">${numberValue(answers[field.id])}/${section.ratingScale?.max || maxScore}</td>
+      </tr>
+    `).join('');
 
-  return lines.join('\n');
+    return `
+      <div style="margin-top:18px; border:1px solid #ead1d1; border-radius:16px; overflow:hidden; background-color:#ffffff;">
+        <div style="padding:13px 15px; background-color:#f8eeee; color:#641414; font-weight:800; font-size:15px;">${escapeHtml(title)}</div>
+        <table role="presentation" style="width:100%; border-collapse:collapse;">${ratingRows}</table>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div dir="${direction}" style="text-align:${align};">
+      <div style="padding:16px; background-color:#fffafa; ${borderSide}:5px solid #8b1e1e; border-radius:14px; margin-bottom:16px;">
+        <div style="color:#8b1e1e; font-size:16px; font-weight:800; margin-bottom:10px;">${labels.results}</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:12px;">${resultCardsHtml}</div>
+        <div style="padding:12px; background-color:#ffffff; border:1px solid #ead1d1; border-radius:12px; color:#641414; font-weight:700;">${escapeHtml(result.summary)}</div>
+      </div>
+
+      <table role="presentation" style="width:100%; border-collapse:collapse; border:1px solid #ead1d1; border-radius:14px; overflow:hidden; margin-bottom:16px;">
+        ${infoRows.map(row => `
+          <tr>
+            <td style="padding:10px 12px; background-color:#f8eeee; color:#641414; font-weight:800; width:42%; border-bottom:1px solid #ead1d1;">${escapeHtml(row.label)}</td>
+            <td style="padding:10px 12px; color:#242424; border-bottom:1px solid #eeeeee;">${escapeHtml(row.value)}</td>
+          </tr>
+        `).join('')}
+      </table>
+
+      ${sectionsHtml}
+    </div>
+  `;
 }
 
 function buildAssessmentEmailHtml(params: {
@@ -523,7 +586,7 @@ function buildAssessmentEmailHtml(params: {
   interfaceLanguageUsed: string;
   submittedAt: string;
   cards: { label: string; value: string }[];
-  fullReport: string;
+  fullReportHtml: string;
 }): string {
   const isArabic = params.lang === 'Arabic';
   const labels = isArabic
@@ -573,7 +636,7 @@ function buildAssessmentEmailHtml(params: {
     </div>
     <div style="margin-top: 22px;">
       <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">${labels.fullResponseReport}</h3>
-      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">${escapeHtml(params.fullReport)}</div>
+      <div style="padding: 0; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 14px; font-size: 14px; overflow: hidden;">${params.fullReportHtml}</div>
     </div>
     <div style="margin-top: 22px; color: #777777; font-size: 12px;">${labels.footer}</div>
   </div>
@@ -720,7 +783,7 @@ export default function AssessmentForm() {
         const subjectTemplate = localText(selectedForm.email.subject, langCode, `LINC Assessment Response - {{fullName}}`);
         const emailSubject = template(subjectTemplate, { fullName });
 
-        const fullReport = buildFullReport({
+        const fullReportHtml = buildFullReportHtml({
           form: selectedForm,
           answers,
           result,
@@ -743,7 +806,7 @@ export default function AssessmentForm() {
           interfaceLanguageUsed: interfaceLanguage,
           submittedAt,
           cards,
-          fullReport,
+          fullReportHtml,
         });
 
         const recipients = Array.from(
