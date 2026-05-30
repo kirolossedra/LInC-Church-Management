@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { database } from '../firebase';
-import { get, ref, push } from 'firebase/database';
+import { ref, push } from 'firebase/database';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
@@ -20,8 +20,11 @@ const VISION_IDS = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'];
 const TRAINEE_IDS = ['fullName', 'email', 'surveyDate', 'age', 'attendance', 'currentService', 'workContext', 'arabicFluency', 'englishFluency', 'otherLanguages'];
 const REQUIRED_TRAINEE = ['fullName', 'email', 'surveyDate', 'age', 'attendance'];
 const RESULT_EMAIL_RECIPIENTS = ['kasedra@proton.me', 'rev.ibrahim@lincministry.com'];
-const GMAIL_OAUTH_BRANCH = 'gmailOAuthConfig/current';
-const GMAIL_TOKEN_RENEWAL_MARGIN_MS = 5 * 60 * 1000;
+const BREVO_API_KEY = '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';
+const BREVO_SEND_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
+const BREVO_SENDER_NAME = 'Linc ministry';
+const BREVO_SENDER_EMAIL = 'lincministry.ca@gmail.com';
+
 
 type AssessmentFormChoice = 'fiveServicePaths' | 'spiritualGifts';
 
@@ -42,181 +45,57 @@ function getEasternTime(): string {
 }
 
 
-function encodeUtf8Base64(value: string): string {
-  return btoa(unescape(encodeURIComponent(value)));
-}
-
-function encodeBase64Url(value: string): string {
-  return encodeUtf8Base64(value)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
-
-function encodeSubject(subject: string): string {
-  return `=?UTF-8?B?${encodeUtf8Base64(subject)}?=`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function buildAssessmentEmailHtml(params: {
-  lang: 'English' | 'Arabic';
-  fullName: string;
-  surveyDate: string;
-  age: string;
-  interfaceLanguageUsed: string;
-  submittedAt: string;
-  primaryGift: string;
-  secondaryGift: string;
-  recommendedMinistry: string;
-  fullReport: string;
-}): string {
-  const isArabic = params.lang === 'Arabic';
-  const labels = isArabic
-    ? {
-        title: 'نتيجة تقييم المواهب الروحية والدعوة الشخصية',
-        subtitle: 'تم الإرسال من خلال نموذج تقييم المواهب الروحية والدعوة الشخصية',
-        fullName: 'الاسم الكامل',
-        surveyDate: 'تاريخ التقييم',
-        age: 'العمر',
-        languageUsed: 'لغة النموذج المستخدمة',
-        submittedAt: 'وقت الإرسال',
-        assessmentResult: 'نتيجة التقييم',
-        primaryGift: 'الموهبة الأساسية',
-        secondaryGift: 'الموهبة الثانوية',
-        recommendedMinistry: 'مجال الخدمة المقترح',
-        fullResponseReport: 'التقرير الكامل للإجابة',
-        footer: 'تم إنشاء هذا البريد الإلكتروني تلقائياً بعد إرسال نموذج تقييم جديد.',
-      }
-    : {
-        title: 'New LINC Assessment Response',
-        subtitle: 'Submitted through the LINC Spiritual Gifts Assessment form',
-        fullName: 'Full Name',
-        surveyDate: 'Survey Date',
-        age: 'Age',
-        languageUsed: 'Language Used',
-        submittedAt: 'Submitted At',
-        assessmentResult: 'Assessment Result',
-        primaryGift: 'Primary Gift',
-        secondaryGift: 'Secondary Gift',
-        recommendedMinistry: 'Recommended Ministry',
-        fullResponseReport: 'Full Response Report',
-        footer: 'This email was automatically generated after a new form response was submitted.',
-      };
-
-  const direction = isArabic ? 'rtl' : 'ltr';
-  const align = isArabic ? 'right' : 'left';
-  const borderSide = isArabic ? 'border-right' : 'border-left';
-
-  return `
-<div dir="${direction}" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #242424; line-height: 1.6; text-align: ${align};">
-  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">${labels.title}</h2>
-    <div style="margin-top: 6px; font-size: 13px;">${labels.subtitle}</div>
-  </div>
-
-  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
-    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
-      <tr>
-        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">${labels.fullName}</td>
-        <td style="padding: 8px 0;">${escapeHtml(params.fullName)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.surveyDate}</td>
-        <td style="padding: 8px 0;">${escapeHtml(params.surveyDate)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.age}</td>
-        <td style="padding: 8px 0;">${escapeHtml(params.age)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.languageUsed}</td>
-        <td style="padding: 8px 0;">${escapeHtml(params.interfaceLanguageUsed)}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.submittedAt}</td>
-        <td style="padding: 8px 0;">${escapeHtml(params.submittedAt)}</td>
-      </tr>
-    </table>
-
-    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; ${borderSide}: 5px solid #8b1e1e; border-radius: 10px;">
-      <h3 style="margin: 0 0 10px; color: #641414; font-size: 17px;">${labels.assessmentResult}</h3>
-
-      <div style="margin-bottom: 8px;">
-        <strong>${labels.primaryGift}:</strong> ${escapeHtml(params.primaryGift)}
-      </div>
-
-      <div style="margin-bottom: 8px;">
-        <strong>${labels.secondaryGift}:</strong> ${escapeHtml(params.secondaryGift)}
-      </div>
-
-      <div>
-        <strong>${labels.recommendedMinistry}:</strong> ${escapeHtml(params.recommendedMinistry)}
-      </div>
-    </div>
-
-    <div style="margin-top: 22px;">
-      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">${labels.fullResponseReport}</h3>
-
-      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
-${escapeHtml(params.fullReport)}
-      </div>
-    </div>
-
-    <div style="margin-top: 22px; color: #777777; font-size: 12px;">
-      ${labels.footer}
-    </div>
-  </div>
-</div>`;
-}
-
-async function sendEmailViaGmailApi(params: {
-  accessToken: string;
+async function sendEmailViaBrevoApi(params: {
   to: string;
   subject: string;
   htmlBody: string;
+  replyToEmail?: string;
+  replyToName?: string;
 }) {
-  const rawMessage = [
-    `To: ${params.to}`,
-    `Subject: ${encodeSubject(params.subject)}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset="UTF-8"',
-    'Content-Transfer-Encoding: 8bit',
-    '',
-    params.htmlBody,
-  ].join('\r\n');
-
-  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${params.accessToken}`,
-      'Content-Type': 'application/json',
+  const payload: Record<string, unknown> = {
+    sender: {
+      name: BREVO_SENDER_NAME,
+      email: BREVO_SENDER_EMAIL,
     },
-    body: JSON.stringify({
-      raw: encodeBase64Url(rawMessage),
-    }),
-  });
+    to: [
+      {
+        email: params.to,
+      },
+    ],
+    subject: params.subject,
+    htmlContent: params.htmlBody,
+  };
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gmail API send failed: ${response.status} ${errorText}`);
+  if (params.replyToEmail) {
+    payload.replyTo = {
+      email: params.replyToEmail,
+      name: params.replyToName || params.replyToEmail,
+    };
   }
 
-  return response.json();
+  const response = await fetch(BREVO_SEND_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'api-key': BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Brevo API send failed: ${response.status} ${responseText}`);
+  }
+
+  return responseText ? JSON.parse(responseText) : {};
 }
+
 
 export default function AssessmentForm() {
   const { t, dir } = useI18n();
   const [loading, setLoading] = useState(false);
-  const [googleAuthAccount, setGoogleAuthAccount] = useState<string | null>(null);
-  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedAssessmentForm, setSelectedAssessmentForm] = useState<AssessmentFormChoice | null>(null);
@@ -236,36 +115,6 @@ export default function AssessmentForm() {
   const [giftScores, setGiftScores] = useState<Record<string, number>>({});
   const [ministryScores, setMinistryScores] = useState<Record<string, number>>({});
 
-  const loadSavedGoogleOAuthFromDatabase = async (): Promise<string | null> => {
-    const snapshot = await get(ref(database, GMAIL_OAUTH_BRANCH));
-    const savedOAuth = snapshot.val();
-
-    if (!savedOAuth?.accessToken) {
-      setGoogleAccessToken(null);
-      setGoogleAuthAccount(null);
-      return null;
-    }
-
-    const expiresAt = Number(savedOAuth.expiresAt || 0);
-    const isExpiredOrNearExpiry = expiresAt && Date.now() + GMAIL_TOKEN_RENEWAL_MARGIN_MS >= expiresAt;
-
-    setGoogleAuthAccount(savedOAuth.email || savedOAuth.displayName || savedOAuth.uid || null);
-
-    if (isExpiredOrNearExpiry) {
-      setGoogleAccessToken(null);
-      return null;
-    }
-
-    setGoogleAccessToken(savedOAuth.accessToken);
-    return savedOAuth.accessToken;
-  };
-
-  useEffect(() => {
-    loadSavedGoogleOAuthFromDatabase().catch((err) => {
-      console.error(err);
-      setGoogleAccessToken(null);
-    });
-  }, []);
 
   const calculateGiftScores = (): GiftScores => {
     const scores = {} as GiftScores;
@@ -312,13 +161,6 @@ export default function AssessmentForm() {
 
     if (!allRequiredTrainee || !allFaithAnswered || !allGiftAnswered || !allMinistryAnswered || !allVisionAnswered) {
       setError(t('assessment.completeFields'));
-      return;
-    }
-
-    const activeGoogleAccessToken = googleAccessToken || await loadSavedGoogleOAuthFromDatabase();
-
-    if (!activeGoogleAccessToken) {
-      setError('No usable Gmail API token is available in Firebase. Sign in with Google once to save/renew it.');
       return;
     }
 
@@ -473,43 +315,64 @@ export default function AssessmentForm() {
           l.callingVision, ssep, visionLines.join('\n\n'),
         ].join('\n');
 
-        const resultEmailRecipients = [...RESULT_EMAIL_RECIPIENTS, trainee.email.trim()];
+        const resultEmailRecipients = Array.from(
+          new Set([...RESULT_EMAIL_RECIPIENTS, trainee.email.trim()].filter(Boolean))
+        );
+
+        const emailSubject = isAr
+          ? `نتيجة تقييم المواهب الروحية والدعوة الشخصية - ${trainee.fullName}`
+          : `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`;
+
+        const htmlBody = buildAssessmentEmailHtml({
+          lang,
+          fullName: trainee.fullName,
+          surveyDate: trainee.surveyDate,
+          age: trainee.age,
+          interfaceLanguageUsed: lang,
+          submittedAt,
+          primaryGift: pg,
+          secondaryGift: sg,
+          recommendedMinistry: rm,
+          fullReport,
+        });
 
         for (const recipientEmail of resultEmailRecipients) {
           try {
-            await sendEmailViaGmailApi({
-              accessToken: activeGoogleAccessToken,
+            const brevoResponse = await sendEmailViaBrevoApi({
               to: recipientEmail,
-              subject: isAr
-                ? `نتيجة تقييم المواهب الروحية والدعوة الشخصية - ${trainee.fullName}`
-                : `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
-              htmlBody: buildAssessmentEmailHtml({
-                lang,
-                fullName: trainee.fullName,
-                surveyDate: trainee.surveyDate,
-                age: trainee.age,
-                interfaceLanguageUsed: lang,
-                submittedAt,
-                primaryGift: pg,
-                secondaryGift: sg,
-                recommendedMinistry: rm,
-                fullReport,
-              }),
+              subject: emailSubject,
+              htmlBody,
+              replyToEmail: trainee.email.trim(),
+              replyToName: trainee.fullName,
             });
 
-            await push(ref(database, 'gmailSendTestLogs/'), {
+            await push(ref(database, 'brevoSendLogs/'), {
               recipientEmail,
-              subject: isAr
-                ? `نتيجة تقييم المواهب الروحية والدعوة الشخصية - ${trainee.fullName}`
-                : `LINC Spiritual Gifts Assessment Response - ${trainee.fullName}`,
-              sentUsing: 'Gmail API',
+              subject: emailSubject,
+              sentUsing: 'Brevo API',
+              senderName: BREVO_SENDER_NAME,
+              senderEmail: BREVO_SENDER_EMAIL,
               sentAt: Date.now(),
               sentAtISO: new Date().toISOString(),
               sentAtEasternTime: getEasternTime(),
-              googleAuthAccount,
+              brevoResponse,
             });
           } catch (emailErr) {
-            console.error(`Gmail API email send failed for ${recipientEmail}:`, emailErr);
+            console.error(`Brevo API email send failed for ${recipientEmail}:`, emailErr);
+
+            await push(ref(database, 'brevoSendLogs/'), {
+              recipientEmail,
+              subject: emailSubject,
+              sentUsing: 'Brevo API',
+              senderName: BREVO_SENDER_NAME,
+              senderEmail: BREVO_SENDER_EMAIL,
+              status: 'failed',
+              errorMessage: emailErr instanceof Error ? emailErr.message : String(emailErr),
+              sentAt: Date.now(),
+              sentAtISO: new Date().toISOString(),
+              sentAtEasternTime: getEasternTime(),
+            });
+
             throw emailErr;
           }
         }
@@ -519,7 +382,7 @@ export default function AssessmentForm() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error(err);
-      setError('The form was processed, but Gmail API sending failed. Check Google consent, Gmail API enablement, and browser console.');
+      setError('The form was saved, but Brevo email sending failed. Check the Brevo sender, API key, and browser console.');
     } finally {
       setLoading(false);
     }
