@@ -45,6 +45,126 @@ function getEasternTime(): string {
 }
 
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function buildAssessmentEmailHtml(params: {
+  lang: 'English' | 'Arabic';
+  fullName: string;
+  surveyDate: string;
+  age: string;
+  interfaceLanguageUsed: string;
+  submittedAt: string;
+  primaryGift: string;
+  secondaryGift: string;
+  recommendedMinistry: string;
+  fullReport: string;
+}): string {
+  const isArabic = params.lang === 'Arabic';
+  const labels = isArabic
+    ? {
+        title: 'نتيجة تقييم المواهب الروحية والدعوة الشخصية',
+        subtitle: 'تم الإرسال من خلال نموذج تقييم المواهب الروحية والدعوة الشخصية',
+        fullName: 'الاسم الكامل',
+        surveyDate: 'تاريخ التقييم',
+        age: 'العمر',
+        languageUsed: 'لغة النموذج المستخدمة',
+        submittedAt: 'وقت الإرسال',
+        assessmentResult: 'نتيجة التقييم',
+        primaryGift: 'الموهبة الأساسية',
+        secondaryGift: 'الموهبة الثانوية',
+        recommendedMinistry: 'مجال الخدمة المقترح',
+        fullResponseReport: 'التقرير الكامل للإجابة',
+        footer: 'تم إنشاء هذا البريد الإلكتروني تلقائياً بعد إرسال نموذج تقييم جديد.',
+      }
+    : {
+        title: 'New LINC Assessment Response',
+        subtitle: 'Submitted through the LINC Spiritual Gifts Assessment form',
+        fullName: 'Full Name',
+        surveyDate: 'Survey Date',
+        age: 'Age',
+        languageUsed: 'Language Used',
+        submittedAt: 'Submitted At',
+        assessmentResult: 'Assessment Result',
+        primaryGift: 'Primary Gift',
+        secondaryGift: 'Secondary Gift',
+        recommendedMinistry: 'Recommended Ministry',
+        fullResponseReport: 'Full Response Report',
+        footer: 'This email was automatically generated after a new form response was submitted.',
+      };
+
+  const direction = isArabic ? 'rtl' : 'ltr';
+  const align = isArabic ? 'right' : 'left';
+  const borderSide = isArabic ? 'border-right' : 'border-left';
+
+  return `
+<div dir="${direction}" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #242424; line-height: 1.6; text-align: ${align};">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">${labels.title}</h2>
+    <div style="margin-top: 6px; font-size: 13px;">${labels.subtitle}</div>
+  </div>
+
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
+      <tr>
+        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">${labels.fullName}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.fullName)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.surveyDate}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.surveyDate)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.age}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.age)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.languageUsed}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.interfaceLanguageUsed)}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">${labels.submittedAt}</td>
+        <td style="padding: 8px 0;">${escapeHtml(params.submittedAt)}</td>
+      </tr>
+    </table>
+
+    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; ${borderSide}: 5px solid #8b1e1e; border-radius: 10px;">
+      <h3 style="margin: 0 0 10px; color: #641414; font-size: 17px;">${labels.assessmentResult}</h3>
+
+      <div style="margin-bottom: 8px;">
+        <strong>${labels.primaryGift}:</strong> ${escapeHtml(params.primaryGift)}
+      </div>
+
+      <div style="margin-bottom: 8px;">
+        <strong>${labels.secondaryGift}:</strong> ${escapeHtml(params.secondaryGift)}
+      </div>
+
+      <div>
+        <strong>${labels.recommendedMinistry}:</strong> ${escapeHtml(params.recommendedMinistry)}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px;">
+      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">${labels.fullResponseReport}</h3>
+
+      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
+${escapeHtml(params.fullReport)}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px; color: #777777; font-size: 12px;">
+      ${labels.footer}
+    </div>
+  </div>
+</div>`;
+}
+
 async function sendEmailViaBrevoApi(params: {
   to: string;
   subject: string;
@@ -382,7 +502,7 @@ export default function AssessmentForm() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error(err);
-      setError('The form was saved, but Brevo email sending failed. Check the Brevo sender, API key, and browser console.');
+      setError('The form was saved, but Brevo email sending failed. Check the Brevo sender/API key and browser console.');
     } finally {
       setLoading(false);
     }
