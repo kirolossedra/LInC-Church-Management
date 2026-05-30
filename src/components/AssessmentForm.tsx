@@ -187,15 +187,15 @@ function getField(form: FormDef, fieldId: string): FieldDef | undefined {
   return allFields(form).find(field => field.id === fieldId);
 }
 
-function fieldLabel(form: FormDef, t: (key: string) => string, field: FieldDef, lang: Lang): string {
+function fieldLabel(t: (key: string) => string, field: FieldDef, lang: Lang): string {
   return translateOrText(t, field.labelKey, field.label, lang, field.id);
 }
 
-function sectionTitle(form: FormDef, t: (key: string) => string, section: SectionDef, lang: Lang): string {
+function sectionTitle(t: (key: string) => string, section: SectionDef, lang: Lang): string {
   return translateOrText(t, section.titleKey, section.title, lang, section.id);
 }
 
-function groupTitle(form: FormDef, t: (key: string) => string, group: GroupDef, lang: Lang): string {
+function groupTitle(t: (key: string) => string, group: GroupDef, lang: Lang): string {
   return translateOrText(t, group.titleKey, group.title, lang, group.id);
 }
 
@@ -219,7 +219,7 @@ function resultTitle(form: FormDef, t: (key: string) => string, lang: Lang): str
   return translateOrText(t, form.results?.display?.titleKey, form.results?.display?.title, lang, 'Assessment Results');
 }
 
-function resultCardLabel(form: FormDef, t: (key: string) => string, card: ResultCardDef, lang: Lang): string {
+function resultCardLabel(t: (key: string) => string, card: ResultCardDef, lang: Lang): string {
   return translateOrText(t, card.labelKey, card.label, lang, card.id);
 }
 
@@ -323,14 +323,19 @@ function runCalculations(form: FormDef, answers: Answers): Record<string, Calcul
   return calculations;
 }
 
-function calculationDisplayValue(form: FormDef, t: (key: string) => string, value: CalculationValue, lang: Lang): string {
+function isResultItem(value: CalculationValue): value is ResultItem {
+  return Boolean(value) && !Array.isArray(value) && typeof value === 'object' && 'id' in value && 'sourceType' in value;
+}
+
+function calculationDisplayValue(t: (key: string) => string, value: CalculationValue, lang: Lang): string {
   if (!value) return '';
   if (Array.isArray(value)) return value.map(item => item.id).join(', ');
-  if ('id' in value) {
-    if (value.result) return localText(value.result, lang, value.id);
-    if (value.label || value.labelKey) return translateOrText(t, value.labelKey, value.label, lang, value.id);
-    if (value.title || value.titleKey) return translateOrText(t, value.titleKey, value.title, lang, value.id);
-    return value.id;
+  if (isResultItem(value)) {
+    const fallbackId = String(value.id);
+    if (value.result) return localText(value.result, lang, fallbackId);
+    if (value.label || value.labelKey) return translateOrText(t, value.labelKey, value.label, lang, fallbackId);
+    if (value.title || value.titleKey) return translateOrText(t, value.titleKey, value.title, lang, fallbackId);
+    return fallbackId;
   }
   return '';
 }
@@ -340,7 +345,7 @@ function buildResult(form: FormDef, answers: Answers, t: (key: string) => string
   const cardValues = Object.fromEntries(
     (form.results?.display?.cards || []).map(card => {
       const calculationId = (card.valueFrom || `calculations.${card.id}`).replace('calculations.', '');
-      return [card.id, calculationDisplayValue(form, t, calculations[calculationId], lang)];
+      return [card.id, calculationDisplayValue(t, calculations[calculationId], lang)];
     }),
   );
 
@@ -365,14 +370,14 @@ function buildFieldsPayload(form: FormDef, answers: Answers, t: (key: string) =>
             (section.groups || []).map(group => [
               group.id,
               {
-                sectionEnglish: groupTitle(form, t, group, lang),
-                sectionArabic: groupTitle(form, t, group, lang),
+                sectionEnglish: groupTitle(t, group, lang),
+                sectionArabic: groupTitle(t, group, lang),
                 questions: Object.fromEntries(
                   (group.fields || []).map(field => [
                     field.id,
                     {
-                      questionEnglish: fieldLabel(form, t, field, lang),
-                      questionArabic: fieldLabel(form, t, field, lang),
+                      questionEnglish: fieldLabel(t, field, lang),
+                      questionArabic: fieldLabel(t, field, lang),
                       score: numberValue(answers[field.id]),
                     },
                   ]),
@@ -390,8 +395,8 @@ function buildFieldsPayload(form: FormDef, answers: Answers, t: (key: string) =>
             (section.fields || []).map(field => [
               field.id,
               {
-                areaEnglish: fieldLabel(form, t, field, lang),
-                areaArabic: fieldLabel(form, t, field, lang),
+                areaEnglish: fieldLabel(t, field, lang),
+                areaArabic: fieldLabel(t, field, lang),
                 score: numberValue(answers[field.id]),
               },
             ]),
@@ -406,13 +411,13 @@ function buildFieldsPayload(form: FormDef, answers: Answers, t: (key: string) =>
             field.id,
             section.id === 'trainee'
               ? {
-                  fieldEnglish: fieldLabel(form, t, field, lang),
-                  fieldArabic: fieldLabel(form, t, field, lang),
+                  fieldEnglish: fieldLabel(t, field, lang),
+                  fieldArabic: fieldLabel(t, field, lang),
                   value: answers[field.id] || '',
                 }
               : {
-                  questionEnglish: fieldLabel(form, t, field, lang),
-                  questionArabic: fieldLabel(form, t, field, lang),
+                  questionEnglish: fieldLabel(t, field, lang),
+                  questionArabic: fieldLabel(t, field, lang),
                   answer: answers[field.id] || '',
                 },
           ]),
@@ -466,16 +471,16 @@ function buildFullReport(params: {
   ];
 
   (form.results?.display?.cards || []).forEach(card => {
-    lines.push(`${resultCardLabel(form, t, card, langCode)}: ${result.cardValues[card.id] || labels.notAvailable}`);
+    lines.push(`${resultCardLabel(t, card, langCode)}: ${result.cardValues[card.id] || labels.notAvailable}`);
   });
 
   lines.push('', result.summary, '');
 
   for (const section of form.sections) {
-    lines.push('', sectionTitle(form, t, section, langCode).toUpperCase(), '-------------------------------');
+    lines.push('', sectionTitle(t, section, langCode).toUpperCase(), '-------------------------------');
 
     if (section.type === 'fields') {
-      (section.fields || []).forEach(field => lines.push(`${fieldLabel(form, t, field, langCode)}: ${answers[field.id] || labels.notAvailable}`));
+      (section.fields || []).forEach(field => lines.push(`${fieldLabel(t, field, langCode)}: ${answers[field.id] || labels.notAvailable}`));
       continue;
     }
 
@@ -485,15 +490,15 @@ function buildFullReport(params: {
 
       (section.groups || []).forEach(group => {
         const max = (section.ratingScale?.max || form.defaults?.ratingScale?.max || 5) * (group.fields || []).length;
-        lines.push(`${groupTitle(form, t, group, langCode)}\n${labels.totalScore}: ${totals[group.id] || 0}/${max}`);
-        (group.fields || []).forEach(field => lines.push(`  ${field.id}. ${fieldLabel(form, t, field, langCode)}\n  ${labels.score}: ${numberValue(answers[field.id])}/${section.ratingScale?.max || form.defaults?.ratingScale?.max || 5}`));
+        lines.push(`${groupTitle(t, group, langCode)}\n${labels.totalScore}: ${totals[group.id] || 0}/${max}`);
+        (group.fields || []).forEach(field => lines.push(`  ${field.id}. ${fieldLabel(t, field, langCode)}\n  ${labels.score}: ${numberValue(answers[field.id])}/${section.ratingScale?.max || form.defaults?.ratingScale?.max || 5}`));
         lines.push('');
       });
       continue;
     }
 
     if (section.type === 'ratingList') {
-      (section.fields || []).forEach(field => lines.push(`${fieldLabel(form, t, field, langCode)}: ${numberValue(answers[field.id])}/${section.ratingScale?.max || form.defaults?.ratingScale?.max || 5}`));
+      (section.fields || []).forEach(field => lines.push(`${fieldLabel(t, field, langCode)}: ${numberValue(answers[field.id])}/${section.ratingScale?.max || form.defaults?.ratingScale?.max || 5}`));
     }
   }
 
@@ -716,7 +721,7 @@ export default function AssessmentForm() {
         });
 
         const cards = (selectedForm.results?.display?.cards || []).map(card => ({
-          label: resultCardLabel(selectedForm, t, card, langCode),
+          label: resultCardLabel(t, card, langCode),
           value: result.cardValues[card.id] || '',
         }));
 
@@ -835,7 +840,7 @@ export default function AssessmentForm() {
     return (
       <section key={section.id} className="bg-[rgba(255,255,255,0.96)] border border-[rgba(139,30,30,0.1)] rounded-[22px] p-[clamp(18px,4vw,28px)] shadow-[0_8px_28px_rgba(0,0,0,0.08)]">
         <h2 className="m-0 mb-5 text-[#8b1e1e] text-[clamp(1.22rem,4vw,1.55rem)] font-bold border-b-2 border-[#f8eeee] pb-[10px]">
-          {sectionTitle(selectedForm, t, section, langCode)}
+          {sectionTitle(t, section, langCode)}
         </h2>
 
         {section.guide && (
@@ -854,13 +859,13 @@ export default function AssessmentForm() {
           (section.groups || []).map(group => (
             <div key={group.id} className="mt-[18px]">
               <h3 className="text-[#641414] mb-[14px] mt-[26px] text-[clamp(1.05rem,3.5vw,1.28rem)] font-bold">
-                {groupTitle(selectedForm, t, group, langCode)}
+                {groupTitle(t, group, langCode)}
               </h3>
 
               {(group.fields || []).map(field => (
                 <div key={field.id} className="border border-[#ddd] p-4 rounded-[18px] mb-[14px] bg-[linear-gradient(180deg,#fff,#fffafa)]">
                   <p className="font-bold m-0 mb-[14px] text-[#333]">
-                    {field.id}. {fieldLabel(selectedForm, t, field, langCode)}
+                    {field.id}. {fieldLabel(t, field, langCode)}
                   </p>
                   {renderField(field, section)}
                 </div>
@@ -878,7 +883,7 @@ export default function AssessmentForm() {
               >
                 <label className="block font-bold mb-[7px] text-[#333]">
                   {section.type === 'ratingList' ? `${field.id}. ` : ''}
-                  {fieldLabel(selectedForm, t, field, langCode)}
+                  {fieldLabel(t, field, langCode)}
                   {field.required && <span className="text-[#8b1e1e]"> *</span>}
                 </label>
                 {renderField(field, section)}
@@ -950,7 +955,7 @@ export default function AssessmentForm() {
             {(selectedForm.results?.display?.cards || []).map(card => (
               <div key={card.id} className="bg-[#f8eeee] border border-[rgba(139,30,30,0.12)] rounded-[18px] p-4">
                 <span className="block text-[#666] font-bold mb-1 text-sm">
-                  {resultCardLabel(selectedForm, t, card, langCode)}
+                  {resultCardLabel(t, card, langCode)}
                 </span>
                 <strong className="text-[#641414] text-[1.05rem]">
                   {result.cardValues[card.id]}
@@ -968,8 +973,8 @@ export default function AssessmentForm() {
             const sourceSection = calculationSourceSection(selectedForm, block.sourceCalculation);
             const section = getSection(selectedForm, sourceSection);
             const items = section?.groups?.length
-              ? (section.groups || []).map(group => ({ id: group.id, label: groupTitle(selectedForm, t, group, langCode), score: source[group.id] || 0 }))
-              : (section?.fields || []).map(field => ({ id: field.id, label: fieldLabel(selectedForm, t, field, langCode), score: source[field.id] || 0 }));
+              ? (section.groups || []).map(group => ({ id: group.id, label: groupTitle(t, group, langCode), score: source[group.id] || 0 }))
+              : (section?.fields || []).map(field => ({ id: field.id, label: fieldLabel(t, field, langCode), score: source[field.id] || 0 }));
 
             return (
               <React.Fragment key={block.id}>
