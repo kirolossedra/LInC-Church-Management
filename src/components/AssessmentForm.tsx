@@ -139,6 +139,12 @@ function localText(value: LocalText | undefined, lang: Lang, fallback = ''): str
   return value?.[lang] || value?.en || value?.ar || fallback;
 }
 
+function humanizeId(value: string): string {
+  return value
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
 function translateOrText(t: (key: string) => string, key: string | undefined, text: LocalText | undefined, lang: Lang, fallback: string): string {
   if (key) {
     const translated = t(key);
@@ -200,7 +206,7 @@ function groupTitle(t: (key: string) => string, group: GroupDef, lang: Lang): st
 }
 
 function cardTitle(form: FormDef, t: (key: string) => string, lang: Lang): string {
-  return translateOrText(t, form.card?.titleKey, form.card?.title, lang, form.id);
+  return translateOrText(t, form.card?.titleKey, form.card?.title, lang, humanizeId(form.id));
 }
 
 function cardDescription(form: FormDef, t: (key: string) => string, lang: Lang): string {
