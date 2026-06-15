@@ -171,6 +171,165 @@ const emptyPersonForm: AttendancePersonForm = {
   email: '',
 };
 
+
+const attendanceResponsiveStyles = `
+  .attendance-page-root,
+  .attendance-page-root * {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  .attendance-page-root {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .attendance-page-root div,
+  .attendance-page-root span,
+  .attendance-page-root p,
+  .attendance-page-root button {
+    overflow-wrap: anywhere;
+  }
+
+  .attendance-page-root input,
+  .attendance-page-root button {
+    max-width: 100%;
+  }
+
+  .attendance-page-root svg {
+    flex-shrink: 0;
+    max-width: 100%;
+  }
+
+  @media (max-width: 640px) {
+    html,
+    body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .attendance-page-root {
+      padding: 12px !important;
+    }
+
+    .attendance-page-root > div {
+      max-width: 100% !important;
+    }
+
+    .attendance-access-card,
+    .attendance-main-card,
+    .attendance-page-root section {
+      border-radius: 20px !important;
+      padding: 18px 14px !important;
+    }
+
+    .attendance-page-root h1 {
+      font-size: 24px !important;
+      line-height: 1.2 !important;
+    }
+
+    .attendance-page-root h2 {
+      font-size: 21px !important;
+      line-height: 1.25 !important;
+      flex-wrap: wrap;
+    }
+
+    .attendance-page-root h3 {
+      font-size: 17px !important;
+      line-height: 1.25 !important;
+      flex-wrap: wrap;
+    }
+
+    .attendance-page-root p {
+      font-size: 14px !important;
+    }
+
+    .attendance-page-root button {
+      white-space: normal !important;
+    }
+
+    .attendance-section-header {
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 12px !important;
+      margin-bottom: 20px !important;
+    }
+
+    .attendance-calendar-card {
+      border-radius: 18px !important;
+      padding: 12px !important;
+    }
+
+    .attendance-calendar-header {
+      gap: 8px !important;
+      margin-bottom: 12px !important;
+    }
+
+    .attendance-calendar-header button {
+      width: 38px !important;
+      height: 38px !important;
+      min-height: 38px !important;
+      padding: 0 !important;
+      flex: 0 0 38px;
+    }
+
+    .attendance-month-label {
+      font-size: 18px !important;
+      line-height: 1.2 !important;
+    }
+
+    .attendance-weekday-grid,
+    .attendance-calendar-grid {
+      gap: 4px !important;
+    }
+
+    .attendance-weekday-grid div {
+      font-size: 11px !important;
+      padding: 6px 0 !important;
+    }
+
+    .attendance-calendar-grid button {
+      min-height: 42px !important;
+      border-radius: 12px !important;
+      font-size: 16px !important;
+      padding: 0 !important;
+    }
+
+    .attendance-person-grid-row {
+      grid-template-columns: 1fr !important;
+      gap: 12px !important;
+    }
+
+    .attendance-person-action,
+    .attendance-analysis-stat-card {
+      width: 100% !important;
+      min-width: 0 !important;
+    }
+
+    .attendance-modal-overlay {
+      padding: 10px !important;
+    }
+
+    .attendance-modal-card {
+      width: 100% !important;
+      max-width: 100% !important;
+      max-height: calc(100vh - 20px) !important;
+      border-radius: 20px !important;
+      padding: 18px 14px !important;
+    }
+
+    .attendance-page-root svg[width="360"],
+    .attendance-page-root svg[width="520"] {
+      width: 100% !important;
+      height: auto !important;
+    }
+  }
+`;
+
 export default function AttendancePage() {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
@@ -730,6 +889,7 @@ export default function AttendancePage() {
     return (
       <div
         dir={dir}
+        className="attendance-page-root"
         style={{
           minHeight: '100vh',
           padding: '40px',
@@ -740,7 +900,9 @@ export default function AttendancePage() {
           justifyContent: 'center',
         }}
       >
+        <style>{attendanceResponsiveStyles}</style>
         <div
+          className="attendance-access-card"
           style={{
             width: '100%',
             maxWidth: '420px',
@@ -856,6 +1018,7 @@ export default function AttendancePage() {
   return (
     <div
       dir={dir}
+      className="attendance-page-root"
       style={{
         minHeight: '100vh',
         padding: '40px',
@@ -863,6 +1026,7 @@ export default function AttendancePage() {
         background: '#f5f4f0',
       }}
     >
+      <style>{attendanceResponsiveStyles}</style>
       <div
         style={{
           width: '100%',
@@ -871,6 +1035,7 @@ export default function AttendancePage() {
         }}
       >
         <div
+          className="attendance-main-card"
           style={{
             background: 'white',
             borderRadius: '28px',
@@ -997,6 +1162,7 @@ export default function AttendancePage() {
             }}
           >
             <div
+              className="attendance-section-header"
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -1059,7 +1225,7 @@ export default function AttendancePage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
                 gap: '16px',
                 marginBottom: '24px',
               }}
@@ -1119,7 +1285,7 @@ export default function AttendancePage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
                 gap: '16px',
                 marginBottom: '24px',
               }}
@@ -1172,7 +1338,7 @@ export default function AttendancePage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
                 gap: '16px',
               }}
             >
@@ -1491,6 +1657,7 @@ export default function AttendancePage() {
             }}
           >
             <div
+              className="attendance-section-header"
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -1544,6 +1711,7 @@ export default function AttendancePage() {
             </div>
 
             <div
+              className="attendance-calendar-card"
               style={{
                 border: '1px solid rgba(139, 30, 30, 0.10)',
                 borderRadius: '24px',
@@ -1553,6 +1721,7 @@ export default function AttendancePage() {
               }}
             >
               <div
+                className="attendance-calendar-header"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1582,6 +1751,7 @@ export default function AttendancePage() {
 
                 <div style={{ textAlign: 'center' }}>
                   <div
+                    className="attendance-month-label"
                     style={{
                       color: '#8b1e1e',
                       fontSize: '24px',
@@ -1623,6 +1793,7 @@ export default function AttendancePage() {
               </div>
 
               <div
+                className="attendance-weekday-grid"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, 1fr)',
@@ -1647,6 +1818,7 @@ export default function AttendancePage() {
               </div>
 
               <div
+                className="attendance-calendar-grid"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(7, 1fr)',
@@ -1823,6 +1995,7 @@ export default function AttendancePage() {
                   return (
                     <div
                       key={person.firebaseId}
+                      className="attendance-person-grid-row"
                       style={{
                         width: '100%',
                         border: alreadyAttended ? '2px solid #15803d' : '1px solid #eee',
@@ -1830,7 +2003,7 @@ export default function AttendancePage() {
                         padding: '16px',
                         background: alreadyAttended ? '#f0fdf4' : 'white',
                         display: 'grid',
-                        gridTemplateColumns: '1fr auto',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
                         gap: '16px',
                         alignItems: 'center',
                       }}
@@ -1886,6 +2059,7 @@ export default function AttendancePage() {
 
                       <button
                         type="button"
+                        className="attendance-person-action"
                         onClick={() => handleMarkAttendance(person)}
                         disabled={!selectedAttendanceDate || alreadyAttended || !!isSavingAttendanceForId}
                         style={{
@@ -1939,6 +2113,7 @@ export default function AttendancePage() {
             }}
           >
             <div
+              className="attendance-section-header"
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -1994,7 +2169,7 @@ export default function AttendancePage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))',
                 gap: '14px',
                 marginBottom: '26px',
               }}
@@ -2171,6 +2346,7 @@ export default function AttendancePage() {
                   <button
                     key={item.person.firebaseId}
                     type="button"
+                    className="attendance-person-grid-row"
                     onClick={() => setSelectedAnalysisPersonId(item.person.firebaseId)}
                     style={{
                       width: '100%',
@@ -2179,7 +2355,7 @@ export default function AttendancePage() {
                       padding: '16px',
                       background: 'white',
                       display: 'grid',
-                      gridTemplateColumns: '1fr auto',
+                      gridTemplateColumns: 'minmax(0, 1fr) auto',
                       gap: '16px',
                       alignItems: 'center',
                       cursor: 'pointer',
@@ -2236,6 +2412,7 @@ export default function AttendancePage() {
                     </div>
 
                     <div
+                      className="attendance-analysis-stat-card"
                       style={{
                         minWidth: '150px',
                         borderRadius: '18px',
@@ -2292,7 +2469,7 @@ export default function AttendancePage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
                 gap: '22px',
               }}
             >
@@ -2733,7 +2910,7 @@ export default function AttendancePage() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))',
                     gap: '14px',
                     marginBottom: '24px',
                   }}
@@ -2778,7 +2955,7 @@ export default function AttendancePage() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
                     gap: '22px',
                     marginBottom: '24px',
                   }}
@@ -2985,7 +3162,7 @@ export default function AttendancePage() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
                     gap: '18px',
                   }}
                 >
