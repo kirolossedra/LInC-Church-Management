@@ -28,7 +28,7 @@ email:
   enabled: true
   provider: brevo
   recipients:
-    - kasedra@proton.me
+    #- kasedra@proton.me
     - rev.ibrahim@lincministry.com
   includeSubmitter: true
   subject:
