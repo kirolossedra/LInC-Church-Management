@@ -28,8 +28,7 @@ email:
   enabled: true
   provider: brevo
   recipients:
-    - kasedra@proton.me
-    - rev.ibrahim@lincministry.com
+      - rev.ibrahim@lincministry.com
   includeSubmitter: true
   subject:
     en: "LINC Spiritual Gifts Assessment Response - {{fullName}}"
