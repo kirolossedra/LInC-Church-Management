@@ -167,11 +167,6 @@ export default function BookingCalendar() {
     end: endOfMonth(currentDate),
   });
 
-  const getDayBlocks = (day: Date): ScheduleBlock[] => {
-    const dayStr = format(day, 'yyyy-MM-dd');
-    return scheduleBlocks.filter(b => b.date === dayStr);
-  };
-
   const isSlotInsideAvailability = (day: Date, hour: number): boolean => {
     const dayStr = format(day, 'yyyy-MM-dd');
 
@@ -402,8 +397,8 @@ export default function BookingCalendar() {
                     {t('booking.noAvailabilityOpenedForDay')}
                   </p>
 
-                  <p className="mt-2 text-base text-[#6b4b4b]">
-                    {t('booking.legendInfeasible')}
+                  <p className="mt-2 text-base text-[#6b4b4b] font-bold">
+                    {t('booking.unavailable')}
                   </p>
                 </div>
               )}
@@ -587,10 +582,15 @@ export default function BookingCalendar() {
           </button>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-4 text-base font-bold text-[#3a2424]">
-          <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-[#f8dddd] border border-[#d89292]"></div>{t('booking.legendInfeasible')}</div>
-          <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-[#dcf7e5] border border-[#87c99c]"></div>{t('booking.legendAvailable')}</div>
-          <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-[#ece7e1] border border-[#b9aaa0]"></div>{t('booking.legendBooked')}</div>
+        <div className="flex flex-wrap justify-center gap-6 text-base font-bold text-[#3a2424]">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-[#dcf7e5] border-2 border-[#87c99c]"></div>
+            {t('booking.legendAvailable')}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-[#fff1f1] border-2 border-[#d89292]"></div>
+            {t('booking.unavailable')}
+          </div>
         </div>
 
         <div className="bg-[#fffdf9] rounded-3xl shadow-md border border-[#ead9d0] p-6">
@@ -614,53 +614,45 @@ export default function BookingCalendar() {
               <div key={`empty-${i}`} />
             ))}
             {days.map(day => {
-              const dayBlocks = getDayBlocks(day);
-              const visibleDayBlocks = dayBlocks.filter(b => b.type !== 'available');
-              const availabilityBlocks = dayBlocks.filter(b => b.type === 'available');
               const isPast = isBefore(startOfDay(day), startOfDay(new Date()));
               const isSelected = selectedDay && isSameDay(day, selectedDay);
               const today = isToday(day);
-              const hasAvailability = availabilityBlocks.length > 0;
+              const hasAvailableSlots = !isPast && slotHours.some(hour => slotStatus(day, hour) === 'available');
 
               return (
                 <button
                   key={day.toISOString()}
                   onClick={() => handleDayClick(day)}
                   disabled={isPast}
-                  className={`min-h-[112px] rounded-2xl border-2 transition-all text-center p-3 flex flex-col font-bold ${
+                  className={`min-h-[112px] rounded-2xl border-2 transition-all text-center p-3 flex flex-col items-center justify-center font-bold ${
                     isPast
                       ? 'bg-[#f5eeee] border-[#e2caca] text-[#a07c7c] cursor-not-allowed opacity-60'
                       : isSelected
                       ? 'bg-[#7a1717] border-[#7a1717] text-white shadow-lg'
+                      : hasAvailableSlots
+                      ? 'bg-[#e8faee] border-[#8ad0a1] text-[#165d30] hover:border-[#7a1717]/50 hover:bg-[#f5fff7] hover:shadow-md'
                       : today
-                      ? 'bg-[#fff4e8] border-[#b75a5a] text-[#7a1717] font-bold shadow-sm'
-                      : hasAvailability
-                      ? 'bg-[#e8faee] border-[#8ad0a1] text-[#165d30] hover:border-[#7a1717]/50 hover:bg-[#f5fff7]'
-                      : 'bg-[#fff1f1] border-[#e0b5b5] text-[#7a1717] hover:border-[#7a1717]/50'
+                      ? 'bg-[#fff1f1] border-[#d89292] text-[#7a1717] shadow-sm'
+                      : 'bg-[#fff1f1] border-[#e0b5b5] text-[#7a1717] hover:border-[#7a1717]/50 hover:bg-[#fff8f8]'
                   }`}
                 >
-                  <div className={`text-xl font-bold ${isSelected ? 'text-white' : ''}`}>{format(day, 'd', { locale: dateLocale })}</div>
-                  {isPast && <div className="text-base text-[#9a7777] mt-2 font-bold">✕</div>}
-                  {!isPast && !hasAvailability && (
-                    <div className="text-base text-[#9a1c1c] mt-2 font-bold">{t('booking.unavailable')}</div>
+                  <div className={`text-xl font-bold ${isSelected ? 'text-white' : ''}`}>
+                    {format(day, 'd', { locale: dateLocale })}
+                  </div>
+
+                  {isPast && (
+                    <div className="text-base text-[#9a7777] mt-2 font-bold">✕</div>
                   )}
-                  {!isPast && hasAvailability && (
-                    <div className={`text-base mt-2 font-bold ${isSelected ? 'text-white/90' : 'text-[#1e7a3a]'}`}>{t('booking.slotAvailable')}</div>
+
+                  {!isPast && hasAvailableSlots && (
+                    <div className={`text-base mt-2 font-bold ${isSelected ? 'text-white/90' : 'text-[#1e7a3a]'}`}>
+                      {t('booking.legendAvailable')}
+                    </div>
                   )}
-                  {!isPast && visibleDayBlocks.length > 0 && (
-                    <div className="flex flex-col gap-1 mt-2 flex-1 justify-end">
-                      {visibleDayBlocks.slice(0, 2).map((b, i) => (
-                        <div key={i} className={`text-base px-2 py-1 rounded-lg truncate font-bold ${
-                          b.type === 'unavailable'
-                            ? (isSelected ? 'bg-white/20 text-white/90' : 'bg-[#f8dddd] text-[#9a1c1c]')
-                            : (isSelected ? 'bg-white/20 text-white/90' : 'bg-[#fff0d8] text-[#9a5a00]')
-                        }`}>
-                          {b.title}
-                        </div>
-                      ))}
-                      {visibleDayBlocks.length > 2 && (
-                        <div className={`text-base font-bold ${isSelected ? 'text-white/90' : 'text-[#6b4b4b]'}`}>+{visibleDayBlocks.length - 2} {t('booking.more')}</div>
-                      )}
+
+                  {!isPast && !hasAvailableSlots && (
+                    <div className={`text-base mt-2 font-bold ${isSelected ? 'text-white/90' : 'text-[#9a1c1c]'}`}>
+                      {t('booking.unavailable')}
                     </div>
                   )}
                 </button>
