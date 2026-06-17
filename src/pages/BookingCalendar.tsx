@@ -310,6 +310,10 @@ export default function BookingCalendar() {
     : [];
 
   const selectedDayTitle = selectedDay ? format(selectedDay, 'EEEE, MMMM d, yyyy', { locale: dateLocale }) : '';
+  const availableLabel = t('booking.legendAvailable');
+  const unavailableLabel = t('booking.unavailable');
+  const availableShortLabel = displayLocale === 'ar' ? availableLabel : 'Avail.';
+  const unavailableShortLabel = displayLocale === 'ar' ? unavailableLabel : 'Unavail.';
 
   const dayPopup = (
     <AnimatePresence>
@@ -349,7 +353,7 @@ export default function BookingCalendar() {
 
                 <div>
                   <h3 className="text-2xl font-bold">
-                    {t('booking.legendAvailable')} {t('booking.timeLabel')}
+                    {availableLabel} {t('booking.timeLabel')}
                   </h3>
                   <p className="mt-1 text-base text-white/90">
                     {selectedDayTitle}
@@ -381,7 +385,7 @@ export default function BookingCalendar() {
                         </div>
 
                         <div className={`mt-2 text-base font-bold ${isSel ? 'text-white/90' : 'text-[#1e7a3a]'}`}>
-                          {t('booking.slotAvailable')}
+                          {availableLabel}
                         </div>
                       </button>
                     );
@@ -398,7 +402,7 @@ export default function BookingCalendar() {
                   </p>
 
                   <p className="mt-2 text-base text-[#6b4b4b] font-bold">
-                    {t('booking.unavailable')}
+                    {unavailableLabel}
                   </p>
                 </div>
               )}
@@ -564,10 +568,10 @@ export default function BookingCalendar() {
 
   return (
     <>
-      <div className="min-h-screen space-y-8 max-w-5xl mx-auto px-4 py-8 bg-[#fbf7f2] text-[#2b1717] font-bold" dir={dir} style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="min-h-screen w-full space-y-6 sm:space-y-8 max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 bg-[#fbf7f2] text-[#2b1717] font-bold" dir={dir} style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}>
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-[#7a1717] flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-bold text-[#7a1717] flex items-center gap-2 leading-tight">
               <CalendarIcon size={22} />
               {t('booking.pageTitle')}
             </h1>
@@ -575,41 +579,41 @@ export default function BookingCalendar() {
           </div>
           <button
             onClick={() => setShowAi(true)}
-            className="flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors text-base border border-[#d8aaaa] shadow-sm"
+            className="w-full sm:w-auto justify-center flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors text-base border border-[#d8aaaa] shadow-sm"
           >
             <Bot size={16} />
             {t('booking.aiAssistant')}
           </button>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-6 text-base font-bold text-[#3a2424]">
+        <div className="flex flex-wrap justify-center gap-4 sm:gap-6 text-base font-bold text-[#3a2424]">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-[#dcf7e5] border-2 border-[#87c99c]"></div>
-            {t('booking.legendAvailable')}
+            {availableLabel}
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-[#fff1f1] border-2 border-[#d89292]"></div>
-            {t('booking.unavailable')}
+            {unavailableLabel}
           </div>
         </div>
 
-        <div className="bg-[#fffdf9] rounded-3xl shadow-md border border-[#ead9d0] p-6">
+        <div className="bg-[#fffdf9] rounded-3xl shadow-md border border-[#ead9d0] p-3 sm:p-6 overflow-hidden">
           <div className="flex items-center justify-between mb-6">
             <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-3 hover:bg-[#f4e8e2] rounded-full transition-colors text-[#7a1717]"><ChevronLeft size={20} /></button>
             <div className="text-center">
-              <h2 className="text-2xl font-bold text-[#2b1717]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#2b1717]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
               <p className="text-base text-[#7a1717]/70 uppercase tracking-widest font-bold mt-1">{t('calendar.schedule')}</p>
             </div>
             <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-3 hover:bg-[#f4e8e2] rounded-full transition-colors text-[#7a1717]"><ChevronRight size={20} /></button>
           </div>
 
-          <div className="grid grid-cols-7 gap-2 mb-2">
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-3">
             {[t('calendar.sun'), t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat')].map(d => (
-              <div key={d} className="text-center text-base uppercase tracking-widest text-[#6f4a4a] font-bold">{d}</div>
+              <div key={d} className="text-center text-sm sm:text-base uppercase tracking-widest text-[#6f4a4a] font-bold">{d}</div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-x-1 gap-y-5 sm:gap-3">
             {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, i) => (
               <div key={`empty-${i}`} />
             ))}
@@ -624,35 +628,56 @@ export default function BookingCalendar() {
                   key={day.toISOString()}
                   onClick={() => handleDayClick(day)}
                   disabled={isPast}
-                  className={`min-h-[112px] rounded-2xl border-2 transition-all text-center p-3 flex flex-col items-center justify-center font-bold ${
+                  className={`min-h-[86px] sm:min-h-[112px] rounded-2xl transition-all text-center px-0.5 py-1.5 sm:p-3 flex flex-col items-center justify-start gap-1.5 sm:gap-2 font-bold ${
                     isPast
-                      ? 'bg-[#f5eeee] border-[#e2caca] text-[#a07c7c] cursor-not-allowed opacity-60'
+                      ? 'text-[#a07c7c] cursor-not-allowed opacity-70'
                       : isSelected
-                      ? 'bg-[#7a1717] border-[#7a1717] text-white shadow-lg'
+                      ? 'text-[#7a1717]'
                       : hasAvailableSlots
-                      ? 'bg-[#e8faee] border-[#8ad0a1] text-[#165d30] hover:border-[#7a1717]/50 hover:bg-[#f5fff7] hover:shadow-md'
+                      ? 'text-[#165d30]'
                       : today
-                      ? 'bg-[#fff1f1] border-[#d89292] text-[#7a1717] shadow-sm'
-                      : 'bg-[#fff1f1] border-[#e0b5b5] text-[#7a1717] hover:border-[#7a1717]/50 hover:bg-[#fff8f8]'
+                      ? 'text-[#7a1717]'
+                      : 'text-[#7a1717]'
                   }`}
                 >
-                  <div className={`text-xl font-bold ${isSelected ? 'text-white' : ''}`}>
-                    {format(day, 'd', { locale: dateLocale })}
+                  <div
+                    className={`w-11 h-11 sm:w-16 sm:h-16 rounded-full border-2 flex flex-col items-center justify-center font-bold transition-all ${
+                      isPast
+                        ? 'bg-[#f5eeee] border-[#e2caca] text-[#a07c7c]'
+                        : isSelected
+                        ? 'bg-[#7a1717] border-[#7a1717] text-white shadow-lg'
+                        : hasAvailableSlots
+                        ? 'bg-[#e8faee] border-[#8ad0a1] text-[#165d30] shadow-sm'
+                        : today
+                        ? 'bg-[#fff1f1] border-[#d89292] text-[#7a1717] shadow-sm'
+                        : 'bg-[#fff1f1] border-[#e0b5b5] text-[#7a1717]'
+                    }`}
+                  >
+                    <span className="text-lg sm:text-2xl font-bold leading-none">
+                      {format(day, 'd', { locale: dateLocale })}
+                    </span>
+
+                    {isPast && (
+                      <span className="text-base sm:text-xl font-bold leading-none mt-1">✕</span>
+                    )}
                   </div>
 
-                  {isPast && (
-                    <div className="text-base text-[#9a7777] mt-2 font-bold">✕</div>
-                  )}
-
-                  {!isPast && hasAvailableSlots && (
-                    <div className={`text-base mt-2 font-bold ${isSelected ? 'text-white/90' : 'text-[#1e7a3a]'}`}>
-                      {t('booking.legendAvailable')}
-                    </div>
-                  )}
-
-                  {!isPast && !hasAvailableSlots && (
-                    <div className={`text-base mt-2 font-bold ${isSelected ? 'text-white/90' : 'text-[#9a1c1c]'}`}>
-                      {t('booking.unavailable')}
+                  {!isPast && (
+                    <div
+                      className={`w-full min-h-[28px] sm:min-h-[24px] px-0.5 text-center font-bold leading-tight ${
+                        isSelected
+                          ? 'text-[#7a1717]'
+                          : hasAvailableSlots
+                          ? 'text-[#1e7a3a]'
+                          : 'text-[#9a1c1c]'
+                      }`}
+                    >
+                      <span className="block text-[11px] sm:hidden tracking-tight">
+                        {hasAvailableSlots ? availableShortLabel : unavailableShortLabel}
+                      </span>
+                      <span className="hidden sm:block text-base">
+                        {hasAvailableSlots ? availableLabel : unavailableLabel}
+                      </span>
                     </div>
                   )}
                 </button>
