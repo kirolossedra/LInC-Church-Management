@@ -991,17 +991,6 @@ ${safeFullReport}
     }
   };
 
-  const handleDeleteUnavailability = async (id: string) => {
-    if (confirm(t('calendar.removeUnavailabilityConfirm'))) {
-      try {
-        const { remove } = await import('firebase/database');
-        await remove(ref(database, `unavailability/${id}`));
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  };
-
   const handleNextGenQuestionSelection = async (question: NextGenQuestion, selected: boolean) => {
     setNextGenSelectionLoadingId(question.id);
 
