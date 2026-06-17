@@ -1,698 +1,2816 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import emailjs from '@emailjs/browser';
+import { Link } from 'react-router-dom';
 import { database } from '../firebase';
-import { ref, onValue, push } from 'firebase/database';
-import { motion, AnimatePresence } from 'motion/react';
-import { useI18n } from '../i18n';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, startOfDay, isBefore } from 'date-fns';
+import { ref, onValue, update, push } from 'firebase/database';
+import type { Meeting, MeetingRequest } from '../types';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Bot, X } from 'lucide-react';
-import AIBookingAssistant from '../components/AIBookingAssistant';
-import { sendEmailViaEmailJS } from '../services/gmail';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy } from 'lucide-react';
+import { motion } from 'motion/react';
+import {
+  createCalendarMeetLink,
+  generatePlaceholderLink,
+  startGoogleAuth,
+  handleOAuthCallback,
+  getStoredTokens,
+  storeTokens,
+  clearTokens,
+  sendGmailEmail,
+  type GmailTokens,
+} from '../services/gmail';
+import PageTitle from './PageTitle';
+import { useI18n } from '../i18n';
+import OpenAI from 'openai';
 
-const BUSINESS_START = 9;
-const BUSINESS_END = 20; // don't change this
-const SLOT_DURATION = 0.5;
+const SLOT_BLOCK_START = 9;
+const SLOT_BLOCK_END = 20;
+const SLOT_BLOCK_DURATION = 0.5;
 
-function timeToHour(t: string): number {
-  const [hours, minutes] = t.split(':').map(Number);
-  return hours + minutes / 60;
+const EMAILJS_SERVICE_ID = 'service_v47g6or';
+const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
+const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
+
+function timeToHour(time?: string): number {
+  if (!time) return 0;
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours + (minutes || 0) / 60;
 }
 
-function hourToLabel(h: number, locale: 'en' | 'ar'): string {
+function hourToTime(hourValue: number): string {
+  const hours = Math.floor(hourValue);
+  const minutes = Math.round((hourValue - hours) * 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function hourToLabel(hourValue: number, locale: 'en' | 'ar'): string {
   const isAr = locale === 'ar';
-
-  const hour = Math.floor(h);
-  const minutes = Math.round((h - hour) * 60);
-
-  const period = hour >= 12 ? (isAr ? 'م' : 'PM') : (isAr ? 'ص' : 'AM');
-  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  const hours = Math.floor(hourValue);
+  const minutes = Math.round((hourValue - hours) * 60);
+  const period = hours >= 12 ? (isAr ? 'م' : 'PM') : (isAr ? 'ص' : 'AM');
+  const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
 
   return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
 }
 
-function hourToTime(h: number): string {
-  const hour = Math.floor(h);
-  const minutes = Math.round((h - hour) * 60);
-
-  return `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+function timeToLabel(time: string | undefined, locale: 'en' | 'ar'): string {
+  return hourToLabel(timeToHour(time || '00:00'), locale);
 }
 
-interface ScheduleBlock {
+function timeRangeToLabel(startTime: string | undefined, endTime: string | undefined, locale: 'en' | 'ar'): string {
+  return `${timeToLabel(startTime, locale)} - ${timeToLabel(endTime, locale)}`;
+}
+
+
+function buildTimeOptions(startHour: number, endHour: number, step: number = 0.5): { value: string; hour: number }[] {
+  const options: { value: string; hour: number }[] = [];
+
+  for (let hour = startHour; hour <= endHour; hour += step) {
+    const roundedHour = Math.round(hour * 100) / 100;
+    options.push({ value: hourToTime(roundedHour), hour: roundedHour });
+  }
+
+  return options;
+}
+
+const MEETING_TIME_OPTIONS = buildTimeOptions(0, 23.5);
+const BOOKING_WINDOW_TIME_OPTIONS = buildTimeOptions(SLOT_BLOCK_START, SLOT_BLOCK_END);
+const FULL_DAY_TIME_OPTIONS = buildTimeOptions(0, 23.5);
+
+function slotOverlaps(startA: number, endA: number, startB: number, endB: number): boolean {
+  return startA < endB && endA > startB;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function normalizeNumber(value: unknown): number {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function normalizeNextGenQuestion(id: string, value: any): NextGenQuestion {
+  const totalUpvotes = normalizeNumber(value?.totalUpvotes);
+  const totalDownvotes = normalizeNumber(value?.totalDownvotes);
+  const netVotes = typeof value?.netVotes === 'number'
+    ? normalizeNumber(value.netVotes)
+    : totalUpvotes - totalDownvotes;
+
+  const verses = Array.isArray(value?.verses)
+    ? value.verses
+        .map((verse: any) => ({
+          reference: String(verse?.reference || '').trim(),
+          text: String(verse?.text || '').trim(),
+        }))
+        .filter((verse: NextGenVerse) => verse.reference || verse.text)
+    : [];
+
+  return {
+    id,
+    question: String(value?.question || '').trim(),
+    category: String(value?.category || 'Other').trim(),
+    verses,
+    notes: String(value?.notes || '').trim(),
+    status: String(value?.status || 'submittedForPastorReview').trim(),
+    source: String(value?.source || 'nextGenActivities').trim(),
+    translation: String(value?.translation || 'WEB').trim(),
+    totalUpvotes,
+    totalDownvotes,
+    netVotes,
+    createdAt: normalizeNumber(value?.createdAt),
+    updatedAt: normalizeNumber(value?.updatedAt),
+  };
+}
+
+interface Participant {
+  id: string;
+  name: string;
+  email: string;
+  primaryGift: string;
+}
+
+interface Availability {
+  id: string;
   date: string;
-  startHour: number;
-  endHour: number;
-  title: string;
-  type: 'meeting' | 'available' | 'unavailable';
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+  allDay?: boolean;
 }
 
-export default function BookingCalendar() {
+interface Unavailability {
+  id: string;
+  date: string;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+  allDay?: boolean;
+}
+
+interface NextGenVerse {
+  reference: string;
+  text: string;
+}
+
+interface NextGenQuestion {
+  id: string;
+  question: string;
+  category: string;
+  verses: NextGenVerse[];
+  notes: string;
+  status: string;
+  source: string;
+  translation: string;
+  totalUpvotes: number;
+  totalDownvotes: number;
+  netVotes: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface AvailabilityForm {
+  mode: 'single' | 'multiple';
+  date: string;
+  startDate: string;
+  endDate: string;
+  selectedWeekdays: number[];
+  startTime: string;
+  endTime: string;
+  reason: string;
+  allDay: boolean;
+}
+
+interface UnavailabilityForm {
+  date: string;
+  startTime: string;
+  endTime: string;
+  reason: string;
+  allDay: boolean;
+}
+
+export default function Calendar() {
   const { t, dir, locale } = useI18n();
-  const dateLocale = locale === 'ar' ? ar : enUS;
-  const displayLocale = locale as 'en' | 'ar';
+  const displayLocale = locale === 'ar' ? 'ar' : 'en';
+  const dateLocale = displayLocale === 'ar' ? ar : enUS;
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [showDayPopup, setShowDayPopup] = useState(false);
-  const [showBookingFormPopup, setShowBookingFormPopup] = useState(false);
-  const [scheduleBlocks, setScheduleBlocks] = useState<ScheduleBlock[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [reason, setReason] = useState('');
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [isPastDay, setIsPastDay] = useState(false);
-  const [showAi, setShowAi] = useState(false);
-  const [pastors, setPastors] = useState<string[]>([]);
+  const [googleTokens, setGoogleTokens] = useState<GmailTokens | null>(() => getStoredTokens());
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [showParticipantDropdown, setShowParticipantDropdown] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [meetingRequests, setMeetingRequests] = useState<MeetingRequest[]>([]);
+  const [showRequests, setShowRequests] = useState(false);
+  const [nextGenQuestions, setNextGenQuestions] = useState<NextGenQuestion[]>([]);
+  const [showNextGenQuestions, setShowNextGenQuestions] = useState(false);
+  const [nextGenSelectionLoadingId, setNextGenSelectionLoadingId] = useState<string | null>(null);
+  const [selectedSlotDay, setSelectedSlotDay] = useState<Date | null>(null);
+  const [slotBlockingLoading, setSlotBlockingLoading] = useState(false);
+
+  const [availability, setAvailability] = useState<Availability[]>([]);
+  const [unavailability, setUnavailability] = useState<Unavailability[]>([]);
+
+  const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
+  const [editingAvailability, setEditingAvailability] = useState<Availability | null>(null);
+  const [availabilityForm, setAvailabilityForm] = useState<AvailabilityForm>({
+    mode: 'single',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd'),
+    selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+    startTime: '09:00',
+    endTime: '20:00',
+    reason: '',
+    allDay: true,
+  });
+
+  const [showUnavailabilityModal, setShowUnavailabilityModal] = useState(false);
+  const [editingUnavailability, setEditingUnavailability] = useState<Unavailability | null>(null);
+  const [unavailabilityForm, setUnavailabilityForm] = useState<UnavailabilityForm>({
+    date: format(new Date(), 'yyyy-MM-dd'),
+    startTime: '09:00',
+    endTime: '20:00',
+    reason: '',
+    allDay: true,
+  });
+
+  const [showAiAssistant, setShowAiAssistant] = useState(false);
+  const [aiMessages, setAiMessages] = useState<{ role: string; content: string; timestamp: Date }[]>([]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
-    const availabilityRef = ref(database, 'availability/');
-
-    const unsubscribeAvailability = onValue(availabilityRef, (availabilitySnapshot) => {
-      const availabilityData = availabilitySnapshot.val();
-      const blocks: ScheduleBlock[] = [];
-
-      if (availabilityData) {
-        Object.values(availabilityData).forEach((val: any) => {
-          if (val.date) {
-            const startTime = val.startTime || '09:00';
-            const endTime = val.endTime || '20:00';
-
-            blocks.push({
-              date: val.date,
-              startHour: timeToHour(startTime),
-              endHour: timeToHour(endTime),
-              title: val.reason || t('booking.slotAvailable'),
-              type: 'available',
-            });
-          }
-        });
-      }
-
-      const meetingsRef = ref(database, 'meetings/');
-      onValue(meetingsRef, (meetingsSnapshot) => {
-        const meetingsData = meetingsSnapshot.val();
-        const blocksWithMeetings = [...blocks];
-
-        if (meetingsData) {
-          Object.values(meetingsData).forEach((val: any) => {
-            if (val.date && val.startTime && val.endTime) {
-              blocksWithMeetings.push({
-                date: val.date,
-                startHour: timeToHour(val.startTime),
-                endHour: timeToHour(val.endTime),
-                title: t('booking.booked'),
-                type: 'meeting',
-              });
-            }
-          });
-        }
-
-        const unavailabilityRef = ref(database, 'unavailability/');
-        onValue(unavailabilityRef, (unavailabilitySnapshot) => {
-          const unavailabilityData = unavailabilitySnapshot.val();
-          const finalBlocks = [...blocksWithMeetings];
-
-          if (unavailabilityData) {
-            Object.values(unavailabilityData).forEach((val: any) => {
-              if (val.date) {
-                const startTime = val.startTime || '00:00';
-                const endTime = val.endTime || '23:59';
-
-                finalBlocks.push({
-                  date: val.date,
-                  startHour: timeToHour(startTime),
-                  endHour: timeToHour(endTime),
-                  title: t('booking.booked'),
-                  type: 'unavailable',
-                });
-              }
-            });
-          }
-
-          setScheduleBlocks(finalBlocks);
-        });
-      });
-    });
-
-    return () => unsubscribeAvailability();
-  }, [t]);
+    const tokens = handleOAuthCallback();
+    if (tokens && !tokens.error) {
+      storeTokens(tokens);
+      setGoogleTokens(tokens);
+    }
+  }, []);
 
   useEffect(() => {
-    const adminsRef = ref(database, 'admins/');
-    const unsubscribe = onValue(adminsRef, (snapshot) => {
+    const formRef = ref(database, 'form/');
+    const unsubscribe = onValue(formRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const emails: string[] = [];
-        Object.keys(data).forEach(k => {
-          emails.push(k.replace(/,/g, '.').toLowerCase().trim());
-        });
-        setPastors(emails);
+        const parsed: Participant[] = Object.entries(data)
+          .map(([id, val]: [string, any]) => {
+            const fullName = val.fields?.trainee?.fullName?.value || '';
+            const email = val.fields?.trainee?.email?.value || '';
+            const result = val.results;
+            const lang = val.interfaceLanguageUsed === 'Arabic' ? 'Arabic' : 'English';
+            const primaryGift = result?.[lang]?.primaryGift || '';
+            return { id, name: fullName, email, primaryGift };
+          })
+          .filter(p => p.name && p.email);
+        setParticipants(parsed);
+      } else {
+        setParticipants([]);
       }
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (selectedDay && isBefore(startOfDay(selectedDay), startOfDay(new Date()))) {
-      setIsPastDay(true);
-      setShowDayPopup(false);
-      setShowBookingFormPopup(false);
-    } else {
-      setIsPastDay(false);
-    }
-  }, [selectedDay]);
+    const meetingsRef = ref(database, 'meetings/');
+    const unsubscribe = onValue(meetingsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const parsed = Object.entries(data).map(([id, val]: [string, any]) => ({
+          id,
+          ...(val as Meeting),
+        }));
+        (parsed as Meeting[]).sort((a, b) => {
+          if (!a.date) return 1;
+          if (!b.date) return -1;
+          return a.date.localeCompare(b.date);
+        });
+        setMeetings(parsed);
+      } else {
+        setMeetings([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const requestsRef = ref(database, 'meetingRequests/');
+    const unsubscribe = onValue(requestsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const parsed = Object.entries(data).map(([id, val]: [string, any]) => ({
+          id,
+          ...(val as MeetingRequest),
+        }));
+        (parsed as MeetingRequest[]).sort((a, b) => a.createdAt - b.createdAt);
+        setMeetingRequests(parsed);
+      } else {
+        setMeetingRequests([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const nextGenQuestionsRef = ref(database, 'nextGenActivities/qaSessions/');
+    const unsubscribe = onValue(nextGenQuestionsRef, (snapshot) => {
+      const data = snapshot.val();
+
+      if (data) {
+        const parsed = Object.entries(data)
+          .map(([id, val]: [string, any]) => normalizeNextGenQuestion(id, val))
+          .filter(question => question.question);
+
+        parsed.sort((a, b) => {
+          if (b.netVotes !== a.netVotes) return b.netVotes - a.netVotes;
+          if (b.totalUpvotes !== a.totalUpvotes) return b.totalUpvotes - a.totalUpvotes;
+          if (a.totalDownvotes !== b.totalDownvotes) return a.totalDownvotes - b.totalDownvotes;
+          return b.createdAt - a.createdAt;
+        });
+
+        setNextGenQuestions(parsed);
+      } else {
+        setNextGenQuestions([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const availabilityRef = ref(database, 'availability/');
+    const unsubscribe = onValue(availabilityRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const parsed = Object.entries(data).map(([firebaseId, val]: [string, any]) => ({
+          id: firebaseId,
+          date: val.date,
+          startTime: val.startTime,
+          endTime: val.endTime,
+          reason: val.reason || '',
+          allDay: val.allDay || false,
+        }));
+        parsed.sort((a, b) => a.date.localeCompare(b.date));
+        setAvailability(parsed);
+      } else {
+        setAvailability([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unavailabilityRef = ref(database, 'unavailability/');
+    const unsubscribe = onValue(unavailabilityRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const parsed = Object.entries(data).map(([firebaseId, val]: [string, any]) => ({
+          id: firebaseId,
+          date: val.date,
+          startTime: val.startTime,
+          endTime: val.endTime,
+          reason: val.reason || '',
+          allDay: val.allDay || false,
+        }));
+        parsed.sort((a, b) => a.date.localeCompare(b.date));
+        setUnavailability(parsed);
+      } else {
+        setUnavailability([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const [newMeeting, setNewMeeting] = useState<Partial<Meeting>>({
+    title: '',
+    description: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    startTime: '10:00',
+    endTime: '11:00',
+    location: '',
+    meetLink: '',
+    type: 'service',
+  });
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentDate),
     end: endOfMonth(currentDate),
   });
 
-  const isSlotInsideAvailability = (day: Date, hour: number): boolean => {
-    const dayStr = format(day, 'yyyy-MM-dd');
-
-    return scheduleBlocks.some(b =>
-      b.date === dayStr &&
-      b.type === 'available' &&
-      hour >= b.startHour &&
-      hour + SLOT_DURATION <= b.endHour
-    );
+  const resetAvailabilityForm = () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    setAvailabilityForm({
+      mode: 'single',
+      date: today,
+      startDate: today,
+      endDate: today,
+      selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+      startTime: '09:00',
+      endTime: '20:00',
+      reason: '',
+      allDay: true,
+    });
   };
 
-  const isSlotUnavailable = (day: Date, hour: number): boolean => {
-    const dayStr = format(day, 'yyyy-MM-dd');
-    const slotEnd = hour + SLOT_DURATION;
-
-    return scheduleBlocks.some(b =>
-      b.date === dayStr &&
-      b.type === 'unavailable' &&
-      hour < b.endHour &&
-      slotEnd > b.startHour
-    );
+  const resetUnavailabilityForm = () => {
+    setUnavailabilityForm({
+      date: format(new Date(), 'yyyy-MM-dd'),
+      startTime: '09:00',
+      endTime: '20:00',
+      reason: '',
+      allDay: true,
+    });
   };
 
-  const isSlotBooked = (day: Date, hour: number): boolean => {
-    const dayStr = format(day, 'yyyy-MM-dd');
-    const slotEnd = hour + SLOT_DURATION;
-
-    return scheduleBlocks.some(b =>
-      b.date === dayStr &&
-      b.type === 'meeting' &&
-      hour < b.endHour &&
-      slotEnd > b.startHour
-    );
-  };
-
-  const isSlotInfeasible = (day: Date, hour: number): boolean => {
-    if (hour < BUSINESS_START || hour + SLOT_DURATION > BUSINESS_END) return true;
-
-    if (!isSlotInsideAvailability(day, hour)) return true;
-
-    if (isSlotUnavailable(day, hour)) return true;
-
-    const dayStr = format(day, 'yyyy-MM-dd');
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-
-    if (dayStr === todayStr) {
-      const now = new Date();
-      const currentHour = now.getHours() + now.getMinutes() / 60;
-
-      if (hour <= currentHour) return true;
+  const buildAvailabilityDates = (): string[] => {
+    if (availabilityForm.mode === 'single') {
+      return [availabilityForm.date];
     }
 
-    if (isBefore(startOfDay(day), startOfDay(new Date()))) return true;
+    const start = parseISO(availabilityForm.startDate);
+    const end = parseISO(availabilityForm.endDate);
 
-    return false;
+    if (end < start) {
+      return [];
+    }
+
+    return eachDayOfInterval({ start, end })
+      .filter(day => availabilityForm.selectedWeekdays.includes(day.getDay()))
+      .map(day => format(day, 'yyyy-MM-dd'));
   };
 
-  const slotStatus = (day: Date, hour: number): 'booked' | 'infeasible' | 'available' => {
-    if (isSlotBooked(day, hour)) return 'booked';
-    if (isSlotInfeasible(day, hour)) return 'infeasible';
-    return 'available';
+  const toggleAvailabilityWeekday = (weekday: number) => {
+    setAvailabilityForm(prev => {
+      const alreadySelected = prev.selectedWeekdays.includes(weekday);
+      const nextSelected = alreadySelected
+        ? prev.selectedWeekdays.filter(d => d !== weekday)
+        : [...prev.selectedWeekdays, weekday].sort((a, b) => a - b);
+
+      return {
+        ...prev,
+        selectedWeekdays: nextSelected,
+      };
+    });
   };
 
-  const handleDayClick = (day: Date) => {
-    if (isBefore(startOfDay(day), startOfDay(new Date()))) return;
+  const getMeetingDisplayTitle = (meeting: Meeting): string => {
+    const requestName = (meeting as any).requestName;
 
-    setSelectedDay(day);
-    setSelectedSlot(null);
-    setSuccess(false);
-    setShowDayPopup(true);
+    if (requestName) {
+      return `${t('calendar.meetingWith')} ${requestName}`;
+    }
+
+    return meeting.title || t('calendar.meeting');
   };
 
-  const handleSlotClick = (hour: number) => {
-    if (!selectedDay || isSlotBooked(selectedDay, hour) || isSlotInfeasible(selectedDay, hour)) return;
-
-    setSelectedSlot(hour);
-    setSuccess(false);
+  const getMeetingRequestEmail = (meeting: Meeting): string => {
+    return (meeting as any).requestEmail || '';
   };
 
-  const handlePopupSlotClick = (hour: number) => {
-    handleSlotClick(hour);
-    setShowDayPopup(false);
-    setShowBookingFormPopup(true);
+  const getMeetingRequestReason = (meeting: Meeting): string => {
+    return (meeting as any).requestReason || '';
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const getMeetingAcknowledged = (meeting: Meeting): boolean => {
+    return Boolean((meeting as any).acknowledged);
+  };
+
+  const buildMeetingConfirmationEmail = (meeting: Meeting): {
+    subject: string;
+    requesterName: string;
+    meetingTitle: string;
+    meetingType: string;
+    meetingDate: string;
+    meetingTime: string;
+    meetingLocation: string;
+    meetingLink: string;
+    fullReport: string;
+    htmlBody: string;
+  } => {
+    const requesterName = (meeting as any).requestName || '';
+    const displayName = requesterName || (displayLocale === 'ar' ? 'صديقنا العزيز' : 'Friend');
+    const meetingTitle = getMeetingDisplayTitle(meeting) || t('calendar.meetingWithPastor');
+    const meetingType = 'اجتماع مع Pastor / Meeting with Pastor';
+    const dateTextEn = meeting.date ? format(parseISO(meeting.date), 'EEEE, MMMM d, yyyy', { locale: enUS }) : '';
+    const dateTextAr = meeting.date ? format(parseISO(meeting.date), 'EEEE, MMMM d, yyyy', { locale: ar }) : '';
+    const timeTextEn = timeRangeToLabel(meeting.startTime, meeting.endTime, 'en');
+    const timeTextAr = timeRangeToLabel(meeting.startTime, meeting.endTime, 'ar');
+    const meetingLink = meeting.meetLink || '';
+    const locationTextEn = meeting.location || 'Online meeting';
+    const locationTextAr = meeting.location || 'اجتماع عبر الإنترنت';
+    const meetingDate = `${dateTextAr} / ${dateTextEn}`;
+    const meetingTime = `${timeTextAr} / ${timeTextEn}`;
+    const meetingLocation = `${locationTextAr} / ${locationTextEn}`;
+
+    const fullReport = [
+      'تأكيد موعد الاجتماع',
+      '=========================================',
+      '',
+      `مرحباً ${displayName}،`,
+      '',
+      'نود تأكيد موعد اجتماعك مع Pastor بالتفاصيل التالية:',
+      `نوع الاجتماع: ${meetingType}`,
+      `التاريخ: ${dateTextAr}`,
+      `الوقت: ${timeTextAr}`,
+      `المكان: ${locationTextAr}`,
+      meetingLink ? `رابط الانضمام: ${meetingLink}` : 'رابط الانضمام: سيتم إرساله لاحقاً.',
+      '',
+      'شكراً لك، ونتطلع إلى لقائك.',
+      '',
+      '=========================================',
+      '',
+      'Meeting Confirmation',
+      '=========================================',
+      '',
+      `Hi ${displayName},`,
+      '',
+      'We would like to confirm your meeting with Pastor using the details below:',
+      `Meeting Type: ${meetingType}`,
+      `Date: ${dateTextEn}`,
+      `Time: ${timeTextEn}`,
+      `Location: ${locationTextEn}`,
+      meetingLink ? `Joining Link: ${meetingLink}` : 'Joining Link: The joining link will be sent later.',
+      '',
+      'Thank you, and we look forward to meeting with you.',
+    ].join('\n');
+
+    const safeName = escapeHtml(displayName);
+    const safeMeetingType = escapeHtml(meetingType);
+    const safeMeetingDate = escapeHtml(meetingDate);
+    const safeMeetingTime = escapeHtml(meetingTime);
+    const safeMeetingLocation = escapeHtml(meetingLocation);
+    const safeMeetLink = escapeHtml(meetingLink);
+    const safeFullReport = escapeHtml(fullReport);
+    const meetingLinkHtml = meetingLink
+      ? `<a href="${safeMeetLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetLink}</a>`
+      : '<span style="color: #666666; font-weight: 700;">سيتم إرساله لاحقاً / Will be sent later</span>';
+
+    const htmlBody = `
+<div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto;">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">تأكيد موعد الاجتماع / Meeting Confirmation</h2>
+    <div style="margin-top: 6px; font-size: 13px;">اجتماع مع Pastor / Meeting with Pastor</div>
+  </div>
+
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
+      <tr>
+        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">الاسم / Name</td>
+        <td style="padding: 8px 0;">${safeName}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">نوع الاجتماع / Meeting Type</td>
+        <td style="padding: 8px 0;">${safeMeetingType}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">التاريخ / Date</td>
+        <td style="padding: 8px 0;">${safeMeetingDate}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">الوقت / Time</td>
+        <td style="padding: 8px 0;">${safeMeetingTime}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">المكان / Location</td>
+        <td style="padding: 8px 0;">${safeMeetingLocation}</td>
+      </tr>
+    </table>
+
+    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; border-left: 5px solid #8b1e1e; border-radius: 10px;">
+      <h3 style="margin: 0 0 10px; color: #5e1010; font-size: 17px;">رابط الانضمام / Joining Link</h3>
+
+      <div style="margin-bottom: 8px;">
+        ${meetingLinkHtml}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px;">
+      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">تأكيد موعد الاجتماع / Meeting Confirmation</h3>
+
+      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
+${safeFullReport}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px; color: #777777; font-size: 12px;">
+      تم إرسال هذا البريد تلقائياً لتأكيد موعد اجتماعك مع Pastor.
+      <br />
+      This email was automatically generated to confirm your meeting with Pastor.
+    </div>
+  </div>
+</div>
+    `.trim();
+
+    return {
+      subject: `LINC Meeting Confirmation - ${displayName}`,
+      requesterName: displayName,
+      meetingTitle,
+      meetingType,
+      meetingDate,
+      meetingTime,
+      meetingLocation,
+      meetingLink,
+      fullReport,
+      htmlBody,
+    };
+  };
+
+
+  const sendMeetingConfirmationViaEmailJs = async (meeting: Meeting) => {
+    const recipientEmail = getMeetingRequestEmail(meeting);
+    const confirmationEmail = buildMeetingConfirmationEmail(meeting);
+
+    if (!recipientEmail) {
+      throw new Error('Meeting requester email is missing.');
+    }
+
+    const response = await emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      {
+        to_email: recipientEmail,
+        subject: confirmationEmail.subject,
+        fullName: confirmationEmail.requesterName,
+        message_html: confirmationEmail.htmlBody,
+        reply_to: recipientEmail,
+      },
+      EMAILJS_PUBLIC_KEY,
+    );
+
+    await push(ref(database, 'emailJsSendLogs/'), {
+      recipientEmail,
+      subject: confirmationEmail.subject,
+      fullName: confirmationEmail.requesterName,
+      sentUsing: 'EmailJS',
+      serviceId: EMAILJS_SERVICE_ID,
+      templateId: EMAILJS_TEMPLATE_ID,
+      source: 'calendarMeetingConfirmation',
+      meetingDate: meeting.date || '',
+      meetingStartTime: meeting.startTime || '',
+      meetingEndTime: meeting.endTime || '',
+      sentAt: Date.now(),
+      sentAtISO: new Date().toISOString(),
+      emailJsResponse: {
+        status: response.status,
+        text: response.text,
+      },
+    });
+
+    return response;
+  };
+
+  const openMeetingEditor = (meeting: Meeting) => {
+    setEditingMeeting(meeting);
+    setNewMeeting({ ...meeting });
+    setSelectedParticipants(meeting.participantIds || []);
+    setEmailSent(false);
+    setIsAddOpen(true);
+  };
+
+  const toggleParticipant = (id: string) => {
+    setSelectedParticipants(prev =>
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
+  };
+
+  const sendEmails = async (meetingData: { title: string; date: string; startTime: string; endTime: string; location: string; meetLink: string }) => {
+    if (selectedParticipants.length === 0 || !googleTokens) return true;
+
+    const selected = participants.filter(p => selectedParticipants.includes(p.id));
+
+    for (const p of selected) {
+      if (!p.email) continue;
+
+      const htmlBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #f5f4f0; border-radius: 22px;">
+          <div style="background: #8b1e1e; color: white; padding: 16px; border-radius: 14px; text-align: center; margin-bottom: 20px;">
+            <h1 style="margin: 0; font-size: 20px;">LINC Church Meeting Invitation</h1>
+          </div>
+          <p style="color: #333; font-size: 15px;">Dear ${p.name},</p>
+          <p style="color: #555; font-size: 14px;">You are invited to attend the following meeting:</p>
+          <div style="background: white; padding: 16px; border-radius: 14px; border: 1px solid #e5e5e5; margin-bottom: 16px;">
+            <p style="margin: 4px 0; font-size: 14px;"><strong>Meeting:</strong> ${meetingData.title}</p>
+            <p style="margin: 4px 0; font-size: 14px;"><strong>Date:</strong> ${format(parseISO(meetingData.date), 'EEEE, MMMM d, yyyy', { locale: dateLocale })}</p>
+            <p style="margin: 4px 0; font-size: 14px;"><strong>Time:</strong> ${timeRangeToLabel(meetingData.startTime, meetingData.endTime, displayLocale)}</p>
+            <p style="margin: 4px 0; font-size: 14px;"><strong>Location:</strong> ${meetingData.location || 'TBA'}</p>
+            ${meetingData.meetLink ? `<p style="margin: 4px 0; font-size: 14px;"><strong>Google Meet:</strong> <a href="${meetingData.meetLink}">${meetingData.meetLink}</a></p>` : ''}
+          </div>
+          <p style="color: #999; font-size: 12px; margin-top: 24px;">We look forward to seeing you there.</p>
+        </div>
+      `.trim();
+
+      try {
+        await sendGmailEmail(googleTokens, p.email, `Meeting Invitation: ${meetingData.title}`, htmlBody);
+      } catch (err) {
+        console.error(`Failed to send email to ${p.email}:`, err);
+      }
+    }
+
+    return true;
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDay || selectedSlot === null) return;
-
-    if (isSlotBooked(selectedDay, selectedSlot) || isSlotInfeasible(selectedDay, selectedSlot)) return;
-
     setLoading(true);
+    setEmailSent(false);
 
     try {
-      const dateStr = format(selectedDay, 'yyyy-MM-dd');
-      const request = {
-        name,
-        email,
-        date: dateStr,
-        startTime: hourToTime(selectedSlot),
-        endTime: hourToTime(selectedSlot + SLOT_DURATION),
-        reason,
-        requesterLocale: displayLocale,
-        requesterLanguage: displayLocale === 'ar' ? 'Arabic' : 'English',
-        status: 'pending',
-        createdAt: Date.now(),
-      };
+      const startHour = timeToHour(newMeeting.startTime || '00:00');
+      const endHour = timeToHour(newMeeting.endTime || '00:00');
 
-      await push(ref(database, 'meetingRequests/'), request);
-
-      for (const pastorEmail of pastors) {
-        try {
-          await sendEmailViaEmailJS(pastorEmail, {
-            subject: `${t('booking.newMeetingRequestSubject')} ${name}`,
-            fullReport: `${t('booking.newMeetingRequestBody')}\n\n${t('booking.name')}: ${name}\n${t('booking.emailLabel')}: ${email}\n${t('booking.date')}: ${dateStr}\n${t('booking.timeLabel')}: ${hourToLabel(selectedSlot, displayLocale)} - ${hourToLabel(selectedSlot + SLOT_DURATION, displayLocale)}\n${t('booking.reason')}: ${reason}\n\n${t('booking.adminInstructions')}`,
-          });
-        } catch (err) {
-          console.error(`Failed to notify pastor ${pastorEmail}:`, err);
-        }
+      if (endHour <= startHour) {
+        alert(displayLocale === 'ar' ? 'وقت النهاية يجب أن يكون بعد وقت البداية.' : 'End time must be after start time.');
+        return;
       }
 
-      setSuccess(true);
-      setName('');
-      setEmail('');
-      setReason('');
-      setSelectedSlot(null);
-      setShowDayPopup(false);
-      setShowBookingFormPopup(true);
+      const meetingData: Record<string, any> = {
+        title: newMeeting.title || '',
+        date: newMeeting.date || '',
+        startTime: newMeeting.startTime || '',
+        endTime: newMeeting.endTime || '',
+        location: newMeeting.location || '',
+        meetLink: newMeeting.meetLink || '',
+        type: newMeeting.type || 'service',
+        participantIds: selectedParticipants,
+        updatedAt: Date.now(),
+      };
+
+      if (editingMeeting) {
+        const requestFieldsToPreserve = ['requestName', 'requestEmail', 'requestReason', 'sourceRequestId'];
+
+        requestFieldsToPreserve.forEach(field => {
+          const value = (editingMeeting as any)[field];
+          if (value !== undefined && value !== null && value !== '') {
+            meetingData[field] = value;
+          }
+        });
+
+        const finalizedDetailsChanged =
+          (editingMeeting.date || '') !== meetingData.date ||
+          (editingMeeting.startTime || '') !== meetingData.startTime ||
+          (editingMeeting.endTime || '') !== meetingData.endTime ||
+          (editingMeeting.meetLink || '') !== meetingData.meetLink ||
+          (editingMeeting.location || '') !== meetingData.location;
+
+        if (finalizedDetailsChanged) {
+          meetingData.acknowledged = false;
+          meetingData.acknowledgedAt = null;
+          meetingData.acknowledgedEmail = null;
+        } else {
+          meetingData.acknowledged = Boolean((editingMeeting as any).acknowledged);
+
+          const acknowledgedAt = (editingMeeting as any).acknowledgedAt;
+          if (acknowledgedAt !== undefined && acknowledgedAt !== null && acknowledgedAt !== '') {
+            meetingData.acknowledgedAt = acknowledgedAt;
+          }
+
+          const acknowledgedEmail = (editingMeeting as any).acknowledgedEmail;
+          if (acknowledgedEmail !== undefined && acknowledgedEmail !== null && acknowledgedEmail !== '') {
+            meetingData.acknowledgedEmail = acknowledgedEmail;
+          }
+        }
+
+        const { update } = await import('firebase/database');
+        await update(ref(database, `meetings/${editingMeeting.id}`), meetingData);
+
+        const sourceRequestId = (editingMeeting as any).sourceRequestId;
+        if (sourceRequestId) {
+          await update(ref(database, `meetingRequests/${sourceRequestId}`), {
+            date: meetingData.date,
+            startTime: meetingData.startTime,
+            endTime: meetingData.endTime,
+            updatedAt: Date.now(),
+          });
+        }
+      } else {
+        const { push } = await import('firebase/database');
+        await push(ref(database, 'meetings/'), {
+          ...meetingData,
+          acknowledged: false,
+        });
+      }
+
+      const emailSuccess = await sendEmails({
+        title: meetingData.title,
+        date: meetingData.date,
+        startTime: meetingData.startTime,
+        endTime: meetingData.endTime,
+        location: meetingData.location,
+        meetLink: meetingData.meetLink,
+      });
+      setEmailSent(emailSuccess);
+
+      setIsAddOpen(false);
+      setEditingMeeting(null);
+      setSelectedParticipants([]);
+      setNewMeeting({
+        title: '',
+        description: '',
+        date: format(new Date(), 'yyyy-MM-dd'),
+        startTime: '10:00',
+        endTime: '11:00',
+        location: '',
+        meetLink: '',
+        type: 'service',
+      });
     } catch (err) {
       console.error(err);
-      alert(t('booking.failed'));
+      alert(t('calendar.failed'));
     } finally {
       setLoading(false);
     }
   };
 
-  const numberOfSlots = Math.floor((BUSINESS_END - BUSINESS_START) / SLOT_DURATION);
+  const handleDelete = async (id: string) => {
+    if (confirm(t('calendar.confirmDelete'))) {
+      try {
+        const { remove } = await import('firebase/database');
+        await remove(ref(database, `meetings/${id}`));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
 
-  const slotHours = Array.from({ length: numberOfSlots }).map((_, i) => BUSINESS_START + i * SLOT_DURATION);
+  const handleCreateAvailability = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
 
-  const availableSlotHours = selectedDay
-    ? slotHours.filter(hour => slotStatus(selectedDay, hour) === 'available')
+    try {
+      const { push, update } = await import('firebase/database');
+
+      const availabilityData = {
+        date: availabilityForm.date,
+        startTime: availabilityForm.allDay ? '09:00' : availabilityForm.startTime,
+        endTime: availabilityForm.allDay ? '20:00' : availabilityForm.endTime,
+        reason: availabilityForm.reason || '',
+        allDay: availabilityForm.allDay,
+        updatedAt: Date.now(),
+      };
+
+      if (editingAvailability) {
+        await update(ref(database, `availability/${editingAvailability.id}`), availabilityData);
+      } else {
+        const selectedDates = buildAvailabilityDates();
+
+        if (selectedDates.length === 0) {
+          alert(t('calendar.noAvailableDatesSelected'));
+          return;
+        }
+
+        await Promise.all(
+          selectedDates.map(date =>
+            push(ref(database, 'availability/'), {
+              ...availabilityData,
+              date,
+            })
+          )
+        );
+      }
+
+      setShowAvailabilityModal(false);
+      setEditingAvailability(null);
+      resetAvailabilityForm();
+    } catch (err) {
+      console.error(err);
+      alert(t('calendar.saveAvailabilityFailed'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAvailability = async (id: string) => {
+    if (confirm(t('calendar.removeAvailabilityConfirm'))) {
+      try {
+        const { remove } = await import('firebase/database');
+        await remove(ref(database, `availability/${id}`));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleCreateUnavailability = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const { push, update } = await import('firebase/database');
+
+      const unavailabilityData = {
+        date: unavailabilityForm.date,
+        startTime: unavailabilityForm.allDay ? '00:00' : unavailabilityForm.startTime,
+        endTime: unavailabilityForm.allDay ? '23:59' : unavailabilityForm.endTime,
+        reason: unavailabilityForm.reason || '',
+        allDay: unavailabilityForm.allDay,
+        updatedAt: Date.now(),
+      };
+
+      if (editingUnavailability) {
+        await update(ref(database, `unavailability/${editingUnavailability.id}`), unavailabilityData);
+      } else {
+        await push(ref(database, 'unavailability/'), unavailabilityData);
+      }
+
+      setShowUnavailabilityModal(false);
+      setEditingUnavailability(null);
+      resetUnavailabilityForm();
+    } catch (err) {
+      console.error(err);
+      alert(t('calendar.saveUnavailabilityFailed'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNextGenQuestionSelection = async (question: NextGenQuestion, selected: boolean) => {
+    setNextGenSelectionLoadingId(question.id);
+
+    try {
+      await update(ref(database, `nextGenActivities/qaSessions/${question.id}`), {
+        status: selected ? 'selectedForNextGenSession' : 'submittedForPastorReview',
+        selectedForNextGenSession: selected,
+        selectedAt: selected ? Date.now() : null,
+        updatedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error('Failed to update NextGen question selection:', err);
+      alert(displayLocale === 'ar' ? 'فشل تحديث اختيار السؤال.' : 'Failed to update the question selection.');
+    } finally {
+      setNextGenSelectionLoadingId(null);
+    }
+  };
+
+  const handleAiAssistant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiInput.trim()) return;
+
+    const userMessage = aiInput.trim();
+    setAiInput('');
+    setAiMessages(prev => [...prev, { role: 'user', content: userMessage, timestamp: new Date() }]);
+    setAiLoading(true);
+
+    try {
+      const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
+      if (!OPENROUTER_API_KEY) {
+        setAiMessages(prev => [...prev, { role: 'assistant', content: 'AI is not configured. Please add VITE_OPENROUTER_API_KEY to your .env file.', timestamp: new Date() }]);
+        return;
+      }
+
+      const calendarContext = {
+        meetings: meetings.map(m => ({
+          title: getMeetingDisplayTitle(m),
+          date: m.date,
+          startTime: m.startTime,
+          endTime: m.endTime,
+          requesterEmail: getMeetingRequestEmail(m),
+          requestReason: getMeetingRequestReason(m),
+        })),
+        availability: availability.map(a => ({
+          id: a.id,
+          date: a.date,
+          startTime: a.startTime,
+          endTime: a.endTime,
+          allDay: a.allDay,
+          reason: a.reason,
+        })),
+        unavailability: unavailability.map(u => ({
+          id: u.id,
+          date: u.date,
+          startTime: u.startTime,
+          endTime: u.endTime,
+          allDay: u.allDay,
+          reason: u.reason,
+        })),
+        pendingRequests: meetingRequests.filter(r => r.status === 'pending').map(r => ({
+          id: r.id,
+          name: r.name,
+          email: r.email,
+          date: r.date,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          reason: r.reason,
+        })),
+      };
+
+      const systemPrompt = `You are an AI assistant for a church pastor to manage their calendar.
+
+The database scheduling model is:
+- availability/ opens bookable time.
+- unavailability/ closes time and overrides availability.
+- meetings/ contains confirmed meetings.
+- meetingRequests/ contains pending requests.
+
+You can help with:
+1. Adding availability - say "I'm available on [date]" or "make [date] available from [time] to [time]"
+2. Adding unavailability - say "I'm unavailable on [date]" or "block [date] from [time] to [time]"
+3. Accepting meeting requests - say "accept request from [name]" or "accept request #[id]"
+4. Rejecting meeting requests - say "reject request from [name]" or "reject request #[id]"
+5. Viewing schedule - say "show my schedule" or "what's my calendar look like"
+
+Current calendar context:
+${JSON.stringify(calendarContext, null, 2)}
+
+When the user wants to add availability, respond with: ACTION:ADD_AVAILABILITY|date|startTime|endTime|reason
+When the user wants to add unavailability, respond with: ACTION:ADD_UNAVAILABILITY|date|startTime|endTime|reason
+When the user wants to accept a request, respond with: ACTION:ACCEPT_REQUEST|requestId
+When the user wants to reject a request, respond with: ACTION:REJECT_REQUEST|requestId
+
+Otherwise, provide a helpful response about their calendar.`;
+
+      const client = new OpenAI({
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: OPENROUTER_API_KEY,
+        dangerouslyAllowBrowser: true,
+      });
+
+      const apiResponse = await client.chat.completions.create({
+        model: 'nvidia/nemotron-3-super-120b-a12b:free',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ] as any,
+        reasoning: { enabled: true },
+      } as any);
+
+      const aiResponse = apiResponse.choices?.[0]?.message?.content || 'I could not process that request.';
+
+      if (aiResponse.startsWith('ACTION:')) {
+        const [action, ...params] = aiResponse.split('|');
+
+        if (action === 'ACTION:ADD_AVAILABILITY' && params.length >= 3) {
+          const [date, startTime, endTime, reason = ''] = params;
+          const { push } = await import('firebase/database');
+          await push(ref(database, 'availability/'), {
+            date,
+            startTime,
+            endTime,
+            reason,
+            allDay: startTime === '09:00' && endTime === '20:00',
+            updatedAt: Date.now(),
+          });
+          setAiMessages(prev => [...prev, { role: 'assistant', content: `✅ Added availability for ${date}${reason ? ` (${reason})` : ''}.`, timestamp: new Date() }]);
+        } else if (action === 'ACTION:ADD_UNAVAILABILITY' && params.length >= 3) {
+          const [date, startTime, endTime, reason = ''] = params;
+          const { push } = await import('firebase/database');
+          await push(ref(database, 'unavailability/'), {
+            date,
+            startTime,
+            endTime,
+            reason,
+            allDay: startTime === '00:00' && endTime === '23:59',
+            updatedAt: Date.now(),
+          });
+          setAiMessages(prev => [...prev, { role: 'assistant', content: `✅ Added unavailability for ${date}${reason ? ` (${reason})` : ''}.`, timestamp: new Date() }]);
+        } else if (action === 'ACTION:ACCEPT_REQUEST' && params[0]) {
+          const requestId = params[0];
+          await handleRequestStatus(requestId, 'accepted');
+          setAiMessages(prev => [...prev, { role: 'assistant', content: '✅ Meeting request accepted. A meeting has been created and the EmailJS confirmation was sent.', timestamp: new Date() }]);
+        } else if (action === 'ACTION:REJECT_REQUEST' && params[0]) {
+          const requestId = params[0];
+          await handleRequestStatus(requestId, 'rejected');
+          setAiMessages(prev => [...prev, { role: 'assistant', content: '✅ Meeting request rejected. The requester has been notified.', timestamp: new Date() }]);
+        } else {
+          setAiMessages(prev => [...prev, { role: 'assistant', content: aiResponse, timestamp: new Date() }]);
+        }
+      } else {
+        setAiMessages(prev => [...prev, { role: 'assistant', content: aiResponse, timestamp: new Date() }]);
+      }
+    } catch (err) {
+      console.error('AI assistant error:', err);
+      setAiMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.', timestamp: new Date() }]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleRequestStatus = async (id: string, status: 'accepted' | 'rejected') => {
+    setLoading(true);
+
+    try {
+      if (status === 'rejected') {
+        await update(ref(database, `meetingRequests/${id}`), { status, updatedAt: Date.now() });
+        return;
+      }
+
+      const req = meetingRequests.find(r => r.id === id);
+
+      if (!req) {
+        alert(t('booking.statusFailed'));
+        return;
+      }
+
+      let meetLink = generatePlaceholderLink();
+
+      if (googleTokens) {
+        try {
+          const created = await createCalendarMeetLink(googleTokens, `${t('calendar.meetingWith')} ${req.name}`, req.date, req.startTime, req.endTime);
+          meetLink = created.meetLink;
+        } catch (err) {
+          console.error('Failed to create real Meet link, using placeholder:', err);
+        }
+      }
+
+      const confirmationTimestamp = Date.now();
+      const meetingData: Record<string, any> = {
+        title: t('calendar.meetingWithPastor'),
+        date: req.date,
+        startTime: req.startTime,
+        endTime: req.endTime,
+        location: '',
+        meetLink,
+        type: 'counseling',
+        participantIds: [],
+        requestName: req.name,
+        requestEmail: req.email,
+        requestReason: req.reason || '',
+        sourceRequestId: id,
+        acknowledged: true,
+        acknowledgedAt: confirmationTimestamp,
+        acknowledgedEmail: req.email,
+        confirmationSentUsing: 'EmailJS',
+        updatedAt: confirmationTimestamp,
+      };
+
+      await sendMeetingConfirmationViaEmailJs(meetingData as Meeting);
+
+      await push(ref(database, 'meetings/'), meetingData);
+
+      await update(ref(database, `meetingRequests/${id}`), {
+        status: 'accepted',
+        confirmationSent: true,
+        confirmationSentUsing: 'EmailJS',
+        confirmationSentAt: confirmationTimestamp,
+        updatedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error(err);
+      alert(t('booking.statusFailed'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getDateString = (day: Date): string => format(day, 'yyyy-MM-dd');
+
+  const getAvailabilityBlocksForDate = (dateStr: string): Availability[] => {
+    return availability.filter(a => a.date === dateStr);
+  };
+
+  const getUnavailabilityBlocksForDate = (dateStr: string): Unavailability[] => {
+    return unavailability.filter(u => u.date === dateStr);
+  };
+
+  const getMeetingsForDate = (dateStr: string): Meeting[] => {
+    return meetings.filter(m => m.date === dateStr);
+  };
+
+  const getPendingRequestsForDate = (dateStr: string): MeetingRequest[] => {
+    return meetingRequests.filter(r => r.date === dateStr && r.status === 'pending');
+  };
+
+  const getAvailabilityRange = (block: Availability): { start: number; end: number } => {
+    return {
+      start: timeToHour(block.startTime || '09:00'),
+      end: timeToHour(block.endTime || '20:00'),
+    };
+  };
+
+  const getUnavailabilityRange = (block: Unavailability): { start: number; end: number } => {
+    return {
+      start: timeToHour(block.startTime || '00:00'),
+      end: timeToHour(block.endTime || '23:59'),
+    };
+  };
+
+  const isPastorSlotInsideAvailability = (dateStr: string, startHour: number, endHour: number): boolean => {
+    return getAvailabilityBlocksForDate(dateStr).some(block => {
+      const range = getAvailabilityRange(block);
+      return startHour >= range.start && endHour <= range.end;
+    });
+  };
+
+  const getBlockingUnavailabilityForSlot = (dateStr: string, startHour: number, endHour: number): Unavailability | null => {
+    return getUnavailabilityBlocksForDate(dateStr).find(block => {
+      const range = getUnavailabilityRange(block);
+      return slotOverlaps(startHour, endHour, range.start, range.end);
+    }) || null;
+  };
+
+  const isPastorSlotBooked = (dateStr: string, startHour: number, endHour: number): boolean => {
+    const meetingBooked = getMeetingsForDate(dateStr).some(meeting => {
+      if (!meeting.startTime || !meeting.endTime) return false;
+      return slotOverlaps(startHour, endHour, timeToHour(meeting.startTime), timeToHour(meeting.endTime));
+    });
+
+    const requestBooked = getPendingRequestsForDate(dateStr).some(request => {
+      if (!request.startTime || !request.endTime) return false;
+      return slotOverlaps(startHour, endHour, timeToHour(request.startTime), timeToHour(request.endTime));
+    });
+
+    return meetingBooked || requestBooked;
+  };
+
+  const getPastorSlotStatus = (day: Date, startHour: number): 'available' | 'blocked' | 'booked' | 'closed' => {
+    const dateStr = getDateString(day);
+    const endHour = startHour + SLOT_BLOCK_DURATION;
+
+    if (isPastorSlotBooked(dateStr, startHour, endHour)) return 'booked';
+    if (getBlockingUnavailabilityForSlot(dateStr, startHour, endHour)) return 'blocked';
+    if (isPastorSlotInsideAvailability(dateStr, startHour, endHour)) return 'available';
+    return 'closed';
+  };
+
+  const getPastorSlotLabel = (status: 'available' | 'blocked' | 'booked' | 'closed'): string => {
+    if (status === 'available') return t('calendar.available');
+    if (status === 'blocked') return t('calendar.unavailable');
+    if (status === 'booked') return t('booking.booked');
+    return t('calendar.noAvailabilityOpened');
+  };
+
+  const handleToggleSlotBlock = async (day: Date, startHour: number) => {
+    const dateStr = getDateString(day);
+    const endHour = startHour + SLOT_BLOCK_DURATION;
+
+    if (isPastorSlotBooked(dateStr, startHour, endHour)) return;
+    if (!isPastorSlotInsideAvailability(dateStr, startHour, endHour) && !getBlockingUnavailabilityForSlot(dateStr, startHour, endHour)) return;
+
+    setSlotBlockingLoading(true);
+
+    try {
+      const { push, remove } = await import('firebase/database');
+      const existingBlock = getBlockingUnavailabilityForSlot(dateStr, startHour, endHour);
+
+      if (!existingBlock) {
+        await push(ref(database, 'unavailability/'), {
+          date: dateStr,
+          startTime: hourToTime(startHour),
+          endTime: hourToTime(endHour),
+          reason: 'Slot blocked by pastor',
+          allDay: false,
+          updatedAt: Date.now(),
+        });
+        return;
+      }
+
+      const existingRange = getUnavailabilityRange(existingBlock);
+      await remove(ref(database, `unavailability/${existingBlock.id}`));
+
+      if (existingRange.start < startHour) {
+        await push(ref(database, 'unavailability/'), {
+          date: dateStr,
+          startTime: hourToTime(existingRange.start),
+          endTime: hourToTime(startHour),
+          reason: existingBlock.reason || 'Slot blocked by pastor',
+          allDay: false,
+          updatedAt: Date.now(),
+        });
+      }
+
+      if (endHour < existingRange.end) {
+        await push(ref(database, 'unavailability/'), {
+          date: dateStr,
+          startTime: hourToTime(endHour),
+          endTime: hourToTime(existingRange.end),
+          reason: existingBlock.reason || 'Slot blocked by pastor',
+          allDay: false,
+          updatedAt: Date.now(),
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      alert(t('calendar.saveUnavailabilityFailed'));
+    } finally {
+      setSlotBlockingLoading(false);
+    }
+  };
+
+  const slotBlockHours = Array.from(
+    { length: Math.floor((SLOT_BLOCK_END - SLOT_BLOCK_START) / SLOT_BLOCK_DURATION) },
+    (_, index) => SLOT_BLOCK_START + index * SLOT_BLOCK_DURATION
+  );
+
+  const selectedCount = selectedParticipants.length;
+  const selectedNames = participants
+    .filter(p => selectedParticipants.includes(p.id))
+    .map(p => p.name);
+
+  const availabilityDateCount = buildAvailabilityDates().length;
+
+  const rankedNextGenQuestions = nextGenQuestions;
+  const selectedNextGenQuestions = nextGenQuestions.filter(question =>
+    question.status === 'selectedForNextGenSession' || Boolean((question as any).selectedForNextGenSession)
+  );
+  const selectableNextGenQuestions = rankedNextGenQuestions.filter(question =>
+    question.status !== 'selectedForNextGenSession' && !Boolean((question as any).selectedForNextGenSession)
+  );
+
+  const peopleNotesTitle = displayLocale === 'ar' ? 'ملاحظات نمو الأشخاص' : 'People Development Notes';
+  const peopleNotesSubtitle = displayLocale === 'ar'
+    ? 'تسجيل نقاط القوة، مجالات النمو، المتابعات، والملاحظات الرعوية'
+    : 'Record strengths, growth areas, follow-ups, and pastoral notes';
+
+  const selectedSlotDateStr = selectedSlotDay ? getDateString(selectedSlotDay) : '';
+  const selectedDayAvailabilityBlocks = selectedSlotDateStr ? getAvailabilityBlocksForDate(selectedSlotDateStr) : [];
+  const selectedDayMeetings = selectedSlotDateStr ? getMeetingsForDate(selectedSlotDateStr) : [];
+  const selectedDayOpenSlotHours = selectedSlotDay
+    ? slotBlockHours.filter(hour => getPastorSlotStatus(selectedSlotDay, hour) === 'available')
     : [];
-
-  const selectedDayTitle = selectedDay ? format(selectedDay, 'EEEE, MMMM d, yyyy', { locale: dateLocale }) : '';
-  const availableLabel = t('booking.legendAvailable');
-  const unavailableLabel = t('booking.unavailable');
-  const availableShortLabel = displayLocale === 'ar' ? availableLabel : 'Avail.';
-  const unavailableShortLabel = displayLocale === 'ar' ? unavailableLabel : 'Unavail.';
-
-  const dayPopup = (
-    <AnimatePresence>
-      {selectedDay && !isPastDay && showDayPopup && (
-        <motion.div
-          key="booking-day-popup-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 backdrop-blur-md px-4 py-6"
-          onClick={() => setShowDayPopup(false)}
-          dir={dir}
-          style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}
-        >
-          <motion.div
-            key="booking-day-popup-panel"
-            initial={{ opacity: 0, scale: 0.94, y: 18 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 18 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-3xl bg-[#fffdf9] shadow-2xl border border-[#ead9d0] font-bold"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="relative bg-[#7a1717] px-6 py-5 text-white">
-              <button
-                type="button"
-                onClick={() => setShowDayPopup(false)}
-                className="absolute top-4 end-4 rounded-full bg-white/15 p-2 transition-colors hover:bg-white/25 text-white"
-              >
-                <X size={18} />
-              </button>
-
-              <div className="flex items-center gap-3 pe-10">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
-                  <Clock size={24} />
-                </div>
-
-                <div>
-                  <h3 className="text-2xl font-bold">
-                    {availableLabel} {t('booking.timeLabel')}
-                  </h3>
-                  <p className="mt-1 text-base text-white/90">
-                    {selectedDayTitle}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="max-h-[62vh] overflow-y-auto p-6">
-              {availableSlotHours.length > 0 ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {availableSlotHours.map(hour => {
-                    const isSel = selectedSlot === hour;
-
-                    return (
-                      <button
-                        type="button"
-                        key={hour}
-                        onClick={() => handlePopupSlotClick(hour)}
-                        className={`rounded-2xl border-2 p-5 text-base font-bold transition-all ${
-                          isSel
-                            ? 'scale-[1.02] border-[#7a1717] bg-[#7a1717] text-white shadow-lg'
-                            : 'border-[#8ad0a1] bg-[#e8faee] text-[#165d30] hover:-translate-y-0.5 hover:border-[#62b77c] hover:bg-[#dcf7e5] hover:shadow-md'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          <Clock size={15} />
-                          <span>{hourToLabel(hour, displayLocale)}</span>
-                        </div>
-
-                        <div className={`mt-2 text-base font-bold ${isSel ? 'text-white/90' : 'text-[#1e7a3a]'}`}>
-                          {availableLabel}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-10 text-center">
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#fff1f1]">
-                    <AlertCircle size={30} className="text-[#b32626]" />
-                  </div>
-
-                  <p className="font-bold text-[#7a1717]">
-                    {t('booking.noAvailabilityOpenedForDay')}
-                  </p>
-
-                  <p className="mt-2 text-base text-[#6b4b4b] font-bold">
-                    {unavailableLabel}
-                  </p>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-
-  const bookingFormPopup = (
-    <AnimatePresence>
-      {selectedDay && !isPastDay && showBookingFormPopup && selectedSlot !== null && (
-        <motion.div
-          key="booking-form-popup-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 backdrop-blur-md px-4 py-6"
-          onClick={() => {
-            if (!loading) setShowBookingFormPopup(false);
-          }}
-          dir={dir}
-          style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}
-        >
-          <motion.div
-            key="booking-form-popup-panel"
-            initial={{ opacity: 0, scale: 0.94, y: 18 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 18 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="w-full max-w-xl overflow-hidden rounded-3xl bg-[#fffdf9] shadow-2xl border border-[#ead9d0] font-bold"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="relative bg-[#7a1717] px-6 py-5 text-white">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => setShowBookingFormPopup(false)}
-                className="absolute top-4 end-4 rounded-full bg-white/15 p-2 transition-colors hover:bg-white/25 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <X size={18} />
-              </button>
-
-              <div className="flex items-center gap-3 pe-10">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
-                  <CheckCircle size={24} />
-                </div>
-
-                <div>
-                  <h3 className="text-2xl font-bold">
-                    {t('booking.bookFor')} {hourToLabel(selectedSlot, displayLocale)}
-                  </h3>
-                  <p className="mt-1 text-base text-white/90">
-                    {selectedDayTitle}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6">
-              {success ? (
-                <motion.div
-                  initial={{ scale: 0.96, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="text-center py-8"
-                >
-                  <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle size={32} className="text-green-600" />
-                  </div>
-                  <h4 className="text-2xl font-bold text-[#7a1717] mb-2">{t('booking.successTitle')}</h4>
-                  <p className="text-[#6b4b4b] text-base">{t('booking.successDesc')}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowBookingFormPopup(false);
-                      setSuccess(false);
-                    }}
-                    className="mt-6 px-6 py-3 rounded-xl bg-[#7a1717] text-white font-bold text-base hover:bg-[#5e1010] transition-colors"
-                  >
-                    {t('booking.close')}
-                  </button>
-                </motion.div>
-              ) : (
-                <form onSubmit={handleSubmit} className="space-y-3">
-                  <div>
-                    <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest font-bold flex items-center gap-1 mb-1">
-                      <User size={12} /> {t('booking.name')}
-                    </label>
-                    <input
-                      required
-                      type="text"
-                      className="w-full px-4 py-3 bg-[#fffdf9] border-2 border-[#ead9d0] rounded-xl focus:ring-2 focus:ring-[#7a1717]/25 focus:border-[#7a1717] outline-none text-base font-bold text-[#2b1717] placeholder:text-[#9b7b7b]"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      placeholder={t('booking.namePlaceholder')}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest font-bold flex items-center gap-1 mb-1">
-                      <Mail size={12} /> {t('booking.email')}
-                    </label>
-                    <input
-                      required
-                      type="email"
-                      className="w-full px-4 py-3 bg-[#fffdf9] border-2 border-[#ead9d0] rounded-xl focus:ring-2 focus:ring-[#7a1717]/25 focus:border-[#7a1717] outline-none text-base font-bold text-[#2b1717] placeholder:text-[#9b7b7b]"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder={t('booking.emailPlaceholder')}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest font-bold flex items-center gap-1 mb-1">
-                      <MessageSquare size={12} /> {t('booking.reason')}
-                    </label>
-                    <textarea
-                      required
-                      rows={3}
-                      className="w-full px-4 py-3 bg-[#fffdf9] border-2 border-[#ead9d0] rounded-xl focus:ring-2 focus:ring-[#7a1717]/25 focus:border-[#7a1717] outline-none text-base font-bold text-[#2b1717] placeholder:text-[#9b7b7b] resize-none"
-                      value={reason}
-                      onChange={e => setReason(e.target.value)}
-                      placeholder={t('booking.reasonPlaceholder')}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => {
-                        setShowBookingFormPopup(false);
-                        setShowDayPopup(true);
-                      }}
-                      className="py-3 bg-[#f4e8e2] text-[#7a1717] rounded-xl font-bold hover:bg-[#ead9d0] transition-all text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {t('booking.close')}
-                    </button>
-
-                    <button
-                      disabled={loading}
-                      type="submit"
-                      className="py-3 bg-[#7a1717] text-white rounded-xl font-bold shadow hover:bg-[#5e1010] transition-all flex items-center justify-center gap-2 text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {loading ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
-                      ) : (
-                        <>
-                          <CheckCircle size={14} /> {t('booking.submit')}
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
 
   return (
     <>
-      <div className="min-h-screen w-full space-y-6 sm:space-y-8 max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 bg-[#fbf7f2] text-[#2b1717] font-bold" dir={dir} style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}>
-        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-[#7a1717] flex items-center gap-2 leading-tight">
-              <CalendarIcon size={22} />
-              {t('booking.pageTitle')}
-            </h1>
-            <p className="text-[#6b4b4b] text-base mt-2 font-bold">{t('booking.pageDesc')}</p>
+      <style>{`
+        .pastor-calendar-ui,
+        .pastor-calendar-ui * {
+          font-family: Arial, sans-serif !important;
+          font-weight: 700 !important;
+        }
+
+        .pastor-calendar-ui {
+          background: #fbf7f2;
+          color: #2b1717;
+        }
+
+        .pastor-calendar-ui button,
+        .pastor-calendar-ui input,
+        .pastor-calendar-ui select,
+        .pastor-calendar-ui textarea {
+          font-size: 16px !important;
+          line-height: 1.35 !important;
+        }
+
+        .pastor-calendar-ui .text-\[9px\],
+        .pastor-calendar-ui .text-\[10px\],
+        .pastor-calendar-ui .text-\[11px\],
+        .pastor-calendar-ui .text-xs,
+        .pastor-calendar-ui .text-sm {
+          font-size: 16px !important;
+          line-height: 1.35 !important;
+        }
+
+        .pastor-calendar-ui .text-lg {
+          font-size: 20px !important;
+          line-height: 1.35 !important;
+        }
+
+        .pastor-calendar-ui .text-xl {
+          font-size: 24px !important;
+          line-height: 1.25 !important;
+        }
+
+        .pastor-calendar-ui .text-2xl {
+          font-size: 30px !important;
+          line-height: 1.15 !important;
+        }
+
+        .pastor-calendar-ui .text-3xl {
+          font-size: 34px !important;
+          line-height: 1.1 !important;
+        }
+
+        .pastor-calendar-ui .pastor-dashboard-card {
+          background: #fffdf9;
+          border-color: #ead9d0;
+          box-shadow: 0 16px 40px rgba(80, 24, 24, 0.06);
+        }
+
+        .pastor-calendar-ui .pastor-main-button {
+          min-height: 48px;
+          border-radius: 18px;
+        }
+
+        .pastor-calendar-ui .pastor-calendar-shell {
+          background: #fffdf9;
+          border-color: #ead9d0;
+          box-shadow: 0 18px 48px rgba(80, 24, 24, 0.07);
+        }
+
+        .pastor-calendar-ui .pastor-day-card {
+          min-height: 118px;
+          border-radius: 28px;
+          box-shadow: 0 8px 20px rgba(80, 24, 24, 0.04);
+        }
+
+        .pastor-calendar-ui .pastor-day-number {
+          font-size: 24px !important;
+          line-height: 1 !important;
+        }
+
+        .pastor-calendar-ui .pastor-popup-panel {
+          background: #fffdf9;
+          border-color: #ead9d0;
+          color: #2b1717;
+        }
+
+        .pastor-calendar-ui .pastor-popup-header {
+          background: #7a1717;
+        }
+
+        @media (max-width: 640px) {
+          .pastor-calendar-ui {
+            padding-left: 12px;
+            padding-right: 12px;
+          }
+
+          .pastor-calendar-ui .pastor-calendar-shell {
+            padding: 16px !important;
+            border-radius: 30px !important;
+          }
+
+          .pastor-calendar-ui .pastor-calendar-title {
+            text-align: center;
+          }
+
+          .pastor-calendar-ui .pastor-calendar-legend {
+            display: none !important;
+          }
+
+          .pastor-calendar-ui .pastor-weekday-label {
+            font-size: 16px !important;
+            letter-spacing: 0.08em !important;
+          }
+
+          .pastor-calendar-ui .pastor-days-grid {
+            gap: 10px !important;
+          }
+
+          .pastor-calendar-ui .pastor-day-card {
+            min-height: 0 !important;
+            aspect-ratio: 1 / 1;
+            border-radius: 9999px !important;
+            padding: 6px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+
+          .pastor-calendar-ui .pastor-day-number {
+            width: auto !important;
+            height: auto !important;
+            margin: 0 !important;
+            background: transparent !important;
+            font-size: 22px !important;
+          }
+
+          .pastor-calendar-ui .pastor-day-status,
+          .pastor-calendar-ui .pastor-day-detail,
+          .pastor-calendar-ui .pastor-day-badge {
+            display: none !important;
+          }
+
+          .pastor-calendar-ui .pastor-popup-panel {
+            max-height: 92vh !important;
+            border-radius: 28px !important;
+          }
+
+          .pastor-calendar-ui .pastor-popup-body {
+            padding: 16px !important;
+          }
+
+          .pastor-calendar-ui .pastor-slot-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+          }
+        }
+      `}</style>
+      <div className="pastor-calendar-ui min-h-screen space-y-8 px-4 py-6" style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }} dir={dir}>
+      <PageTitle
+        title={t('calendar.title')}
+        subtitle={t('calendar.subtitle')}
+        icon={<CalendarIcon size={22} />}
+      />
+
+      <div className="pastor-dashboard-card flex flex-col sm:flex-row justify-between items-start sm:items-center p-6 rounded-3xl border gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-[#1A1A1A]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
+          <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+            {t('calendar.availabilityOpensBooking')}
+          </p>
+        </div>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex bg-stone-50 rounded-xl p-1 border border-gray-200">
+            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft size={20} /></button>
+            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight size={20} /></button>
           </div>
+          {googleTokens ? (
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-2 text-green-700 font-semibold bg-green-50 px-4 py-2 rounded-full border border-green-100 text-sm">
+                <Video size={14} />
+                {t('calendar.googleConnected')}
+              </span>
+              <button
+                onClick={() => { clearTokens(); setGoogleTokens(null); }}
+                className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                title={t('calendar.disconnectGoogle')}
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={startGoogleAuth}
+              className="pastor-main-button flex items-center gap-2 bg-[#7a1717] hover:bg-[#5e1010] text-white px-6 py-3 rounded-xl font-bold shadow transition-colors"
+            >
+              <Video size={16} />
+              {t('calendar.connectGoogle')}
+            </button>
+          )}
+          <Link
+            to="/pastor/people-notes"
+            className="pastor-main-button flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
+            title={peopleNotesSubtitle}
+          >
+            <Users size={16} />
+            <span>{peopleNotesTitle}</span>
+          </Link>
           <button
-            onClick={() => setShowAi(true)}
-            className="w-full sm:w-auto justify-center flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors text-base border border-[#d8aaaa] shadow-sm"
+            type="button"
+            onClick={() => setShowNextGenQuestions(!showNextGenQuestions)}
+            className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-amber-200"
+          >
+            <Trophy size={16} />
+            <span>{displayLocale === 'ar' ? 'أسئلة NextGen' : 'NextGen Questions'}</span>
+            {nextGenQuestions.length > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                {nextGenQuestions.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => { setIsAddOpen(true); setEditingMeeting(null); setSelectedParticipants([]); setEmailSent(false); }}
+            className="pastor-main-button flex items-center gap-2 bg-[#7a1717] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#7a1717]/20 transition-all hover:scale-105 active:scale-95"
+          >
+            <Plus size={20} />
+            <span>{t('calendar.addEvent')}</span>
+          </button>
+          <button
+            onClick={() => {
+              setShowAvailabilityModal(true);
+              setEditingAvailability(null);
+              resetAvailabilityForm();
+            }}
+            className="pastor-main-button flex items-center gap-2 bg-[#e8faee] hover:bg-[#dcf7e5] text-[#165d30] px-5 py-3 rounded-xl font-bold transition-colors border border-[#8ad0a1]"
+          >
+            <CheckCircle size={16} />
+            <span>{t('calendar.markAvailable')}</span>
+          </button>
+          <button
+            onClick={() => {
+              setShowUnavailabilityModal(true);
+              setEditingUnavailability(null);
+              resetUnavailabilityForm();
+            }}
+            className="pastor-main-button flex items-center gap-2 bg-[#fff1f1] hover:bg-[#f8dddd] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
+          >
+            <XCircle size={16} />
+            <span>{t('calendar.markUnavailable')}</span>
+          </button>
+          <button
+            onClick={() => {
+              setShowAiAssistant(!showAiAssistant);
+              if (!showAiAssistant && aiMessages.length === 0) {
+                const pendingCount = meetingRequests.filter(r => r.status === 'pending').length;
+                setAiMessages([
+                  {
+                    role: 'assistant',
+                    content: `Hi Pastor! I'm your AI calendar assistant. You have ${pendingCount} pending request${pendingCount !== 1 ? 's' : ''}.\n\nI can help you:\n• Add availability\n• Add unavailability\n• Accept/reject meeting requests\n• View your schedule\n\nWhat would you like to do?`,
+                    timestamp: new Date(),
+                  },
+                ]);
+              }
+            }}
+            className="pastor-main-button flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
           >
             <Bot size={16} />
-            {t('booking.aiAssistant')}
+            <span>{t('calendar.aiAssistant')}</span>
           </button>
         </div>
-
-        <div className="flex flex-wrap justify-center gap-4 sm:gap-6 text-base font-bold text-[#3a2424]">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-[#dcf7e5] border-2 border-[#87c99c]"></div>
-            {availableLabel}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-[#fff1f1] border-2 border-[#d89292]"></div>
-            {unavailableLabel}
-          </div>
-        </div>
-
-        <div className="bg-[#fffdf9] rounded-3xl shadow-md border border-[#ead9d0] p-3 sm:p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-6">
-            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-3 hover:bg-[#f4e8e2] rounded-full transition-colors text-[#7a1717]"><ChevronLeft size={20} /></button>
-            <div className="text-center">
-              <h2 className="text-2xl sm:text-3xl font-bold text-[#2b1717]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
-              <p className="text-base text-[#7a1717]/70 uppercase tracking-widest font-bold mt-1">{t('calendar.schedule')}</p>
-            </div>
-            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-3 hover:bg-[#f4e8e2] rounded-full transition-colors text-[#7a1717]"><ChevronRight size={20} /></button>
-          </div>
-
-          <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-3">
-            {[t('calendar.sun'), t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat')].map(d => (
-              <div key={d} className="text-center text-sm sm:text-base uppercase tracking-widest text-[#6f4a4a] font-bold">{d}</div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 gap-x-1 gap-y-5 sm:gap-3">
-            {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-            {days.map(day => {
-              const isPast = isBefore(startOfDay(day), startOfDay(new Date()));
-              const isSelected = selectedDay && isSameDay(day, selectedDay);
-              const today = isToday(day);
-              const hasAvailableSlots = !isPast && slotHours.some(hour => slotStatus(day, hour) === 'available');
-
-              return (
-                <button
-                  key={day.toISOString()}
-                  onClick={() => handleDayClick(day)}
-                  disabled={isPast}
-                  className={`min-h-[86px] sm:min-h-[112px] rounded-2xl transition-all text-center px-0.5 py-1.5 sm:p-3 flex flex-col items-center justify-start gap-1.5 sm:gap-2 font-bold ${
-                    isPast
-                      ? 'text-[#a07c7c] cursor-not-allowed opacity-70'
-                      : isSelected
-                      ? 'text-[#7a1717]'
-                      : hasAvailableSlots
-                      ? 'text-[#165d30]'
-                      : today
-                      ? 'text-[#7a1717]'
-                      : 'text-[#7a1717]'
-                  }`}
-                >
-                  <div
-                    className={`w-11 h-11 sm:w-16 sm:h-16 rounded-full border-2 flex flex-col items-center justify-center font-bold transition-all ${
-                      isPast
-                        ? 'bg-[#f5eeee] border-[#e2caca] text-[#a07c7c]'
-                        : isSelected
-                        ? 'bg-[#7a1717] border-[#7a1717] text-white shadow-lg'
-                        : hasAvailableSlots
-                        ? 'bg-[#e8faee] border-[#8ad0a1] text-[#165d30] shadow-sm'
-                        : today
-                        ? 'bg-[#fff1f1] border-[#d89292] text-[#7a1717] shadow-sm'
-                        : 'bg-[#fff1f1] border-[#e0b5b5] text-[#7a1717]'
-                    }`}
-                  >
-                    <span className="text-lg sm:text-2xl font-bold leading-none">
-                      {format(day, 'd', { locale: dateLocale })}
-                    </span>
-
-                    {isPast && (
-                      <span className="text-base sm:text-xl font-bold leading-none mt-1">✕</span>
-                    )}
-                  </div>
-
-                  {!isPast && (
-                    <div
-                      className={`w-full min-h-[28px] sm:min-h-[24px] px-0.5 text-center font-bold leading-tight ${
-                        isSelected
-                          ? 'text-[#7a1717]'
-                          : hasAvailableSlots
-                          ? 'text-[#1e7a3a]'
-                          : 'text-[#9a1c1c]'
-                      }`}
-                    >
-                      <span className="block text-[11px] sm:hidden tracking-tight">
-                        {hasAvailableSlots ? availableShortLabel : unavailableShortLabel}
-                      </span>
-                      <span className="hidden sm:block text-base">
-                        {hasAvailableSlots ? availableLabel : unavailableLabel}
-                      </span>
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <AIBookingAssistant isOpen={showAi} onClose={() => setShowAi(false)} />
       </div>
 
-      {dayPopup}
-      {bookingFormPopup}
+      {meetingRequests.filter(r => r.status === 'pending').length > 0 && (
+        <section className="bg-white p-6 rounded-3xl shadow-sm border border-amber-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-amber-700">
+              <Hourglass size={18} />
+              {t('requests.title')}
+              <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                {meetingRequests.filter(r => r.status === 'pending').length}
+              </span>
+            </h3>
+            <button onClick={() => setShowRequests(!showRequests)} className="text-xs text-[#7a1717] font-bold hover:underline">
+              {showRequests ? t('requests.hide') : t('requests.viewAll')}
+            </button>
+          </div>
+          {showRequests && (
+            <div className="space-y-3">
+              {meetingRequests.filter(r => r.status === 'pending').map(req => (
+                <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-stone-50 rounded-xl border border-gray-100 gap-3">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center border border-gray-100">
+                      <User size={18} className="text-[#7a1717]" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm">{req.name}</h4>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-0.5">
+                        <span className="flex items-center gap-1"><Mail size={11} /> {req.email}</span>
+                        <span className="flex items-center gap-1"><CalendarIcon size={11} /> {req.date}</span>
+                        <span className="flex items-center gap-1"><Clock size={11} /> {timeRangeToLabel(req.startTime, req.endTime, displayLocale)}</span>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1 italic">{req.reason}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <button onClick={() => handleRequestStatus(req.id!, 'accepted')} className="flex items-center gap-1 px-4 py-2 bg-green-50 text-green-700 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors">
+                      <CheckCircle size={14} />
+                      {t('requests.accept')}
+                    </button>
+                    <button onClick={() => handleRequestStatus(req.id!, 'rejected')} className="flex items-center gap-1 px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors">
+                      <XCircle size={14} />
+                      {t('requests.reject')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {showNextGenQuestions && (
+        <section className="bg-white p-6 rounded-3xl shadow-sm border border-amber-200">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
+            <div>
+              <h3 className="text-lg font-bold flex items-center gap-2 text-amber-700">
+                <Trophy size={18} />
+                {displayLocale === 'ar' ? 'أسئلة NextGen حسب التصويت' : 'NextGen Questions Ranked by Votes'}
+                <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                  {rankedNextGenQuestions.length}
+                </span>
+              </h3>
+              <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+                {displayLocale === 'ar'
+                  ? 'الترتيب حسب صافي التصويت، ثم إجمالي التصويت الإيجابي، ثم الأقل تصويتاً سلبياً'
+                  : 'Sorted by net votes, then total upvotes, then fewer downvotes'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full border border-green-100 font-bold">
+                {displayLocale === 'ar' ? `المختارة: ${selectedNextGenQuestions.length}` : `Selected: ${selectedNextGenQuestions.length}`}
+              </span>
+              <span className="px-3 py-1 bg-stone-50 text-gray-600 rounded-full border border-gray-100 font-bold">
+                {displayLocale === 'ar' ? `غير المختارة: ${selectableNextGenQuestions.length}` : `Not selected: ${selectableNextGenQuestions.length}`}
+              </span>
+            </div>
+          </div>
+
+          {rankedNextGenQuestions.length === 0 ? (
+            <div className="p-6 bg-stone-50 rounded-2xl border border-gray-100 text-sm text-gray-500">
+              {displayLocale === 'ar'
+                ? 'لا توجد أسئلة NextGen محفوظة حالياً.'
+                : 'No saved NextGen questions are available yet.'}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {rankedNextGenQuestions.map((question, index) => {
+                const isSelected = question.status === 'selectedForNextGenSession' || Boolean((question as any).selectedForNextGenSession);
+                const isUpdating = nextGenSelectionLoadingId === question.id;
+
+                return (
+                  <div
+                    key={question.id}
+                    className={`p-5 rounded-2xl border transition-all ${
+                      isSelected
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-stone-50 border-gray-100'
+                    }`}
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black border ${
+                          isSelected
+                            ? 'bg-green-100 text-green-700 border-green-200'
+                            : 'bg-white text-[#7a1717] border-gray-100'
+                        }`}>
+                          #{index + 1}
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-3 py-1 bg-white text-[#7a1717] rounded-full text-xs font-bold border border-[#7a1717]/10">
+                              {question.category || 'Other'}
+                            </span>
+                            <span className="px-3 py-1 bg-white text-gray-500 rounded-full text-xs font-bold border border-gray-100">
+                              {question.translation || 'WEB'}
+                            </span>
+                            {isSelected && (
+                              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200">
+                                {displayLocale === 'ar' ? 'مختار للجلسة' : 'Selected for session'}
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className="text-lg font-bold text-gray-900 leading-snug">
+                            {question.question}
+                          </h4>
+
+                          {question.verses.length > 0 && (
+                            <div className="space-y-2">
+                              {question.verses.map((verse, verseIndex) => (
+                                <div key={`${question.id}-verse-${verseIndex}`} className="bg-white border border-gray-100 rounded-xl p-3">
+                                  {verse.reference && (
+                                    <div className="text-xs font-bold text-[#7a1717] mb-1">
+                                      {verse.reference}
+                                    </div>
+                                  )}
+                                  {verse.text && (
+                                    <p className="text-xs leading-5 text-gray-600 whitespace-pre-wrap">
+                                      {verse.text}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {question.notes && (
+                            <p className="text-xs text-gray-400 italic">
+                              {question.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row lg:flex-col gap-3 lg:min-w-[210px]">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+                            <div className="flex items-center justify-center gap-1 text-[10px] text-green-700 font-bold uppercase">
+                              <ThumbsUp size={11} />
+                              {displayLocale === 'ar' ? 'مؤيد' : 'Up'}
+                            </div>
+                            <div className="text-lg font-black text-green-700">
+                              {question.totalUpvotes}
+                            </div>
+                          </div>
+
+                          <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+                            <div className="flex items-center justify-center gap-1 text-[10px] text-red-700 font-bold uppercase">
+                              <ThumbsDown size={11} />
+                              {displayLocale === 'ar' ? 'رافض' : 'Down'}
+                            </div>
+                            <div className="text-lg font-black text-red-700">
+                              {question.totalDownvotes}
+                            </div>
+                          </div>
+
+                          <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+                            <div className="text-[10px] text-[#7a1717] font-bold uppercase">
+                              {displayLocale === 'ar' ? 'الصافي' : 'Net'}
+                            </div>
+                            <div className="text-lg font-black text-[#7a1717]">
+                              {question.netVotes}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isUpdating}
+                          onClick={() => handleNextGenQuestionSelection(question, !isSelected)}
+                          className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                            isSelected
+                              ? 'bg-white text-red-700 border border-red-100 hover:bg-red-50'
+                              : 'bg-[#7a1717] text-white hover:bg-[#5e1010]'
+                          }`}
+                        >
+                          {isUpdating ? (
+                            <Hourglass size={14} className="animate-spin" />
+                          ) : isSelected ? (
+                            <XCircle size={14} />
+                          ) : (
+                            <CheckCircle size={14} />
+                          )}
+                          {isSelected
+                            ? (displayLocale === 'ar' ? 'إلغاء الاختيار' : 'Unselect')
+                            : (displayLocale === 'ar' ? 'اختيار للجلسة' : 'Select for Session')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="pastor-calendar-shell p-6 rounded-3xl border">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <div>
+            <h3 className="pastor-calendar-title text-xl font-bold text-[#7a1717] flex items-center gap-2">
+              <CalendarIcon size={20} />
+              {format(currentDate, 'MMMM yyyy', { locale: dateLocale })}
+            </h3>
+            <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+              {t('calendar.availabilityOpensBooking')}
+            </p>
+          </div>
+          <div className="pastor-calendar-legend flex items-center gap-2 font-bold">
+            <span className="inline-flex items-center gap-2 rounded-full bg-green-50 px-3 py-2 text-green-700 border border-green-100">
+              <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+              {t('calendar.available')}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-2 text-red-700 border border-red-100">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+              {t('calendar.unavailable')}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-amber-700 border border-amber-100">
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+              {t('booking.booked')}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 gap-2 mb-3">
+          {[t('calendar.sun'), t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat')].map(d => (
+            <div key={d} className="pastor-weekday-label text-center uppercase tracking-widest text-[#6f4a4a] font-bold">{d}</div>
+          ))}
+        </div>
+
+        <div className="pastor-days-grid grid grid-cols-7 gap-2 sm:gap-3">
+          {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, i) => (
+            <div key={`calendar-empty-${i}`} />
+          ))}
+          {days.map(day => {
+            const dateStr = getDateString(day);
+            const dayMeetings = getMeetingsForDate(dateStr);
+            const pendingRequests = getPendingRequestsForDate(dateStr);
+            const dayAvailability = getAvailabilityBlocksForDate(dateStr);
+            const dayUnavailability = getUnavailabilityBlocksForDate(dateStr);
+            const openSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'available').length;
+            const blockedSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'blocked').length;
+            const bookedSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'booked').length;
+            const isSelected = selectedSlotDay && isSameDay(selectedSlotDay, day);
+            const hasAvailability = dayAvailability.length > 0;
+            const isTodayDate = isSameDay(day, new Date());
+
+            const statusLabel = openSlotCount > 0
+              ? t('calendar.available')
+              : bookedSlotCount > 0
+              ? t('booking.booked')
+              : t('calendar.unavailable');
+
+            const statusDetail = openSlotCount > 0
+              ? `${openSlotCount} ${displayLocale === 'ar' ? 'فترة مفتوحة' : 'open slot(s)'}`
+              : bookedSlotCount > 0
+              ? `${bookedSlotCount} ${displayLocale === 'ar' ? 'محجوزة' : 'booked'}`
+              : hasAvailability
+              ? t('calendar.unavailable')
+              : t('calendar.noAvailabilityOpened');
+
+            return (
+              <button
+                key={day.toISOString()}
+                type="button"
+                onClick={() => setSelectedSlotDay(day)}
+                className={`pastor-day-card min-h-[92px] sm:min-h-[112px] rounded-2xl border-2 p-2 sm:p-3 text-center transition-all hover:-translate-y-0.5 hover:shadow-md font-bold ${
+                  isSelected
+                    ? 'border-[#7a1717] bg-[#7a1717] text-white shadow-lg shadow-[#7a1717]/20'
+                    : openSlotCount > 0
+                    ? 'border-green-200 bg-green-50 text-green-800 hover:border-green-300'
+                    : bookedSlotCount > 0
+                    ? 'border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300'
+                    : 'border-red-100 bg-red-50/70 text-red-800 hover:border-red-200'
+                }`}
+              >
+                <div className={`pastor-day-number mx-auto mb-2 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full text-lg sm:text-xl font-black ${
+                  isSelected
+                    ? 'bg-white text-[#7a1717]'
+                    : isTodayDate
+                    ? 'bg-[#7a1717] text-white'
+                    : 'bg-white/80'
+                }`}>
+                  {format(day, 'd', { locale: dateLocale })}
+                </div>
+
+                <div className={`pastor-day-status font-black uppercase tracking-wide ${isSelected ? 'text-white' : ''}`}>
+                  {statusLabel}
+                </div>
+                <div className={`pastor-day-detail mt-1 hidden sm:block font-bold leading-tight ${isSelected ? 'text-white/85' : 'text-gray-500'}`}>
+                  {statusDetail}
+                </div>
+
+                {(dayMeetings.length > 0 || pendingRequests.length > 0 || blockedSlotCount > 0 || dayUnavailability.length > 0) && (
+                  <div className={`pastor-day-badge mt-2 mx-auto flex w-fit items-center justify-center gap-1 rounded-full px-2 py-1 font-black ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-white/80 text-[#7a1717]'
+                  }`}>
+                    {dayMeetings.length + pendingRequests.length + blockedSlotCount + dayUnavailability.length}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {selectedSlotDay && (
+        <div
+          className="fixed inset-0 z-[50] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
+          onClick={() => setSelectedSlotDay(null)}
+          dir={dir}
+          style={{ fontFamily: 'Arial, sans-serif' }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: 18 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="pastor-popup-panel w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl shadow-2xl border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="pastor-popup-header sticky top-0 z-10 text-white p-6">
+              <button
+                type="button"
+                onClick={() => setSelectedSlotDay(null)}
+                className="absolute top-4 end-4 rounded-full bg-white/15 p-2 hover:bg-white/25 transition-colors"
+              >
+                <X size={20} />
+              </button>
+              <div className="pe-10">
+                <h3 className="text-2xl font-black flex items-center gap-2">
+                  <Clock size={22} />
+                  {format(selectedSlotDay, 'EEEE, MMMM d, yyyy', { locale: dateLocale })}
+                </h3>
+                <p className="mt-1 text-sm font-bold text-white/80 uppercase tracking-widest">
+                  {t('calendar.availabilityOpensBooking')}
+                </p>
+              </div>
+            </div>
+
+            <div className="pastor-popup-body max-h-[calc(90vh-104px)] overflow-y-auto p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const date = getDateString(selectedSlotDay);
+                    setEditingAvailability(null);
+                    setAvailabilityForm({
+                      mode: 'single',
+                      date,
+                      startDate: date,
+                      endDate: date,
+                      selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+                      startTime: '09:00',
+                      endTime: '20:00',
+                      reason: '',
+                      allDay: true,
+                    });
+                    setShowAvailabilityModal(true);
+                  }}
+                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-green-200 bg-green-50 px-4 py-3 text-green-700 font-black hover:bg-green-100 transition-colors"
+                >
+                  <CheckCircle size={18} />
+                  {t('calendar.markAvailable')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const date = getDateString(selectedSlotDay);
+                    setEditingUnavailability(null);
+                    setUnavailabilityForm({
+                      date,
+                      startTime: '09:00',
+                      endTime: '20:00',
+                      reason: '',
+                      allDay: true,
+                    });
+                    setShowUnavailabilityModal(true);
+                  }}
+                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-red-200 bg-red-50 px-4 py-3 text-red-700 font-black hover:bg-red-100 transition-colors"
+                >
+                  <XCircle size={18} />
+                  {t('calendar.markUnavailable')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewMeeting(p => ({ ...p, date: getDateString(selectedSlotDay) }));
+                    setEditingMeeting(null);
+                    setSelectedParticipants([]);
+                    setEmailSent(false);
+                    setIsAddOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#7a1717]/20 bg-[#f8eeee] px-4 py-3 text-[#7a1717] font-black hover:bg-[#f1dddd] transition-colors"
+                >
+                  <Plus size={18} />
+                  {t('calendar.addEvent')}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-2xl border-2 border-green-100 bg-green-50/70 p-5">
+                  <h4 className="font-black text-green-700 mb-4 flex items-center gap-2">
+                    <CheckCircle size={18} />
+                    {displayLocale === 'ar' ? 'الفترات المتاحة للحجز' : 'Available Booking Slots'}
+                  </h4>
+
+                  {selectedDayOpenSlotHours.length === 0 ? (
+                    <div className="rounded-2xl bg-white border border-green-100 p-4 text-green-700/70 font-black">
+                      {displayLocale === 'ar' ? 'لا توجد فترات متاحة مفتوحة في هذا اليوم.' : 'No available booking slots opened for this day.'}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {selectedDayOpenSlotHours.map(hour => (
+                        <div
+                          key={hour}
+                          className="rounded-2xl bg-white border-2 border-green-100 p-4 text-green-800 font-black"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Clock size={16} />
+                            {hourToLabel(hour, displayLocale)} - {hourToLabel(hour + SLOT_BLOCK_DURATION, displayLocale)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedDayAvailabilityBlocks.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-[#165d30]/70 uppercase tracking-widest">
+                        {displayLocale === 'ar' ? 'نوافذ الإتاحة' : 'Availability Windows'}
+                      </div>
+                      {selectedDayAvailabilityBlocks.map(a => (
+                        <div key={a.id} className="group rounded-xl bg-white border border-green-100 p-3 text-green-800 relative">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAvailability(a.id)}
+                            className="absolute top-2 end-2 text-green-500 hover:text-green-800 opacity-70"
+                          >
+                            <X size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAvailability(a);
+                              setAvailabilityForm({
+                                mode: 'single',
+                                date: a.date,
+                                startDate: a.date,
+                                endDate: a.date,
+                                selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+                                startTime: a.startTime || '09:00',
+                                endTime: a.endTime || '20:00',
+                                reason: a.reason || '',
+                                allDay: a.allDay || false,
+                              });
+                              setShowAvailabilityModal(true);
+                            }}
+                            className="block w-full text-start pe-8"
+                          >
+                            <div>{a.allDay ? t('calendar.available') : timeRangeToLabel(a.startTime, a.endTime, displayLocale)}</div>
+                            {a.reason && <div className="mt-1 text-green-600">{a.reason}</div>}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border-2 border-[#ead9d0] bg-stone-50 p-5">
+                  <h4 className="font-black text-[#7a1717] mb-4 flex items-center gap-2">
+                    <CalendarIcon size={18} />
+                    {t('calendar.meeting')}
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedDayMeetings.length === 0 ? (
+                      <div className="rounded-2xl bg-white border border-[#ead9d0] p-4 text-gray-400 font-black">
+                        {displayLocale === 'ar' ? 'لا توجد اجتماعات مؤكدة.' : 'No confirmed meetings.'}
+                      </div>
+                    ) : selectedDayMeetings.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => openMeetingEditor(m)}
+                        className="block w-full rounded-2xl bg-white border-2 border-[#ead9d0] p-4 text-start font-black hover:border-[#7a1717]/30 hover:bg-[#f8eeee] transition-colors"
+                      >
+                        <div className="text-[#7a1717]">{getMeetingDisplayTitle(m)}</div>
+                        <div className="text-gray-500 mt-1">{timeRangeToLabel(m.startTime, m.endTime, displayLocale)}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <details className="rounded-2xl border-2 border-[#ead9d0] bg-white p-4">
+                <summary className="cursor-pointer list-none font-black text-[#7a1717] flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2">
+                    <Clock size={18} />
+                    {displayLocale === 'ar' ? 'التحقق من كل الفترات' : 'Verify All Slots'}
+                  </span>
+                  <span className="text-[#7a1717]/60">
+                    {displayLocale === 'ar' ? 'افتح للتفاصيل' : 'Collapsed by default'}
+                  </span>
+                </summary>
+
+                <div className="mt-4 rounded-2xl bg-[#fbf7f2] border border-[#ead9d0] p-4">
+                  <p className="mb-4 text-[#6b4b4b]">
+                    {displayLocale === 'ar'
+                      ? 'هذه المنطقة للتحقق فقط. الفترات غير المفتوحة تعتبر غير متاحة تلقائياً.'
+                      : 'Verification only. Slots are unavailable by default unless availability opens them.'}
+                  </p>
+                  <div className="pastor-slot-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {slotBlockHours.map(hour => {
+                      const status = getPastorSlotStatus(selectedSlotDay, hour);
+                      const isClickable = status === 'available' || status === 'blocked';
+                      const slotLabel = getPastorSlotLabel(status);
+
+                      return (
+                        <button
+                          key={hour}
+                          type="button"
+                          disabled={!isClickable || slotBlockingLoading}
+                          onClick={() => handleToggleSlotBlock(selectedSlotDay, hour)}
+                          className={`p-3 rounded-xl border-2 font-black transition-all ${
+                            status === 'blocked'
+                              ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                              : status === 'available'
+                              ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                              : status === 'booked'
+                              ? 'bg-amber-50 border-amber-200 text-amber-700 cursor-not-allowed opacity-80'
+                              : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-70'
+                          }`}
+                        >
+                          <div>{hourToLabel(hour, displayLocale)}</div>
+                          <div className="mt-1 uppercase tracking-widest">{slotLabel}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </details>
+
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      <section className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <h3 className="text-xl font-bold flex items-center gap-2 text-[#7a1717]">
+            <Clock size={20} />
+            {t('calendar.upcoming')}
+          </h3>
+          <span className="px-5 py-3 bg-[#f8eeee] text-[#7a1717] rounded-xl text-xs font-bold border border-[#d8aaaa]">
+            {displayLocale === 'ar'
+              ? 'يتم إرسال التأكيد تلقائياً عند القبول'
+              : 'Accept sends EmailJS confirmation automatically'}
+          </span>
+        </div>
+        <div className="space-y-4">
+          {meetings.filter(m => {
+            if (!m.date) return false;
+            try {
+              return parseISO(m.date) >= new Date();
+            } catch {
+              return false;
+            }
+          }).map(m => {
+            const meetingParticipants = (m.participantIds || []).map(id =>
+              participants.find(p => p.id === id)
+            ).filter(Boolean) as Participant[];
+
+            const requestEmail = getMeetingRequestEmail(m);
+            const requestReason = getMeetingRequestReason(m);
+            const requestAcknowledged = getMeetingAcknowledged(m);
+
+            return (
+              <div
+                key={m.id}
+                onClick={() => openMeetingEditor(m)}
+                className="flex flex-col md:flex-row md:items-center justify-between p-6 bg-stone-50 rounded-2xl border border-gray-100 hover:border-[#7a1717]/20 transition-all gap-4 cursor-pointer"
+              >
+                <div className="flex items-center gap-6">
+                  <div className="w-16 h-16 bg-white rounded-xl shadow-sm flex flex-col items-center justify-center border border-gray-100">
+                    <span className="text-[10px] uppercase font-bold text-gray-400">{format(parseISO(m.date), 'MMM', { locale: dateLocale })}</span>
+                    <span className="text-2xl font-bold text-[#7a1717] leading-none">{format(parseISO(m.date), 'dd')}</span>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold">{getMeetingDisplayTitle(m)}</h4>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
+                      <span className="flex items-center gap-1"><Clock size={12} /> {timeRangeToLabel(m.startTime, m.endTime, displayLocale)}</span>
+                      {m.location && <span className="flex items-center gap-1"><MapPin size={12} /> {m.location}</span>}
+                      {requestEmail && <span className="flex items-center gap-1"><Mail size={12} /> {requestEmail}</span>}
+                      {meetingParticipants.length > 0 && (
+                        <span className="flex items-center gap-1"><Users size={12} /> {meetingParticipants.map(p => p.name).join(', ')}</span>
+                      )}
+                    </div>
+                    {requestReason && <p className="text-xs text-gray-400 mt-1 italic">{requestReason}</p>}
+                    {requestEmail && (
+                      <div className={`inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-[10px] font-bold ${
+                        requestAcknowledged
+                          ? 'bg-green-50 text-green-700 border border-green-100'
+                          : 'bg-amber-50 text-amber-700 border border-amber-100'
+                      }`}>
+                        {requestAcknowledged
+                          ? (displayLocale === 'ar' ? 'تم إرسال التأكيد' : 'Confirmation sent')
+                          : (displayLocale === 'ar' ? 'في انتظار التأكيد' : 'Confirmation pending')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 self-end md:self-auto flex-wrap justify-end">
+                  {requestEmail && !requestAcknowledged && (
+                    <span className="px-4 py-3 bg-amber-50 text-amber-700 rounded-xl text-xs font-bold border border-amber-100">
+                      {displayLocale === 'ar' ? 'لم يتم تأكيده بعد' : 'Not confirmed yet'}
+                    </span>
+                  )}
+                  {requestEmail && requestAcknowledged && (
+                    <span className="px-4 py-3 bg-gray-50 text-gray-500 rounded-xl text-xs font-bold border border-gray-100">
+                      {displayLocale === 'ar' ? 'تم التأكيد' : 'Acknowledged'}
+                    </span>
+                  )}
+                  {m.meetLink && (
+                    <a
+                      href={m.meetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
+                    >
+                      <Video size={18} />
+                    </a>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(m.id!);
+                    }}
+                    className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {meetings.filter(m => {
+            if (!m.date) return false;
+            try { return parseISO(m.date) >= new Date(); } catch { return false; }
+          }).length === 0 && (
+            <div className="text-center py-12 text-gray-400 italic">{t('calendar.noUpcoming')}</div>
+          )}
+        </div>
+      </section>
+
+      {isAddOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b flex justify-between items-center bg-stone-50 sticky top-0 z-10">
+              <h3 className="text-xl font-bold">{editingMeeting ? t('calendar.update') : t('calendar.create')}</h3>
+              <button onClick={() => setIsAddOpen(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreate} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.titleField')}</label>
+                <input required type="text" className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.title} onChange={e => setNewMeeting(p => ({ ...p, title: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.dateField')}</label>
+                  <input required type="date" className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.date} onChange={e => setNewMeeting(p => ({ ...p, date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.typeField')}</label>
+                  <select className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.type} onChange={e => setNewMeeting(p => ({ ...p, type: e.target.value as any }))}>
+                    <option value="service">{t('calendar.service')}</option>
+                    <option value="prayer">{t('calendar.prayer')}</option>
+                    <option value="counseling">{t('calendar.counseling')}</option>
+                    <option value="other">{t('calendar.other')}</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.startTime')}</label>
+                  <select required className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.startTime} onChange={e => setNewMeeting(p => ({ ...p, startTime: e.target.value }))}>
+                    {MEETING_TIME_OPTIONS.map(option => (
+                      <option key={`meeting-start-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.endTime')}</label>
+                  <select required className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.endTime} onChange={e => setNewMeeting(p => ({ ...p, endTime: e.target.value }))}>
+                    {MEETING_TIME_OPTIONS.map(option => (
+                      <option key={`meeting-end-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {participants.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.participants')}</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowParticipantDropdown(!showParticipantDropdown)}
+                      className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl flex items-center justify-between text-left hover:bg-stone-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <Users size={16} className="text-gray-400 flex-shrink-0" />
+                        <span className="truncate text-sm">
+                          {selectedCount === 0
+                            ? t('calendar.selectParticipants')
+                            : `${selectedCount} ${t('calendar.selected')}`
+                          }
+                        </span>
+                      </div>
+                      <ChevronDown size={16} className="text-gray-400 flex-shrink-0" />
+                    </button>
+
+                    {showParticipantDropdown && (
+                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                        <div className="p-2 border-b bg-stone-50 rounded-t-xl flex justify-between items-center">
+                          <span className="text-xs font-bold text-gray-500 uppercase">{participants.length} {t('calendar.trainees')}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedParticipants(participants.map(p => p.id))}
+                            className="text-[10px] text-[#7a1717] font-bold hover:underline"
+                          >
+                            {t('calendar.selectAll')}
+                          </button>
+                        </div>
+                        {participants.map(p => (
+                          <label
+                            key={p.id}
+                            className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50 cursor-pointer border-b border-gray-50 last:border-b-0"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedParticipants.includes(p.id)}
+                              onChange={() => toggleParticipant(p.id)}
+                              className="w-4 h-4 rounded border-gray-300 text-[#7a1717] focus:ring-[#7a1717]"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-bold truncate">{p.name}</div>
+                              <div className="text-[10px] text-gray-400 truncate">{p.email}</div>
+                            </div>
+                            {p.primaryGift && (
+                              <span className="text-[9px] bg-stone-100 text-gray-500 px-2 py-0.5 rounded-full whitespace-nowrap">{p.primaryGift}</span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {selectedCount > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedNames.map((name, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-[#f8eeee] text-[#7a1717] px-2 py-1 rounded-full">
+                          {name}
+                          <button type="button" onClick={() => toggleParticipant(selectedParticipants[i])} className="hover:text-red-500">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.meetLink')}</label>
+                  <div className="flex gap-4">
+                    {googleTokens ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setLoading(true);
+                          try {
+                            const { meetLink } = await createCalendarMeetLink(googleTokens, newMeeting.title || t('calendar.meeting'), newMeeting.date || '', newMeeting.startTime || '', newMeeting.endTime || '');
+                            setNewMeeting(p => ({ ...p, meetLink }));
+                          } catch (err: any) {
+                            alert(err.message || t('calendar.failedMeet'));
+                            setGoogleTokens(null);
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-bold text-green-600 hover:underline"
+                        disabled={loading}
+                      >
+                        <Wand2 size={10} />
+                        {t('calendar.createMeet')}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={startGoogleAuth}
+                        className="flex items-center gap-1 text-[10px] font-bold text-amber-600 hover:underline"
+                      >
+                        <Wand2 size={10} />
+                        {t('calendar.authForMeet')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const link = generatePlaceholderLink();
+                        setNewMeeting(p => ({ ...p, meetLink: link }));
+                      }}
+                      className="flex items-center gap-1 text-[10px] font-bold text-[#7a1717] hover:underline"
+                    >
+                      <Wand2 size={10} />
+                      {t('calendar.genFake')}
+                    </button>
+                  </div>
+                </div>
+                <div className="relative">
+                  <Video className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input type="url" placeholder="https://meet.google.com/..." className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.meetLink} onChange={e => setNewMeeting(p => ({ ...p, meetLink: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.location')}</label>
+                <div className="relative">
+                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input type="text" className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.location} onChange={e => setNewMeeting(p => ({ ...p, location: e.target.value }))} />
+                </div>
+              </div>
+
+              {emailSent && (
+                <div className="flex items-center gap-2 text-green-700 bg-green-50 px-4 py-3 rounded-xl border border-green-100">
+                  <Check size={16} />
+                  <span className="text-sm font-bold">{t('calendar.meetingSaved')} ({selectedCount})!</span>
+                </div>
+              )}
+
+              <button disabled={loading} type="submit" className="w-full py-4 bg-[#7a1717] text-white rounded-2xl font-bold shadow-xl shadow-[#7a1717]/10 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2">
+                {loading ? (
+                  <>{t('calendar.saving')}</>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    {editingMeeting ? t('calendar.update') : t('calendar.create')}
+                  </>
+                )}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {showAvailabilityModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b flex justify-between items-center bg-stone-50 sticky top-0 z-10">
+              <div>
+                <h3 className="text-xl font-bold text-green-700">{editingAvailability ? t('calendar.editAvailability') : t('calendar.markAvailable')}</h3>
+                <p className="text-xs text-gray-400 mt-1">{t('calendar.availabilityDatabaseNote')}</p>
+              </div>
+              <button onClick={() => { setShowAvailabilityModal(false); setEditingAvailability(null); resetAvailabilityForm(); }} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreateAvailability} className="p-6 space-y-4">
+              {!editingAvailability && (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAvailabilityForm(p => ({ ...p, mode: 'single' }))}
+                    className={`py-3 rounded-xl text-sm font-bold border transition-colors ${
+                      availabilityForm.mode === 'single'
+                        ? 'bg-green-600 text-white border-green-600'
+                        : 'bg-white text-green-700 border-green-200 hover:bg-green-50'
+                    }`}
+                  >
+                    {t('calendar.singleDay')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAvailabilityForm(p => ({ ...p, mode: 'multiple' }))}
+                    className={`py-3 rounded-xl text-sm font-bold border transition-colors ${
+                      availabilityForm.mode === 'multiple'
+                        ? 'bg-green-600 text-white border-green-600'
+                        : 'bg-white text-green-700 border-green-200 hover:bg-green-50'
+                    }`}
+                  >
+                    {t('calendar.multipleDays')}
+                  </button>
+                </div>
+              )}
+
+              {(availabilityForm.mode === 'single' || editingAvailability) && (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.dateField')}</label>
+                  <input
+                    required
+                    type="date"
+                    className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-green-300 outline-none"
+                    value={availabilityForm.date}
+                    onChange={e => setAvailabilityForm(p => ({ ...p, date: e.target.value }))}
+                  />
+                </div>
+              )}
+
+              {availabilityForm.mode === 'multiple' && !editingAvailability && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.startDate')}</label>
+                      <input
+                        required
+                        type="date"
+                        className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-green-300 outline-none"
+                        value={availabilityForm.startDate}
+                        onChange={e => setAvailabilityForm(p => ({ ...p, startDate: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.endDate')}</label>
+                      <input
+                        required
+                        type="date"
+                        className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-green-300 outline-none"
+                        value={availabilityForm.endDate}
+                        onChange={e => setAvailabilityForm(p => ({ ...p, endDate: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.daysIncluded')}</label>
+                    <div className="grid grid-cols-7 gap-2">
+                      {[
+                        { day: 0, label: t('calendar.sun') },
+                        { day: 1, label: t('calendar.mon') },
+                        { day: 2, label: t('calendar.tue') },
+                        { day: 3, label: t('calendar.wed') },
+                        { day: 4, label: t('calendar.thu') },
+                        { day: 5, label: t('calendar.fri') },
+                        { day: 6, label: t('calendar.sat') },
+                      ].map(item => (
+                        <button
+                          key={item.day}
+                          type="button"
+                          onClick={() => toggleAvailabilityWeekday(item.day)}
+                          className={`py-2 rounded-lg text-[10px] font-bold border transition-colors ${
+                            availabilityForm.selectedWeekdays.includes(item.day)
+                              ? 'bg-green-600 text-white border-green-600'
+                              : 'bg-white text-gray-400 border-gray-200 hover:bg-green-50 hover:text-green-700'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {t('calendar.selectedDatesToCreate')}: {availabilityDateCount}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="allDayAvailability"
+                  checked={availabilityForm.allDay}
+                  onChange={e => setAvailabilityForm(p => ({ ...p, allDay: e.target.checked }))}
+                  className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                />
+                <label htmlFor="allDayAvailability" className="text-sm font-bold text-gray-700">{t('calendar.allBookableHours')}</label>
+              </div>
+
+              {!availabilityForm.allDay && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.startTime')}</label>
+                    <select
+                      required
+                      className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-green-300 outline-none"
+                      value={availabilityForm.startTime}
+                      onChange={e => setAvailabilityForm(p => ({ ...p, startTime: e.target.value }))}
+                    >
+                      {BOOKING_WINDOW_TIME_OPTIONS.map(option => (
+                        <option key={`availability-start-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.endTime')}</label>
+                    <select
+                      required
+                      className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-green-300 outline-none"
+                      value={availabilityForm.endTime}
+                      onChange={e => setAvailabilityForm(p => ({ ...p, endTime: e.target.value }))}
+                    >
+                      {BOOKING_WINDOW_TIME_OPTIONS.map(option => (
+                        <option key={`availability-end-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.reasonLabelOptional')}</label>
+                <input
+                  type="text"
+                  placeholder={t('calendar.availabilityPlaceholder')}
+                  className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-green-300 outline-none"
+                  value={availabilityForm.reason}
+                  onChange={e => setAvailabilityForm(p => ({ ...p, reason: e.target.value }))}
+                />
+              </div>
+
+              <button disabled={loading} type="submit" className="w-full py-4 bg-green-600 text-white rounded-2xl font-bold shadow-xl shadow-green-600/10 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2">
+                {loading ? (
+                  <>{t('calendar.savingPlain')}</>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    {editingAvailability ? t('calendar.updateAvailability') : availabilityForm.mode === 'multiple' ? `${t('calendar.markDaysAvailable')} (${availabilityDateCount})` : t('calendar.markDayAvailable')}
+                  </>
+                )}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {showUnavailabilityModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b flex justify-between items-center bg-stone-50 sticky top-0 z-10">
+              <div>
+                <h3 className="text-xl font-bold text-red-700">{editingUnavailability ? t('calendar.editUnavailability') : t('calendar.markUnavailable')}</h3>
+                <p className="text-xs text-gray-400 mt-1">{t('calendar.unavailabilityDatabaseNote')}</p>
+              </div>
+              <button onClick={() => { setShowUnavailabilityModal(false); setEditingUnavailability(null); resetUnavailabilityForm(); }} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreateUnavailability} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.dateField')}</label>
+                <input
+                  required
+                  type="date"
+                  className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-red-300 outline-none"
+                  value={unavailabilityForm.date}
+                  onChange={e => setUnavailabilityForm(p => ({ ...p, date: e.target.value }))}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="allDayUnavailability"
+                  checked={unavailabilityForm.allDay}
+                  onChange={e => setUnavailabilityForm(p => ({ ...p, allDay: e.target.checked }))}
+                  className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
+                <label htmlFor="allDayUnavailability" className="text-sm font-bold text-gray-700">{t('calendar.allDay')}</label>
+              </div>
+
+              {!unavailabilityForm.allDay && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.startTime')}</label>
+                    <select
+                      required
+                      className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-red-300 outline-none"
+                      value={unavailabilityForm.startTime}
+                      onChange={e => setUnavailabilityForm(p => ({ ...p, startTime: e.target.value }))}
+                    >
+                      {FULL_DAY_TIME_OPTIONS.map(option => (
+                        <option key={`unavailability-start-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.endTime')}</label>
+                    <select
+                      required
+                      className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-red-300 outline-none"
+                      value={unavailabilityForm.endTime}
+                      onChange={e => setUnavailabilityForm(p => ({ ...p, endTime: e.target.value }))}
+                    >
+                      {FULL_DAY_TIME_OPTIONS.map(option => (
+                        <option key={`unavailability-end-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.reasonOptional')}</label>
+                <input
+                  type="text"
+                  placeholder={t('calendar.unavailabilityPlaceholder')}
+                  className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-red-300 outline-none"
+                  value={unavailabilityForm.reason}
+                  onChange={e => setUnavailabilityForm(p => ({ ...p, reason: e.target.value }))}
+                />
+              </div>
+
+              <button disabled={loading} type="submit" className="w-full py-4 bg-red-600 text-white rounded-2xl font-bold shadow-xl shadow-red-600/10 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2">
+                {loading ? (
+                  <>{t('calendar.savingPlain')}</>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    {editingUnavailability ? t('calendar.updateUnavailability') : t('calendar.markUnavailable')}
+                  </>
+                )}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {showAiAssistant && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b flex justify-between items-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                  <Bot size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">{t('calendar.pastorAiAssistant')}</h3>
+                  <p className="text-xs text-white/80">{t('calendar.manageCalendarNaturalLanguage')}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAiAssistant(false)} className="p-2 hover:bg-white/20 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+              {aiMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 whitespace-pre-wrap ${
+                    msg.role === 'user'
+                      ? 'bg-purple-600 text-white rounded-br-sm'
+                      : 'bg-white text-gray-800 shadow-sm rounded-bl-sm border border-gray-100'
+                  }`}>
+                    {msg.role === 'assistant' && (
+                      <div className="flex items-center gap-2 mb-1">
+                        <Bot size={12} className="text-purple-500" />
+                        <span className="text-xs font-bold text-purple-600">{t('calendar.aiAssistant')}</span>
+                      </div>
+                    )}
+                    <p className="text-sm">{msg.content}</p>
+                    <p className={`text-[10px] mt-1 ${msg.role === 'user' ? 'text-purple-200' : 'text-gray-400'}`}>
+                      {format(msg.timestamp, 'h:mm a', { locale: dateLocale })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {aiLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-100 rounded-bl-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-purple-600"></div>
+                      <span className="text-sm text-gray-500">AI is thinking...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t bg-white">
+              <form onSubmit={handleAiAssistant} className="flex gap-3">
+                <input
+                  type="text"
+                  value={aiInput}
+                  onChange={e => setAiInput(e.target.value)}
+                  placeholder="e.g., 'I'm available next Friday' or 'block Friday afternoon'"
+                  className="flex-1 px-4 py-3 bg-gray-100 border-none rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+                  disabled={aiLoading}
+                />
+                <button
+                  type="submit"
+                  disabled={aiLoading || !aiInput.trim()}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send size={16} />
+                </button>
+              </form>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      </div>
     </>
   );
 }
