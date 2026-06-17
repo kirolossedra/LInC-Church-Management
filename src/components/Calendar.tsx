@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import emailjs from '@emailjs/browser';
 import { Link } from 'react-router-dom';
 import { database } from '../firebase';
-import { ref, onValue, update } from 'firebase/database';
+import { ref, onValue, update, push } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
@@ -25,6 +26,10 @@ import OpenAI from 'openai';
 const SLOT_BLOCK_START = 9;
 const SLOT_BLOCK_END = 20;
 const SLOT_BLOCK_DURATION = 0.5;
+
+const EMAILJS_SERVICE_ID = 'service_v47g6or';
+const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
+const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
 function timeToHour(time?: string): number {
   if (!time) return 0;
@@ -618,6 +623,50 @@ ${safeFullReport}
     };
   };
 
+
+  const sendMeetingConfirmationViaEmailJs = async (meeting: Meeting) => {
+    const recipientEmail = getMeetingRequestEmail(meeting);
+    const confirmationEmail = buildMeetingConfirmationEmail(meeting);
+
+    if (!recipientEmail) {
+      throw new Error('Meeting requester email is missing.');
+    }
+
+    const response = await emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      {
+        to_email: recipientEmail,
+        subject: confirmationEmail.subject,
+        fullName: confirmationEmail.requesterName,
+        message_html: confirmationEmail.htmlBody,
+        reply_to: recipientEmail,
+      },
+      EMAILJS_PUBLIC_KEY,
+    );
+
+    await push(ref(database, 'emailJsSendLogs/'), {
+      recipientEmail,
+      subject: confirmationEmail.subject,
+      fullName: confirmationEmail.requesterName,
+      sentUsing: 'EmailJS',
+      serviceId: EMAILJS_SERVICE_ID,
+      templateId: EMAILJS_TEMPLATE_ID,
+      source: 'calendarMeetingConfirmation',
+      meetingDate: meeting.date || '',
+      meetingStartTime: meeting.startTime || '',
+      meetingEndTime: meeting.endTime || '',
+      sentAt: Date.now(),
+      sentAtISO: new Date().toISOString(),
+      emailJsResponse: {
+        status: response.status,
+        text: response.text,
+      },
+    });
+
+    return response;
+  };
+
   const openMeetingEditor = (meeting: Meeting) => {
     setEditingMeeting(meeting);
     setNewMeeting({ ...meeting });
@@ -788,115 +837,6 @@ ${safeFullReport}
       } catch (err) {
         console.error(err);
       }
-    }
-  };
-
-  const handleSendMeetingConfirmation = async (meeting: Meeting) => {
-    const recipientEmail = getMeetingRequestEmail(meeting);
-
-    if (!meeting.id || !recipientEmail) {
-      alert(displayLocale === 'ar' ? 'لا يوجد بريد إلكتروني لهذا الاجتماع.' : 'This meeting does not have a requester email.');
-      return;
-    }
-
-    if (getMeetingAcknowledged(meeting)) {
-      alert(displayLocale === 'ar' ? 'تم إرسال تأكيد هذا الاجتماع بالفعل.' : 'This meeting confirmation was already sent.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const confirmationEmail = buildMeetingConfirmationEmail(meeting);
-
-      if (!googleTokens) {
-        alert(displayLocale === 'ar' ? 'يرجى الاتصال بحساب Google أولاً.' : 'Please connect Google first.');
-        return;
-      }
-
-      await sendGmailEmail(googleTokens, recipientEmail, confirmationEmail.subject, confirmationEmail.htmlBody);
-
-      const { update } = await import('firebase/database');
-      await update(ref(database, `meetings/${meeting.id}`), {
-        acknowledged: true,
-        acknowledgedAt: Date.now(),
-        acknowledgedEmail: recipientEmail,
-        updatedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error('Failed to send meeting confirmation:', err);
-      alert(displayLocale === 'ar' ? 'فشل إرسال تأكيد الاجتماع.' : 'Failed to send meeting confirmation.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendAllMeetingConfirmations = async () => {
-    const confirmableMeetings = meetings.filter(meeting =>
-      meeting.id &&
-      getMeetingRequestEmail(meeting) &&
-      !getMeetingAcknowledged(meeting)
-    );
-
-    if (confirmableMeetings.length === 0) {
-      alert(displayLocale === 'ar' ? 'لا توجد اجتماعات مؤكدة بانتظار إرسال التأكيد.' : 'There are no confirmed meetings waiting for confirmation email.');
-      return;
-    }
-
-    const shouldSend = confirm(
-      displayLocale === 'ar'
-        ? `سيتم إرسال تأكيد إلى ${confirmableMeetings.length} اجتماع/اجتماعات. هل تريد المتابعة؟`
-        : `Send confirmation emails for ${confirmableMeetings.length} confirmed meeting(s)?`
-    );
-
-    if (!shouldSend) return;
-
-    if (!googleTokens) {
-      alert(displayLocale === 'ar' ? 'يرجى الاتصال بحساب Google أولاً.' : 'Please connect Google first.');
-      return;
-    }
-
-    setLoading(true);
-
-    let sentCount = 0;
-    let failedCount = 0;
-
-    try {
-      const { update } = await import('firebase/database');
-
-      for (const meeting of confirmableMeetings) {
-        const recipientEmail = getMeetingRequestEmail(meeting);
-
-        try {
-          const confirmationEmail = buildMeetingConfirmationEmail(meeting);
-
-          if (!googleTokens) {
-            throw new Error('Google account is not connected.');
-          }
-
-          await sendGmailEmail(googleTokens, recipientEmail, confirmationEmail.subject, confirmationEmail.htmlBody);
-
-          await update(ref(database, `meetings/${meeting.id}`), {
-            acknowledged: true,
-            acknowledgedAt: Date.now(),
-            acknowledgedEmail: recipientEmail,
-            updatedAt: Date.now(),
-          });
-
-          sentCount += 1;
-        } catch (err) {
-          failedCount += 1;
-          console.error(`Failed to send meeting confirmation to ${recipientEmail}:`, err);
-        }
-      }
-
-      alert(
-        displayLocale === 'ar'
-          ? `تم إرسال ${sentCount} تأكيد. فشل ${failedCount}.`
-          : `Sent ${sentCount} confirmation email(s). Failed: ${failedCount}.`
-      );
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -1133,7 +1073,7 @@ Otherwise, provide a helpful response about their calendar.`;
         } else if (action === 'ACTION:ACCEPT_REQUEST' && params[0]) {
           const requestId = params[0];
           await handleRequestStatus(requestId, 'accepted');
-          setAiMessages(prev => [...prev, { role: 'assistant', content: '✅ Meeting request accepted. A meeting has been created and the requester has been notified.', timestamp: new Date() }]);
+          setAiMessages(prev => [...prev, { role: 'assistant', content: '✅ Meeting request accepted. A meeting has been created and the EmailJS confirmation was sent.', timestamp: new Date() }]);
         } else if (action === 'ACTION:REJECT_REQUEST' && params[0]) {
           const requestId = params[0];
           await handleRequestStatus(requestId, 'rejected');
@@ -1153,45 +1093,69 @@ Otherwise, provide a helpful response about their calendar.`;
   };
 
   const handleRequestStatus = async (id: string, status: 'accepted' | 'rejected') => {
+    setLoading(true);
+
     try {
-      const { update } = await import('firebase/database');
-      await update(ref(database, `meetingRequests/${id}`), { status, updatedAt: Date.now() });
+      if (status === 'rejected') {
+        await update(ref(database, `meetingRequests/${id}`), { status, updatedAt: Date.now() });
+        return;
+      }
 
-      if (status === 'accepted') {
-        const req = meetingRequests.find(r => r.id === id);
-        if (req) {
-          let meetLink = generatePlaceholderLink();
-          if (googleTokens) {
-            try {
-              const created = await createCalendarMeetLink(googleTokens, `${t('calendar.meetingWith')} ${req.name}`, req.date, req.startTime, req.endTime);
-              meetLink = created.meetLink;
-            } catch (err) {
-              console.error('Failed to create real Meet link, using placeholder:', err);
-            }
-          }
+      const req = meetingRequests.find(r => r.id === id);
 
-          const { push } = await import('firebase/database');
-          await push(ref(database, 'meetings/'), {
-            title: t('calendar.meetingWithPastor'),
-            date: req.date,
-            startTime: req.startTime,
-            endTime: req.endTime,
-            location: '',
-            meetLink,
-            type: 'counseling',
-            participantIds: [],
-            requestName: req.name,
-            requestEmail: req.email,
-            requestReason: req.reason || '',
-            sourceRequestId: id,
-            acknowledged: false,
-            updatedAt: Date.now(),
-          });
+      if (!req) {
+        alert(t('booking.statusFailed'));
+        return;
+      }
+
+      let meetLink = generatePlaceholderLink();
+
+      if (googleTokens) {
+        try {
+          const created = await createCalendarMeetLink(googleTokens, `${t('calendar.meetingWith')} ${req.name}`, req.date, req.startTime, req.endTime);
+          meetLink = created.meetLink;
+        } catch (err) {
+          console.error('Failed to create real Meet link, using placeholder:', err);
         }
       }
+
+      const confirmationTimestamp = Date.now();
+      const meetingData: Record<string, any> = {
+        title: t('calendar.meetingWithPastor'),
+        date: req.date,
+        startTime: req.startTime,
+        endTime: req.endTime,
+        location: '',
+        meetLink,
+        type: 'counseling',
+        participantIds: [],
+        requestName: req.name,
+        requestEmail: req.email,
+        requestReason: req.reason || '',
+        sourceRequestId: id,
+        acknowledged: true,
+        acknowledgedAt: confirmationTimestamp,
+        acknowledgedEmail: req.email,
+        confirmationSentUsing: 'EmailJS',
+        updatedAt: confirmationTimestamp,
+      };
+
+      await sendMeetingConfirmationViaEmailJs(meetingData as Meeting);
+
+      await push(ref(database, 'meetings/'), meetingData);
+
+      await update(ref(database, `meetingRequests/${id}`), {
+        status: 'accepted',
+        confirmationSent: true,
+        confirmationSentUsing: 'EmailJS',
+        confirmationSentAt: confirmationTimestamp,
+        updatedAt: Date.now(),
+      });
     } catch (err) {
       console.error(err);
       alert(t('booking.statusFailed'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1340,11 +1304,6 @@ Otherwise, provide a helpful response about their calendar.`;
     .map(p => p.name);
 
   const availabilityDateCount = buildAvailabilityDates().length;
-  const pendingConfirmationCount = meetings.filter(meeting =>
-    meeting.id &&
-    getMeetingRequestEmail(meeting) &&
-    !getMeetingAcknowledged(meeting)
-  ).length;
 
   const rankedNextGenQuestions = nextGenQuestions;
   const selectedNextGenQuestions = nextGenQuestions.filter(question =>
@@ -2207,16 +2166,11 @@ Otherwise, provide a helpful response about their calendar.`;
             <Clock size={20} />
             {t('calendar.upcoming')}
           </h3>
-          <button
-            type="button"
-            onClick={handleSendAllMeetingConfirmations}
-            disabled={loading || pendingConfirmationCount === 0}
-            className="px-5 py-3 bg-green-50 text-green-700 rounded-xl hover:bg-green-100 transition-colors text-xs font-bold border border-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <span className="px-5 py-3 bg-[#f8eeee] text-[#7a1717] rounded-xl text-xs font-bold border border-[#d8aaaa]">
             {displayLocale === 'ar'
-              ? `إرسال التأكيد للجميع (${pendingConfirmationCount})`
-              : `Send confirmation to all (${pendingConfirmationCount})`}
-          </button>
+              ? 'يتم إرسال التأكيد تلقائياً عند القبول'
+              : 'Accept sends EmailJS confirmation automatically'}
+          </span>
         </div>
         <div className="space-y-4">
           {meetings.filter(m => {
@@ -2272,16 +2226,9 @@ Otherwise, provide a helpful response about their calendar.`;
                 </div>
                 <div className="flex items-center gap-3 self-end md:self-auto flex-wrap justify-end">
                   {requestEmail && !requestAcknowledged && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSendMeetingConfirmation(m);
-                      }}
-                      disabled={loading}
-                      className="px-4 py-3 bg-green-50 text-green-700 rounded-xl hover:bg-green-100 transition-colors text-xs font-bold border border-green-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {displayLocale === 'ar' ? 'إرسال التأكيد' : 'Send confirmation'}
-                    </button>
+                    <span className="px-4 py-3 bg-amber-50 text-amber-700 rounded-xl text-xs font-bold border border-amber-100">
+                      {displayLocale === 'ar' ? 'لم يتم تأكيده بعد' : 'Not confirmed yet'}
+                    </span>
                   )}
                   {requestEmail && requestAcknowledged && (
                     <span className="px-4 py-3 bg-gray-50 text-gray-500 rounded-xl text-xs font-bold border border-gray-100">
