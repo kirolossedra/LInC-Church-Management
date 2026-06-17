@@ -1370,6 +1370,11 @@ Otherwise, provide a helpful response about their calendar.`;
     ? 'تسجيل نقاط القوة، مجالات النمو، المتابعات، والملاحظات الرعوية'
     : 'Record strengths, growth areas, follow-ups, and pastoral notes';
 
+  const selectedSlotDateStr = selectedSlotDay ? getDateString(selectedSlotDay) : '';
+  const selectedDayAvailabilityBlocks = selectedSlotDateStr ? getAvailabilityBlocksForDate(selectedSlotDateStr) : [];
+  const selectedDayUnavailabilityBlocks = selectedSlotDateStr ? getUnavailabilityBlocksForDate(selectedSlotDateStr) : [];
+  const selectedDayMeetings = selectedSlotDateStr ? getMeetingsForDate(selectedSlotDateStr) : [];
+
   return (
     <div className="space-y-8" style={{ fontFamily: 'Arial, sans-serif' }} dir={dir}>
       <PageTitle
@@ -1702,241 +1707,343 @@ Otherwise, provide a helpful response about their calendar.`;
         </section>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
-        {[t('calendar.sun'), t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat')].map(d => (
-          <div key={d} className="text-center text-[10px] uppercase tracking-widest text-gray-400 font-bold hidden md:block">{d}</div>
-        ))}
-        {days.map((day, i) => {
-          const dayMeetings = meetings.filter(m => {
-            if (!m.date) return false;
-            try {
-              return isSameDay(parseISO(m.date), day);
-            } catch {
-              return false;
-            }
-          });
+      <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <div>
+            <h3 className="text-xl font-bold text-[#8B1E1E] flex items-center gap-2">
+              <CalendarIcon size={20} />
+              {format(currentDate, 'MMMM yyyy', { locale: dateLocale })}
+            </h3>
+            <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+              {t('calendar.availabilityOpensBooking')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold">
+            <span className="inline-flex items-center gap-2 rounded-full bg-green-50 px-3 py-2 text-green-700 border border-green-100">
+              <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+              {t('calendar.available')}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-2 text-red-700 border border-red-100">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+              {t('calendar.unavailable')}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-amber-700 border border-amber-100">
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+              {t('booking.booked')}
+            </span>
+          </div>
+        </div>
 
-          const dayAvailability = availability.filter(a => {
-            if (!a.date) return false;
-            try {
-              return isSameDay(parseISO(a.date), day);
-            } catch {
-              return false;
-            }
-          });
+        <div className="grid grid-cols-7 gap-2 mb-3">
+          {[t('calendar.sun'), t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat')].map(d => (
+            <div key={d} className="text-center text-[11px] sm:text-xs uppercase tracking-widest text-gray-400 font-bold">{d}</div>
+          ))}
+        </div>
 
-          const dayUnavailability = unavailability.filter(u => {
-            if (!u.date) return false;
-            try {
-              return isSameDay(parseISO(u.date), day);
-            } catch {
-              return false;
-            }
-          });
+        <div className="grid grid-cols-7 gap-2 sm:gap-3">
+          {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, i) => (
+            <div key={`calendar-empty-${i}`} />
+          ))}
+          {days.map(day => {
+            const dateStr = getDateString(day);
+            const dayMeetings = getMeetingsForDate(dateStr);
+            const pendingRequests = getPendingRequestsForDate(dateStr);
+            const dayAvailability = getAvailabilityBlocksForDate(dateStr);
+            const dayUnavailability = getUnavailabilityBlocksForDate(dateStr);
+            const openSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'available').length;
+            const blockedSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'blocked').length;
+            const bookedSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'booked').length;
+            const isSelected = selectedSlotDay && isSameDay(selectedSlotDay, day);
+            const hasAvailability = dayAvailability.length > 0;
+            const isTodayDate = isSameDay(day, new Date());
 
-          const dayScheduleItems = [
-            ...dayAvailability.map(a => ({
-              kind: 'availability' as const,
-              id: `availability-${a.id}`,
-              startHour: a.allDay ? 0 : timeToHour(a.startTime || '09:00'),
-              endHour: a.allDay ? 24 : timeToHour(a.endTime || '20:00'),
-              item: a,
-            })),
-            ...dayUnavailability.map(u => ({
-              kind: 'unavailability' as const,
-              id: `unavailability-${u.id}`,
-              startHour: u.allDay ? 0 : timeToHour(u.startTime || '00:00'),
-              endHour: u.allDay ? 24 : timeToHour(u.endTime || '23:59'),
-              item: u,
-            })),
-            ...dayMeetings.map(m => ({
-              kind: 'meeting' as const,
-              id: `meeting-${m.id}`,
-              startHour: timeToHour(m.startTime || '00:00'),
-              endHour: timeToHour(m.endTime || m.startTime || '00:00'),
-              item: m,
-            })),
-          ].sort((a, b) => {
-            if (a.startHour !== b.startHour) return a.startHour - b.startHour;
-            if (a.endHour !== b.endHour) return a.endHour - b.endHour;
+            const statusLabel = openSlotCount > 0
+              ? t('calendar.available')
+              : bookedSlotCount > 0
+              ? t('booking.booked')
+              : t('calendar.unavailable');
 
-            const order = { availability: 0, unavailability: 1, meeting: 2 };
-            return order[a.kind] - order[b.kind];
-          });
+            const statusDetail = openSlotCount > 0
+              ? `${openSlotCount} ${displayLocale === 'ar' ? 'فترة مفتوحة' : 'open slot(s)'}`
+              : bookedSlotCount > 0
+              ? `${bookedSlotCount} ${displayLocale === 'ar' ? 'محجوزة' : 'booked'}`
+              : hasAvailability
+              ? t('calendar.unavailable')
+              : t('calendar.noAvailabilityOpened');
 
-          return (
-            <div
-              key={day.toISOString()}
-              onClick={() => setSelectedSlotDay(day)}
-              className={`min-h-[140px] bg-white rounded-2xl p-3 border transition-all hover:border-[#8B1E1E]/20 cursor-pointer ${selectedSlotDay && isSameDay(selectedSlotDay, day) ? 'border-[#8B1E1E] ring-2 ring-[#8B1E1E]/10' : 'border-gray-100'} ${i === 0 ? [
-                '',
-                'md:col-start-1',
-                'md:col-start-2',
-                'md:col-start-3',
-                'md:col-start-4',
-                'md:col-start-5',
-                'md:col-start-6',
-                'md:col-start-7',
-              ][day.getDay() + 1] : ''
+            return (
+              <button
+                key={day.toISOString()}
+                type="button"
+                onClick={() => setSelectedSlotDay(day)}
+                className={`min-h-[92px] sm:min-h-[112px] rounded-2xl border-2 p-2 sm:p-3 text-center transition-all hover:-translate-y-0.5 hover:shadow-md font-bold ${
+                  isSelected
+                    ? 'border-[#8B1E1E] bg-[#8B1E1E] text-white shadow-lg shadow-[#8B1E1E]/20'
+                    : openSlotCount > 0
+                    ? 'border-green-200 bg-green-50 text-green-800 hover:border-green-300'
+                    : bookedSlotCount > 0
+                    ? 'border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300'
+                    : 'border-red-100 bg-red-50/70 text-red-800 hover:border-red-200'
                 }`}
-            >
-              <div className="text-sm font-bold text-gray-900 mb-2">{format(day, 'd')}</div>
-              <div className="space-y-2">
-                {dayAvailability.length === 0 && (
-                  <div className="p-2 bg-gray-50 rounded-lg text-[10px] border border-gray-100 text-gray-400 font-bold">
-                    {t('calendar.noAvailabilityOpened')}
+              >
+                <div className={`mx-auto mb-2 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full text-lg sm:text-xl font-black ${
+                  isSelected
+                    ? 'bg-white text-[#8B1E1E]'
+                    : isTodayDate
+                    ? 'bg-[#8B1E1E] text-white'
+                    : 'bg-white/80'
+                }`}>
+                  {format(day, 'd', { locale: dateLocale })}
+                </div>
+
+                <div className={`text-[10px] sm:text-xs font-black uppercase tracking-wide ${isSelected ? 'text-white' : ''}`}>
+                  {statusLabel}
+                </div>
+                <div className={`mt-1 hidden sm:block text-[10px] font-bold leading-tight ${isSelected ? 'text-white/85' : 'text-gray-500'}`}>
+                  {statusDetail}
+                </div>
+
+                {(dayMeetings.length > 0 || pendingRequests.length > 0 || blockedSlotCount > 0 || dayUnavailability.length > 0) && (
+                  <div className={`mt-2 mx-auto flex w-fit items-center justify-center gap-1 rounded-full px-2 py-1 text-[10px] font-black ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-white/80 text-[#8B1E1E]'
+                  }`}>
+                    {dayMeetings.length + pendingRequests.length + blockedSlotCount + dayUnavailability.length}
                   </div>
                 )}
-
-                {dayScheduleItems.map(scheduleItem => {
-                  if (scheduleItem.kind === 'availability') {
-                    const a = scheduleItem.item;
-
-                    return (
-                      <div
-                        key={scheduleItem.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingAvailability(a);
-                          setAvailabilityForm({
-                            mode: 'single',
-                            date: a.date,
-                            startDate: a.date,
-                            endDate: a.date,
-                            selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
-                            startTime: a.startTime || '09:00',
-                            endTime: a.endTime || '20:00',
-                            reason: a.reason || '',
-                            allDay: a.allDay || false,
-                          });
-                          setShowAvailabilityModal(true);
-                        }}
-                        className="p-2 bg-green-50 rounded-lg text-[10px] cursor-pointer group hover:bg-green-100 transition-colors border border-green-200 relative"
-                      >
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteAvailability(a.id);
-                          }}
-                          className="absolute top-1 right-1 p-0.5 text-green-500 hover:text-green-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X size={10} />
-                        </button>
-                        <div className="font-bold text-green-700 line-clamp-1">{a.allDay ? t('calendar.available') : timeRangeToLabel(a.startTime, a.endTime, displayLocale)}</div>
-                        {a.reason && <div className="text-green-600 text-[9px] mt-0.5 line-clamp-1">{a.reason}</div>}
-                      </div>
-                    );
-                  }
-
-                  if (scheduleItem.kind === 'unavailability') {
-                    const u = scheduleItem.item;
-
-                    return (
-                      <div
-                        key={scheduleItem.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingUnavailability(u);
-                          setUnavailabilityForm({
-                            date: u.date,
-                            startTime: u.startTime || '09:00',
-                            endTime: u.endTime || '20:00',
-                            reason: u.reason || '',
-                            allDay: u.allDay || false,
-                          });
-                          setShowUnavailabilityModal(true);
-                        }}
-                        className="p-2 bg-red-50 rounded-lg text-[10px] cursor-pointer group hover:bg-red-100 transition-colors border border-red-200 relative"
-                      >
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteUnavailability(u.id);
-                          }}
-                          className="absolute top-1 right-1 p-0.5 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X size={10} />
-                        </button>
-                        <div className="font-bold text-red-700 line-clamp-1">{u.allDay ? t('calendar.unavailable') : timeRangeToLabel(u.startTime, u.endTime, displayLocale)}</div>
-                        {u.reason && <div className="text-red-500 text-[9px] mt-0.5 line-clamp-1">{u.reason}</div>}
-                      </div>
-                    );
-                  }
-
-                  const m = scheduleItem.item;
-
-                  return (
-                    <div
-                      key={scheduleItem.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openMeetingEditor(m);
-                      }}
-                      className="p-2 bg-stone-50 rounded-lg text-[10px] cursor-pointer group hover:bg-[#8B1E1E] transition-colors"
-                    >
-                      <div className="font-bold group-hover:text-white line-clamp-1">{getMeetingDisplayTitle(m)}</div>
-                      <div className="text-gray-500 group-hover:text-white/80">{timeToLabel(m.startTime, displayLocale)}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {selectedSlotDay && (
-        <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-            <div>
-              <h3 className="text-lg font-bold flex items-center gap-2 text-[#8B1E1E]">
-                <Clock size={18} />
-                {format(selectedSlotDay, 'EEEE, MMMM d, yyyy', { locale: dateLocale })}
-              </h3>
-              <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
-                {t('calendar.availabilityOpensBooking')}
-              </p>
+        <div
+          className="fixed inset-0 z-[50] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
+          onClick={() => setSelectedSlotDay(null)}
+          dir={dir}
+          style={{ fontFamily: 'Arial, sans-serif' }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: 18 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl bg-white shadow-2xl border border-gray-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 bg-[#8B1E1E] text-white p-6">
+              <button
+                type="button"
+                onClick={() => setSelectedSlotDay(null)}
+                className="absolute top-4 end-4 rounded-full bg-white/15 p-2 hover:bg-white/25 transition-colors"
+              >
+                <X size={20} />
+              </button>
+              <div className="pe-10">
+                <h3 className="text-2xl font-black flex items-center gap-2">
+                  <Clock size={22} />
+                  {format(selectedSlotDay, 'EEEE, MMMM d, yyyy', { locale: dateLocale })}
+                </h3>
+                <p className="mt-1 text-sm font-bold text-white/80 uppercase tracking-widest">
+                  {t('calendar.availabilityOpensBooking')}
+                </p>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setSelectedSlotDay(null)}
-              className="self-start sm:self-auto p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <X size={18} />
-            </button>
-          </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {slotBlockHours.map(hour => {
-              const status = getPastorSlotStatus(selectedSlotDay, hour);
-              const isClickable = status === 'available' || status === 'blocked';
-              const slotLabel = getPastorSlotLabel(status);
-
-              return (
+            <div className="max-h-[calc(90vh-104px)] overflow-y-auto p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
-                  key={hour}
                   type="button"
-                  disabled={!isClickable || slotBlockingLoading}
-                  onClick={() => handleToggleSlotBlock(selectedSlotDay, hour)}
-                  className={`p-3 rounded-xl border text-sm font-bold transition-all ${
-                    status === 'blocked'
-                      ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
-                      : status === 'available'
-                      ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                      : status === 'booked'
-                      ? 'bg-amber-50 border-amber-200 text-amber-700 cursor-not-allowed opacity-80'
-                      : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-70'
-                  }`}
+                  onClick={() => {
+                    const date = getDateString(selectedSlotDay);
+                    setEditingAvailability(null);
+                    setAvailabilityForm({
+                      mode: 'single',
+                      date,
+                      startDate: date,
+                      endDate: date,
+                      selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+                      startTime: '09:00',
+                      endTime: '20:00',
+                      reason: '',
+                      allDay: true,
+                    });
+                    setShowAvailabilityModal(true);
+                  }}
+                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-green-200 bg-green-50 px-4 py-3 text-green-700 font-black hover:bg-green-100 transition-colors"
                 >
-                  <div>{hourToLabel(hour, displayLocale)} - {hourToLabel(hour + SLOT_BLOCK_DURATION, displayLocale)}</div>
-                  <div className="text-[10px] mt-1 uppercase tracking-widest">{slotLabel}</div>
+                  <CheckCircle size={18} />
+                  {t('calendar.markAvailable')}
                 </button>
-              );
-            })}
-          </div>
-        </section>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const date = getDateString(selectedSlotDay);
+                    setEditingUnavailability(null);
+                    setUnavailabilityForm({
+                      date,
+                      startTime: '09:00',
+                      endTime: '20:00',
+                      reason: '',
+                      allDay: true,
+                    });
+                    setShowUnavailabilityModal(true);
+                  }}
+                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-red-200 bg-red-50 px-4 py-3 text-red-700 font-black hover:bg-red-100 transition-colors"
+                >
+                  <XCircle size={18} />
+                  {t('calendar.markUnavailable')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewMeeting(p => ({ ...p, date: getDateString(selectedSlotDay) }));
+                    setEditingMeeting(null);
+                    setSelectedParticipants([]);
+                    setEmailSent(false);
+                    setIsAddOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#8B1E1E]/20 bg-[#f8eeee] px-4 py-3 text-[#8B1E1E] font-black hover:bg-[#f1dddd] transition-colors"
+                >
+                  <Plus size={18} />
+                  {t('calendar.addEvent')}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="rounded-2xl border border-green-100 bg-green-50/60 p-4">
+                  <h4 className="font-black text-green-700 mb-3 flex items-center gap-2"><CheckCircle size={16} /> {t('calendar.available')}</h4>
+                  <div className="space-y-2">
+                    {selectedDayAvailabilityBlocks.length === 0 ? (
+                      <p className="text-sm font-bold text-green-700/60">{t('calendar.noAvailabilityOpened')}</p>
+                    ) : selectedDayAvailabilityBlocks.map(a => (
+                      <div key={a.id} className="group rounded-xl bg-white border border-green-100 p-3 text-sm font-bold text-green-800 relative">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAvailability(a.id)}
+                          className="absolute top-2 end-2 text-green-500 hover:text-green-800 opacity-70"
+                        >
+                          <X size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingAvailability(a);
+                            setAvailabilityForm({
+                              mode: 'single',
+                              date: a.date,
+                              startDate: a.date,
+                              endDate: a.date,
+                              selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+                              startTime: a.startTime || '09:00',
+                              endTime: a.endTime || '20:00',
+                              reason: a.reason || '',
+                              allDay: a.allDay || false,
+                            });
+                            setShowAvailabilityModal(true);
+                          }}
+                          className="block w-full text-start pe-6"
+                        >
+                          <div>{a.allDay ? t('calendar.available') : timeRangeToLabel(a.startTime, a.endTime, displayLocale)}</div>
+                          {a.reason && <div className="text-xs text-green-600 mt-1">{a.reason}</div>}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-red-100 bg-red-50/60 p-4">
+                  <h4 className="font-black text-red-700 mb-3 flex items-center gap-2"><XCircle size={16} /> {t('calendar.unavailable')}</h4>
+                  <div className="space-y-2">
+                    {selectedDayUnavailabilityBlocks.length === 0 ? (
+                      <p className="text-sm font-bold text-red-700/60">{displayLocale === 'ar' ? 'لا توجد فترات مغلقة.' : 'No blocked time.'}</p>
+                    ) : selectedDayUnavailabilityBlocks.map(u => (
+                      <div key={u.id} className="group rounded-xl bg-white border border-red-100 p-3 text-sm font-bold text-red-800 relative">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUnavailability(u.id)}
+                          className="absolute top-2 end-2 text-red-500 hover:text-red-800 opacity-70"
+                        >
+                          <X size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingUnavailability(u);
+                            setUnavailabilityForm({
+                              date: u.date,
+                              startTime: u.startTime || '09:00',
+                              endTime: u.endTime || '20:00',
+                              reason: u.reason || '',
+                              allDay: u.allDay || false,
+                            });
+                            setShowUnavailabilityModal(true);
+                          }}
+                          className="block w-full text-start pe-6"
+                        >
+                          <div>{u.allDay ? t('calendar.unavailable') : timeRangeToLabel(u.startTime, u.endTime, displayLocale)}</div>
+                          {u.reason && <div className="text-xs text-red-600 mt-1">{u.reason}</div>}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[#8B1E1E]/10 bg-stone-50 p-4">
+                  <h4 className="font-black text-[#8B1E1E] mb-3 flex items-center gap-2"><CalendarIcon size={16} /> {t('calendar.meeting')}</h4>
+                  <div className="space-y-2">
+                    {selectedDayMeetings.length === 0 ? (
+                      <p className="text-sm font-bold text-gray-400">{displayLocale === 'ar' ? 'لا توجد اجتماعات مؤكدة.' : 'No confirmed meetings.'}</p>
+                    ) : selectedDayMeetings.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => openMeetingEditor(m)}
+                        className="block w-full rounded-xl bg-white border border-gray-100 p-3 text-start text-sm font-bold hover:border-[#8B1E1E]/30 hover:bg-[#f8eeee] transition-colors"
+                      >
+                        <div className="text-[#8B1E1E]">{getMeetingDisplayTitle(m)}</div>
+                        <div className="text-xs text-gray-500 mt-1">{timeRangeToLabel(m.startTime, m.endTime, displayLocale)}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-black text-[#8B1E1E] mb-3 flex items-center gap-2">
+                  <Clock size={18} />
+                  {displayLocale === 'ar' ? 'إدارة الفترات' : 'Manage Slots'}
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {slotBlockHours.map(hour => {
+                    const status = getPastorSlotStatus(selectedSlotDay, hour);
+                    const isClickable = status === 'available' || status === 'blocked';
+                    const slotLabel = getPastorSlotLabel(status);
+
+                    return (
+                      <button
+                        key={hour}
+                        type="button"
+                        disabled={!isClickable || slotBlockingLoading}
+                        onClick={() => handleToggleSlotBlock(selectedSlotDay, hour)}
+                        className={`p-3 rounded-xl border-2 text-sm font-black transition-all ${
+                          status === 'blocked'
+                            ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                            : status === 'available'
+                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                            : status === 'booked'
+                            ? 'bg-amber-50 border-amber-200 text-amber-700 cursor-not-allowed opacity-80'
+                            : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-70'
+                        }`}
+                      >
+                        <div>{hourToLabel(hour, displayLocale)}</div>
+                        <div className="text-[10px] mt-1 uppercase tracking-widest">{slotLabel}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
       )}
 
       <section className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
