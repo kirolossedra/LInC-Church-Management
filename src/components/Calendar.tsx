@@ -1372,8 +1372,10 @@ Otherwise, provide a helpful response about their calendar.`;
 
   const selectedSlotDateStr = selectedSlotDay ? getDateString(selectedSlotDay) : '';
   const selectedDayAvailabilityBlocks = selectedSlotDateStr ? getAvailabilityBlocksForDate(selectedSlotDateStr) : [];
-  const selectedDayUnavailabilityBlocks = selectedSlotDateStr ? getUnavailabilityBlocksForDate(selectedSlotDateStr) : [];
   const selectedDayMeetings = selectedSlotDateStr ? getMeetingsForDate(selectedSlotDateStr) : [];
+  const selectedDayOpenSlotHours = selectedSlotDay
+    ? slotBlockHours.filter(hour => getPastorSlotStatus(selectedSlotDay, hour) === 'available')
+    : [];
 
   return (
     <>
@@ -2063,139 +2065,148 @@ Otherwise, provide a helpful response about their calendar.`;
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="rounded-2xl border border-green-100 bg-green-50/60 p-4">
-                  <h4 className="font-black text-green-700 mb-3 flex items-center gap-2"><CheckCircle size={16} /> {t('calendar.available')}</h4>
-                  <div className="space-y-2">
-                    {selectedDayAvailabilityBlocks.length === 0 ? (
-                      <p className="text-sm font-bold text-green-700/60">{t('calendar.noAvailabilityOpened')}</p>
-                    ) : selectedDayAvailabilityBlocks.map(a => (
-                      <div key={a.id} className="group rounded-xl bg-white border border-green-100 p-3 text-sm font-bold text-green-800 relative">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAvailability(a.id)}
-                          className="absolute top-2 end-2 text-green-500 hover:text-green-800 opacity-70"
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-2xl border-2 border-green-100 bg-green-50/70 p-5">
+                  <h4 className="font-black text-green-700 mb-4 flex items-center gap-2">
+                    <CheckCircle size={18} />
+                    {displayLocale === 'ar' ? 'الفترات المتاحة للحجز' : 'Available Booking Slots'}
+                  </h4>
+
+                  {selectedDayOpenSlotHours.length === 0 ? (
+                    <div className="rounded-2xl bg-white border border-green-100 p-4 text-green-700/70 font-black">
+                      {displayLocale === 'ar' ? 'لا توجد فترات متاحة مفتوحة في هذا اليوم.' : 'No available booking slots opened for this day.'}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {selectedDayOpenSlotHours.map(hour => (
+                        <div
+                          key={hour}
+                          className="rounded-2xl bg-white border-2 border-green-100 p-4 text-green-800 font-black"
                         >
-                          <X size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingAvailability(a);
-                            setAvailabilityForm({
-                              mode: 'single',
-                              date: a.date,
-                              startDate: a.date,
-                              endDate: a.date,
-                              selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
-                              startTime: a.startTime || '09:00',
-                              endTime: a.endTime || '20:00',
-                              reason: a.reason || '',
-                              allDay: a.allDay || false,
-                            });
-                            setShowAvailabilityModal(true);
-                          }}
-                          className="block w-full text-start pe-6"
-                        >
-                          <div>{a.allDay ? t('calendar.available') : timeRangeToLabel(a.startTime, a.endTime, displayLocale)}</div>
-                          {a.reason && <div className="text-xs text-green-600 mt-1">{a.reason}</div>}
-                        </button>
+                          <div className="flex items-center gap-2">
+                            <Clock size={16} />
+                            {hourToLabel(hour, displayLocale)} - {hourToLabel(hour + SLOT_BLOCK_DURATION, displayLocale)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedDayAvailabilityBlocks.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-[#165d30]/70 uppercase tracking-widest">
+                        {displayLocale === 'ar' ? 'نوافذ الإتاحة' : 'Availability Windows'}
                       </div>
-                    ))}
-                  </div>
+                      {selectedDayAvailabilityBlocks.map(a => (
+                        <div key={a.id} className="group rounded-xl bg-white border border-green-100 p-3 text-green-800 relative">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAvailability(a.id)}
+                            className="absolute top-2 end-2 text-green-500 hover:text-green-800 opacity-70"
+                          >
+                            <X size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAvailability(a);
+                              setAvailabilityForm({
+                                mode: 'single',
+                                date: a.date,
+                                startDate: a.date,
+                                endDate: a.date,
+                                selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+                                startTime: a.startTime || '09:00',
+                                endTime: a.endTime || '20:00',
+                                reason: a.reason || '',
+                                allDay: a.allDay || false,
+                              });
+                              setShowAvailabilityModal(true);
+                            }}
+                            className="block w-full text-start pe-8"
+                          >
+                            <div>{a.allDay ? t('calendar.available') : timeRangeToLabel(a.startTime, a.endTime, displayLocale)}</div>
+                            {a.reason && <div className="mt-1 text-green-600">{a.reason}</div>}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="rounded-2xl border border-red-100 bg-red-50/60 p-4">
-                  <h4 className="font-black text-red-700 mb-3 flex items-center gap-2"><XCircle size={16} /> {t('calendar.unavailable')}</h4>
-                  <div className="space-y-2">
-                    {selectedDayUnavailabilityBlocks.length === 0 ? (
-                      <p className="text-sm font-bold text-red-700/60">{displayLocale === 'ar' ? 'لا توجد فترات مغلقة.' : 'No blocked time.'}</p>
-                    ) : selectedDayUnavailabilityBlocks.map(u => (
-                      <div key={u.id} className="group rounded-xl bg-white border border-red-100 p-3 text-sm font-bold text-red-800 relative">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUnavailability(u.id)}
-                          className="absolute top-2 end-2 text-red-500 hover:text-red-800 opacity-70"
-                        >
-                          <X size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingUnavailability(u);
-                            setUnavailabilityForm({
-                              date: u.date,
-                              startTime: u.startTime || '09:00',
-                              endTime: u.endTime || '20:00',
-                              reason: u.reason || '',
-                              allDay: u.allDay || false,
-                            });
-                            setShowUnavailabilityModal(true);
-                          }}
-                          className="block w-full text-start pe-6"
-                        >
-                          <div>{u.allDay ? t('calendar.unavailable') : timeRangeToLabel(u.startTime, u.endTime, displayLocale)}</div>
-                          {u.reason && <div className="text-xs text-red-600 mt-1">{u.reason}</div>}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-[#7a1717]/10 bg-stone-50 p-4">
-                  <h4 className="font-black text-[#7a1717] mb-3 flex items-center gap-2"><CalendarIcon size={16} /> {t('calendar.meeting')}</h4>
-                  <div className="space-y-2">
+                <div className="rounded-2xl border-2 border-[#ead9d0] bg-stone-50 p-5">
+                  <h4 className="font-black text-[#7a1717] mb-4 flex items-center gap-2">
+                    <CalendarIcon size={18} />
+                    {t('calendar.meeting')}
+                  </h4>
+                  <div className="space-y-3">
                     {selectedDayMeetings.length === 0 ? (
-                      <p className="text-sm font-bold text-gray-400">{displayLocale === 'ar' ? 'لا توجد اجتماعات مؤكدة.' : 'No confirmed meetings.'}</p>
+                      <div className="rounded-2xl bg-white border border-[#ead9d0] p-4 text-gray-400 font-black">
+                        {displayLocale === 'ar' ? 'لا توجد اجتماعات مؤكدة.' : 'No confirmed meetings.'}
+                      </div>
                     ) : selectedDayMeetings.map(m => (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => openMeetingEditor(m)}
-                        className="block w-full rounded-xl bg-white border border-gray-100 p-3 text-start text-sm font-bold hover:border-[#7a1717]/30 hover:bg-[#f8eeee] transition-colors"
+                        className="block w-full rounded-2xl bg-white border-2 border-[#ead9d0] p-4 text-start font-black hover:border-[#7a1717]/30 hover:bg-[#f8eeee] transition-colors"
                       >
                         <div className="text-[#7a1717]">{getMeetingDisplayTitle(m)}</div>
-                        <div className="text-xs text-gray-500 mt-1">{timeRangeToLabel(m.startTime, m.endTime, displayLocale)}</div>
+                        <div className="text-gray-500 mt-1">{timeRangeToLabel(m.startTime, m.endTime, displayLocale)}</div>
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
 
-              <div>
-                <h4 className="font-black text-[#7a1717] mb-3 flex items-center gap-2">
-                  <Clock size={18} />
-                  {displayLocale === 'ar' ? 'إدارة الفترات' : 'Manage Slots'}
-                </h4>
-                <div className="pastor-slot-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                  {slotBlockHours.map(hour => {
-                    const status = getPastorSlotStatus(selectedSlotDay, hour);
-                    const isClickable = status === 'available' || status === 'blocked';
-                    const slotLabel = getPastorSlotLabel(status);
+              <details className="rounded-2xl border-2 border-[#ead9d0] bg-white p-4">
+                <summary className="cursor-pointer list-none font-black text-[#7a1717] flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2">
+                    <Clock size={18} />
+                    {displayLocale === 'ar' ? 'التحقق من كل الفترات' : 'Verify All Slots'}
+                  </span>
+                  <span className="text-[#7a1717]/60">
+                    {displayLocale === 'ar' ? 'افتح للتفاصيل' : 'Collapsed by default'}
+                  </span>
+                </summary>
 
-                    return (
-                      <button
-                        key={hour}
-                        type="button"
-                        disabled={!isClickable || slotBlockingLoading}
-                        onClick={() => handleToggleSlotBlock(selectedSlotDay, hour)}
-                        className={`p-3 rounded-xl border-2 text-sm font-black transition-all ${
-                          status === 'blocked'
-                            ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
-                            : status === 'available'
-                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                            : status === 'booked'
-                            ? 'bg-amber-50 border-amber-200 text-amber-700 cursor-not-allowed opacity-80'
-                            : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-70'
-                        }`}
-                      >
-                        <div>{hourToLabel(hour, displayLocale)}</div>
-                        <div className="text-[10px] mt-1 uppercase tracking-widest">{slotLabel}</div>
-                      </button>
-                    );
-                  })}
+                <div className="mt-4 rounded-2xl bg-[#fbf7f2] border border-[#ead9d0] p-4">
+                  <p className="mb-4 text-[#6b4b4b]">
+                    {displayLocale === 'ar'
+                      ? 'هذه المنطقة للتحقق فقط. الفترات غير المفتوحة تعتبر غير متاحة تلقائياً.'
+                      : 'Verification only. Slots are unavailable by default unless availability opens them.'}
+                  </p>
+                  <div className="pastor-slot-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {slotBlockHours.map(hour => {
+                      const status = getPastorSlotStatus(selectedSlotDay, hour);
+                      const isClickable = status === 'available' || status === 'blocked';
+                      const slotLabel = getPastorSlotLabel(status);
+
+                      return (
+                        <button
+                          key={hour}
+                          type="button"
+                          disabled={!isClickable || slotBlockingLoading}
+                          onClick={() => handleToggleSlotBlock(selectedSlotDay, hour)}
+                          className={`p-3 rounded-xl border-2 font-black transition-all ${
+                            status === 'blocked'
+                              ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                              : status === 'available'
+                              ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                              : status === 'booked'
+                              ? 'bg-amber-50 border-amber-200 text-amber-700 cursor-not-allowed opacity-80'
+                              : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-70'
+                          }`}
+                        >
+                          <div>{hourToLabel(hour, displayLocale)}</div>
+                          <div className="mt-1 uppercase tracking-widest">{slotLabel}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              </details>
+
             </div>
           </motion.div>
         </div>
