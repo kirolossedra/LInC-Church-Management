@@ -580,7 +580,7 @@ export default function Calendar() {
     </table>
 
     <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; border-left: 5px solid #8b1e1e; border-radius: 10px;">
-      <h3 style="margin: 0 0 10px; color: #641414; font-size: 17px;">رابط الانضمام / Joining Link</h3>
+      <h3 style="margin: 0 0 10px; color: #5e1010; font-size: 17px;">رابط الانضمام / Joining Link</h3>
 
       <div style="margin-bottom: 8px;">
         ${meetingLinkHtml}
@@ -1376,14 +1376,169 @@ Otherwise, provide a helpful response about their calendar.`;
   const selectedDayMeetings = selectedSlotDateStr ? getMeetingsForDate(selectedSlotDateStr) : [];
 
   return (
-    <div className="space-y-8" style={{ fontFamily: 'Arial, sans-serif' }} dir={dir}>
+    <>
+      <style>{`
+        .pastor-calendar-ui,
+        .pastor-calendar-ui * {
+          font-family: Arial, sans-serif !important;
+          font-weight: 700 !important;
+        }
+
+        .pastor-calendar-ui {
+          background: #fbf7f2;
+          color: #2b1717;
+        }
+
+        .pastor-calendar-ui button,
+        .pastor-calendar-ui input,
+        .pastor-calendar-ui select,
+        .pastor-calendar-ui textarea {
+          font-size: 16px !important;
+          line-height: 1.35 !important;
+        }
+
+        .pastor-calendar-ui .text-\[9px\],
+        .pastor-calendar-ui .text-\[10px\],
+        .pastor-calendar-ui .text-\[11px\],
+        .pastor-calendar-ui .text-xs,
+        .pastor-calendar-ui .text-sm {
+          font-size: 16px !important;
+          line-height: 1.35 !important;
+        }
+
+        .pastor-calendar-ui .text-lg {
+          font-size: 20px !important;
+          line-height: 1.35 !important;
+        }
+
+        .pastor-calendar-ui .text-xl {
+          font-size: 24px !important;
+          line-height: 1.25 !important;
+        }
+
+        .pastor-calendar-ui .text-2xl {
+          font-size: 30px !important;
+          line-height: 1.15 !important;
+        }
+
+        .pastor-calendar-ui .text-3xl {
+          font-size: 34px !important;
+          line-height: 1.1 !important;
+        }
+
+        .pastor-calendar-ui .pastor-dashboard-card {
+          background: #fffdf9;
+          border-color: #ead9d0;
+          box-shadow: 0 16px 40px rgba(80, 24, 24, 0.06);
+        }
+
+        .pastor-calendar-ui .pastor-main-button {
+          min-height: 48px;
+          border-radius: 18px;
+        }
+
+        .pastor-calendar-ui .pastor-calendar-shell {
+          background: #fffdf9;
+          border-color: #ead9d0;
+          box-shadow: 0 18px 48px rgba(80, 24, 24, 0.07);
+        }
+
+        .pastor-calendar-ui .pastor-day-card {
+          min-height: 118px;
+          border-radius: 28px;
+          box-shadow: 0 8px 20px rgba(80, 24, 24, 0.04);
+        }
+
+        .pastor-calendar-ui .pastor-day-number {
+          font-size: 24px !important;
+          line-height: 1 !important;
+        }
+
+        .pastor-calendar-ui .pastor-popup-panel {
+          background: #fffdf9;
+          border-color: #ead9d0;
+          color: #2b1717;
+        }
+
+        .pastor-calendar-ui .pastor-popup-header {
+          background: #7a1717;
+        }
+
+        @media (max-width: 640px) {
+          .pastor-calendar-ui {
+            padding-left: 12px;
+            padding-right: 12px;
+          }
+
+          .pastor-calendar-ui .pastor-calendar-shell {
+            padding: 16px !important;
+            border-radius: 30px !important;
+          }
+
+          .pastor-calendar-ui .pastor-calendar-title {
+            text-align: center;
+          }
+
+          .pastor-calendar-ui .pastor-calendar-legend {
+            display: none !important;
+          }
+
+          .pastor-calendar-ui .pastor-weekday-label {
+            font-size: 16px !important;
+            letter-spacing: 0.08em !important;
+          }
+
+          .pastor-calendar-ui .pastor-days-grid {
+            gap: 10px !important;
+          }
+
+          .pastor-calendar-ui .pastor-day-card {
+            min-height: 0 !important;
+            aspect-ratio: 1 / 1;
+            border-radius: 9999px !important;
+            padding: 6px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+
+          .pastor-calendar-ui .pastor-day-number {
+            width: auto !important;
+            height: auto !important;
+            margin: 0 !important;
+            background: transparent !important;
+            font-size: 22px !important;
+          }
+
+          .pastor-calendar-ui .pastor-day-status,
+          .pastor-calendar-ui .pastor-day-detail,
+          .pastor-calendar-ui .pastor-day-badge {
+            display: none !important;
+          }
+
+          .pastor-calendar-ui .pastor-popup-panel {
+            max-height: 92vh !important;
+            border-radius: 28px !important;
+          }
+
+          .pastor-calendar-ui .pastor-popup-body {
+            padding: 16px !important;
+          }
+
+          .pastor-calendar-ui .pastor-slot-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+          }
+        }
+      `}</style>
+      <div className="pastor-calendar-ui min-h-screen space-y-8 px-4 py-6" style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }} dir={dir}>
       <PageTitle
         title={t('calendar.title')}
         subtitle={t('calendar.subtitle')}
         icon={<CalendarIcon size={22} />}
       />
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-3xl shadow-sm border border-gray-100 gap-4">
+      <div className="pastor-dashboard-card flex flex-col sm:flex-row justify-between items-start sm:items-center p-6 rounded-3xl border gap-4">
         <div>
           <h2 className="text-2xl font-bold text-[#1A1A1A]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
           <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
@@ -1412,7 +1567,7 @@ Otherwise, provide a helpful response about their calendar.`;
           ) : (
             <button
               onClick={startGoogleAuth}
-              className="flex items-center gap-2 bg-[#8B1E1E] hover:bg-[#641414] text-white px-6 py-3 rounded-xl font-bold shadow transition-colors text-sm"
+              className="pastor-main-button flex items-center gap-2 bg-[#7a1717] hover:bg-[#5e1010] text-white px-6 py-3 rounded-xl font-bold shadow transition-colors"
             >
               <Video size={16} />
               {t('calendar.connectGoogle')}
@@ -1420,7 +1575,7 @@ Otherwise, provide a helpful response about their calendar.`;
           )}
           <Link
             to="/pastor/people-notes"
-            className="flex items-center gap-2 bg-stone-50 hover:bg-stone-100 text-[#8B1E1E] px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-[#8B1E1E]/20"
+            className="pastor-main-button flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
             title={peopleNotesSubtitle}
           >
             <Users size={16} />
@@ -1441,7 +1596,7 @@ Otherwise, provide a helpful response about their calendar.`;
           </button>
           <button
             onClick={() => { setIsAddOpen(true); setEditingMeeting(null); setSelectedParticipants([]); setEmailSent(false); }}
-            className="flex items-center gap-2 bg-[#8B1E1E] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#8B1E1E]/20 transition-all hover:scale-105 active:scale-95"
+            className="pastor-main-button flex items-center gap-2 bg-[#7a1717] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#7a1717]/20 transition-all hover:scale-105 active:scale-95"
           >
             <Plus size={20} />
             <span>{t('calendar.addEvent')}</span>
@@ -1452,7 +1607,7 @@ Otherwise, provide a helpful response about their calendar.`;
               setEditingAvailability(null);
               resetAvailabilityForm();
             }}
-            className="flex items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-green-200"
+            className="pastor-main-button flex items-center gap-2 bg-[#e8faee] hover:bg-[#dcf7e5] text-[#165d30] px-5 py-3 rounded-xl font-bold transition-colors border border-[#8ad0a1]"
           >
             <CheckCircle size={16} />
             <span>{t('calendar.markAvailable')}</span>
@@ -1463,7 +1618,7 @@ Otherwise, provide a helpful response about their calendar.`;
               setEditingUnavailability(null);
               resetUnavailabilityForm();
             }}
-            className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-red-200"
+            className="pastor-main-button flex items-center gap-2 bg-[#fff1f1] hover:bg-[#f8dddd] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
           >
             <XCircle size={16} />
             <span>{t('calendar.markUnavailable')}</span>
@@ -1482,7 +1637,7 @@ Otherwise, provide a helpful response about their calendar.`;
                 ]);
               }
             }}
-            className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-purple-200"
+            className="pastor-main-button flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
           >
             <Bot size={16} />
             <span>{t('calendar.aiAssistant')}</span>
@@ -1500,7 +1655,7 @@ Otherwise, provide a helpful response about their calendar.`;
                 {meetingRequests.filter(r => r.status === 'pending').length}
               </span>
             </h3>
-            <button onClick={() => setShowRequests(!showRequests)} className="text-xs text-[#8B1E1E] font-bold hover:underline">
+            <button onClick={() => setShowRequests(!showRequests)} className="text-xs text-[#7a1717] font-bold hover:underline">
               {showRequests ? t('requests.hide') : t('requests.viewAll')}
             </button>
           </div>
@@ -1510,7 +1665,7 @@ Otherwise, provide a helpful response about their calendar.`;
                 <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-stone-50 rounded-xl border border-gray-100 gap-3">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center border border-gray-100">
-                      <User size={18} className="text-[#8B1E1E]" />
+                      <User size={18} className="text-[#7a1717]" />
                     </div>
                     <div>
                       <h4 className="font-bold text-sm">{req.name}</h4>
@@ -1593,14 +1748,14 @@ Otherwise, provide a helpful response about their calendar.`;
                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black border ${
                           isSelected
                             ? 'bg-green-100 text-green-700 border-green-200'
-                            : 'bg-white text-[#8B1E1E] border-gray-100'
+                            : 'bg-white text-[#7a1717] border-gray-100'
                         }`}>
                           #{index + 1}
                         </div>
 
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="px-3 py-1 bg-white text-[#8B1E1E] rounded-full text-xs font-bold border border-[#8B1E1E]/10">
+                            <span className="px-3 py-1 bg-white text-[#7a1717] rounded-full text-xs font-bold border border-[#7a1717]/10">
                               {question.category || 'Other'}
                             </span>
                             <span className="px-3 py-1 bg-white text-gray-500 rounded-full text-xs font-bold border border-gray-100">
@@ -1622,7 +1777,7 @@ Otherwise, provide a helpful response about their calendar.`;
                               {question.verses.map((verse, verseIndex) => (
                                 <div key={`${question.id}-verse-${verseIndex}`} className="bg-white border border-gray-100 rounded-xl p-3">
                                   {verse.reference && (
-                                    <div className="text-xs font-bold text-[#8B1E1E] mb-1">
+                                    <div className="text-xs font-bold text-[#7a1717] mb-1">
                                       {verse.reference}
                                     </div>
                                   )}
@@ -1667,10 +1822,10 @@ Otherwise, provide a helpful response about their calendar.`;
                           </div>
 
                           <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
-                            <div className="text-[10px] text-[#8B1E1E] font-bold uppercase">
+                            <div className="text-[10px] text-[#7a1717] font-bold uppercase">
                               {displayLocale === 'ar' ? 'الصافي' : 'Net'}
                             </div>
-                            <div className="text-lg font-black text-[#8B1E1E]">
+                            <div className="text-lg font-black text-[#7a1717]">
                               {question.netVotes}
                             </div>
                           </div>
@@ -1683,7 +1838,7 @@ Otherwise, provide a helpful response about their calendar.`;
                           className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
                             isSelected
                               ? 'bg-white text-red-700 border border-red-100 hover:bg-red-50'
-                              : 'bg-[#8B1E1E] text-white hover:bg-[#641414]'
+                              : 'bg-[#7a1717] text-white hover:bg-[#5e1010]'
                           }`}
                         >
                           {isUpdating ? (
@@ -1707,10 +1862,10 @@ Otherwise, provide a helpful response about their calendar.`;
         </section>
       )}
 
-      <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+      <section className="pastor-calendar-shell p-6 rounded-3xl border">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div>
-            <h3 className="text-xl font-bold text-[#8B1E1E] flex items-center gap-2">
+            <h3 className="pastor-calendar-title text-xl font-bold text-[#7a1717] flex items-center gap-2">
               <CalendarIcon size={20} />
               {format(currentDate, 'MMMM yyyy', { locale: dateLocale })}
             </h3>
@@ -1718,7 +1873,7 @@ Otherwise, provide a helpful response about their calendar.`;
               {t('calendar.availabilityOpensBooking')}
             </p>
           </div>
-          <div className="flex items-center gap-2 text-xs font-bold">
+          <div className="pastor-calendar-legend flex items-center gap-2 font-bold">
             <span className="inline-flex items-center gap-2 rounded-full bg-green-50 px-3 py-2 text-green-700 border border-green-100">
               <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
               {t('calendar.available')}
@@ -1736,11 +1891,11 @@ Otherwise, provide a helpful response about their calendar.`;
 
         <div className="grid grid-cols-7 gap-2 mb-3">
           {[t('calendar.sun'), t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat')].map(d => (
-            <div key={d} className="text-center text-[11px] sm:text-xs uppercase tracking-widest text-gray-400 font-bold">{d}</div>
+            <div key={d} className="pastor-weekday-label text-center uppercase tracking-widest text-[#6f4a4a] font-bold">{d}</div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-2 sm:gap-3">
+        <div className="pastor-days-grid grid grid-cols-7 gap-2 sm:gap-3">
           {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, i) => (
             <div key={`calendar-empty-${i}`} />
           ))}
@@ -1776,9 +1931,9 @@ Otherwise, provide a helpful response about their calendar.`;
                 key={day.toISOString()}
                 type="button"
                 onClick={() => setSelectedSlotDay(day)}
-                className={`min-h-[92px] sm:min-h-[112px] rounded-2xl border-2 p-2 sm:p-3 text-center transition-all hover:-translate-y-0.5 hover:shadow-md font-bold ${
+                className={`pastor-day-card min-h-[92px] sm:min-h-[112px] rounded-2xl border-2 p-2 sm:p-3 text-center transition-all hover:-translate-y-0.5 hover:shadow-md font-bold ${
                   isSelected
-                    ? 'border-[#8B1E1E] bg-[#8B1E1E] text-white shadow-lg shadow-[#8B1E1E]/20'
+                    ? 'border-[#7a1717] bg-[#7a1717] text-white shadow-lg shadow-[#7a1717]/20'
                     : openSlotCount > 0
                     ? 'border-green-200 bg-green-50 text-green-800 hover:border-green-300'
                     : bookedSlotCount > 0
@@ -1786,26 +1941,26 @@ Otherwise, provide a helpful response about their calendar.`;
                     : 'border-red-100 bg-red-50/70 text-red-800 hover:border-red-200'
                 }`}
               >
-                <div className={`mx-auto mb-2 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full text-lg sm:text-xl font-black ${
+                <div className={`pastor-day-number mx-auto mb-2 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full text-lg sm:text-xl font-black ${
                   isSelected
-                    ? 'bg-white text-[#8B1E1E]'
+                    ? 'bg-white text-[#7a1717]'
                     : isTodayDate
-                    ? 'bg-[#8B1E1E] text-white'
+                    ? 'bg-[#7a1717] text-white'
                     : 'bg-white/80'
                 }`}>
                   {format(day, 'd', { locale: dateLocale })}
                 </div>
 
-                <div className={`text-[10px] sm:text-xs font-black uppercase tracking-wide ${isSelected ? 'text-white' : ''}`}>
+                <div className={`pastor-day-status font-black uppercase tracking-wide ${isSelected ? 'text-white' : ''}`}>
                   {statusLabel}
                 </div>
-                <div className={`mt-1 hidden sm:block text-[10px] font-bold leading-tight ${isSelected ? 'text-white/85' : 'text-gray-500'}`}>
+                <div className={`pastor-day-detail mt-1 hidden sm:block font-bold leading-tight ${isSelected ? 'text-white/85' : 'text-gray-500'}`}>
                   {statusDetail}
                 </div>
 
                 {(dayMeetings.length > 0 || pendingRequests.length > 0 || blockedSlotCount > 0 || dayUnavailability.length > 0) && (
-                  <div className={`mt-2 mx-auto flex w-fit items-center justify-center gap-1 rounded-full px-2 py-1 text-[10px] font-black ${
-                    isSelected ? 'bg-white/20 text-white' : 'bg-white/80 text-[#8B1E1E]'
+                  <div className={`pastor-day-badge mt-2 mx-auto flex w-fit items-center justify-center gap-1 rounded-full px-2 py-1 font-black ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-white/80 text-[#7a1717]'
                   }`}>
                     {dayMeetings.length + pendingRequests.length + blockedSlotCount + dayUnavailability.length}
                   </div>
@@ -1826,10 +1981,10 @@ Otherwise, provide a helpful response about their calendar.`;
           <motion.div
             initial={{ opacity: 0, scale: 0.94, y: 18 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl bg-white shadow-2xl border border-gray-100"
+            className="pastor-popup-panel w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl shadow-2xl border"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 z-10 bg-[#8B1E1E] text-white p-6">
+            <div className="pastor-popup-header sticky top-0 z-10 text-white p-6">
               <button
                 type="button"
                 onClick={() => setSelectedSlotDay(null)}
@@ -1848,7 +2003,7 @@ Otherwise, provide a helpful response about their calendar.`;
               </div>
             </div>
 
-            <div className="max-h-[calc(90vh-104px)] overflow-y-auto p-6 space-y-6">
+            <div className="pastor-popup-body max-h-[calc(90vh-104px)] overflow-y-auto p-6 space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   type="button"
@@ -1901,7 +2056,7 @@ Otherwise, provide a helpful response about their calendar.`;
                     setEmailSent(false);
                     setIsAddOpen(true);
                   }}
-                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#8B1E1E]/20 bg-[#f8eeee] px-4 py-3 text-[#8B1E1E] font-black hover:bg-[#f1dddd] transition-colors"
+                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#7a1717]/20 bg-[#f8eeee] px-4 py-3 text-[#7a1717] font-black hover:bg-[#f1dddd] transition-colors"
                 >
                   <Plus size={18} />
                   {t('calendar.addEvent')}
@@ -1987,8 +2142,8 @@ Otherwise, provide a helpful response about their calendar.`;
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[#8B1E1E]/10 bg-stone-50 p-4">
-                  <h4 className="font-black text-[#8B1E1E] mb-3 flex items-center gap-2"><CalendarIcon size={16} /> {t('calendar.meeting')}</h4>
+                <div className="rounded-2xl border border-[#7a1717]/10 bg-stone-50 p-4">
+                  <h4 className="font-black text-[#7a1717] mb-3 flex items-center gap-2"><CalendarIcon size={16} /> {t('calendar.meeting')}</h4>
                   <div className="space-y-2">
                     {selectedDayMeetings.length === 0 ? (
                       <p className="text-sm font-bold text-gray-400">{displayLocale === 'ar' ? 'لا توجد اجتماعات مؤكدة.' : 'No confirmed meetings.'}</p>
@@ -1997,9 +2152,9 @@ Otherwise, provide a helpful response about their calendar.`;
                         key={m.id}
                         type="button"
                         onClick={() => openMeetingEditor(m)}
-                        className="block w-full rounded-xl bg-white border border-gray-100 p-3 text-start text-sm font-bold hover:border-[#8B1E1E]/30 hover:bg-[#f8eeee] transition-colors"
+                        className="block w-full rounded-xl bg-white border border-gray-100 p-3 text-start text-sm font-bold hover:border-[#7a1717]/30 hover:bg-[#f8eeee] transition-colors"
                       >
-                        <div className="text-[#8B1E1E]">{getMeetingDisplayTitle(m)}</div>
+                        <div className="text-[#7a1717]">{getMeetingDisplayTitle(m)}</div>
                         <div className="text-xs text-gray-500 mt-1">{timeRangeToLabel(m.startTime, m.endTime, displayLocale)}</div>
                       </button>
                     ))}
@@ -2008,11 +2163,11 @@ Otherwise, provide a helpful response about their calendar.`;
               </div>
 
               <div>
-                <h4 className="font-black text-[#8B1E1E] mb-3 flex items-center gap-2">
+                <h4 className="font-black text-[#7a1717] mb-3 flex items-center gap-2">
                   <Clock size={18} />
                   {displayLocale === 'ar' ? 'إدارة الفترات' : 'Manage Slots'}
                 </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="pastor-slot-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                   {slotBlockHours.map(hour => {
                     const status = getPastorSlotStatus(selectedSlotDay, hour);
                     const isClickable = status === 'available' || status === 'blocked';
@@ -2048,7 +2203,7 @@ Otherwise, provide a helpful response about their calendar.`;
 
       <section className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-          <h3 className="text-xl font-bold flex items-center gap-2 text-[#8B1E1E]">
+          <h3 className="text-xl font-bold flex items-center gap-2 text-[#7a1717]">
             <Clock size={20} />
             {t('calendar.upcoming')}
           </h3>
@@ -2084,12 +2239,12 @@ Otherwise, provide a helpful response about their calendar.`;
               <div
                 key={m.id}
                 onClick={() => openMeetingEditor(m)}
-                className="flex flex-col md:flex-row md:items-center justify-between p-6 bg-stone-50 rounded-2xl border border-gray-100 hover:border-[#8B1E1E]/20 transition-all gap-4 cursor-pointer"
+                className="flex flex-col md:flex-row md:items-center justify-between p-6 bg-stone-50 rounded-2xl border border-gray-100 hover:border-[#7a1717]/20 transition-all gap-4 cursor-pointer"
               >
                 <div className="flex items-center gap-6">
                   <div className="w-16 h-16 bg-white rounded-xl shadow-sm flex flex-col items-center justify-center border border-gray-100">
                     <span className="text-[10px] uppercase font-bold text-gray-400">{format(parseISO(m.date), 'MMM', { locale: dateLocale })}</span>
-                    <span className="text-2xl font-bold text-[#8B1E1E] leading-none">{format(parseISO(m.date), 'dd')}</span>
+                    <span className="text-2xl font-bold text-[#7a1717] leading-none">{format(parseISO(m.date), 'dd')}</span>
                   </div>
                   <div>
                     <h4 className="text-lg font-bold">{getMeetingDisplayTitle(m)}</h4>
@@ -2176,16 +2331,16 @@ Otherwise, provide a helpful response about their calendar.`;
             <form onSubmit={handleCreate} className="p-6 space-y-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.titleField')}</label>
-                <input required type="text" className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none" value={newMeeting.title} onChange={e => setNewMeeting(p => ({ ...p, title: e.target.value }))} />
+                <input required type="text" className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.title} onChange={e => setNewMeeting(p => ({ ...p, title: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.dateField')}</label>
-                  <input required type="date" className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none" value={newMeeting.date} onChange={e => setNewMeeting(p => ({ ...p, date: e.target.value }))} />
+                  <input required type="date" className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.date} onChange={e => setNewMeeting(p => ({ ...p, date: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.typeField')}</label>
-                  <select className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none" value={newMeeting.type} onChange={e => setNewMeeting(p => ({ ...p, type: e.target.value as any }))}>
+                  <select className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.type} onChange={e => setNewMeeting(p => ({ ...p, type: e.target.value as any }))}>
                     <option value="service">{t('calendar.service')}</option>
                     <option value="prayer">{t('calendar.prayer')}</option>
                     <option value="counseling">{t('calendar.counseling')}</option>
@@ -2196,7 +2351,7 @@ Otherwise, provide a helpful response about their calendar.`;
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.startTime')}</label>
-                  <select required className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none" value={newMeeting.startTime} onChange={e => setNewMeeting(p => ({ ...p, startTime: e.target.value }))}>
+                  <select required className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.startTime} onChange={e => setNewMeeting(p => ({ ...p, startTime: e.target.value }))}>
                     {MEETING_TIME_OPTIONS.map(option => (
                       <option key={`meeting-start-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
                     ))}
@@ -2204,7 +2359,7 @@ Otherwise, provide a helpful response about their calendar.`;
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.endTime')}</label>
-                  <select required className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none" value={newMeeting.endTime} onChange={e => setNewMeeting(p => ({ ...p, endTime: e.target.value }))}>
+                  <select required className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.endTime} onChange={e => setNewMeeting(p => ({ ...p, endTime: e.target.value }))}>
                     {MEETING_TIME_OPTIONS.map(option => (
                       <option key={`meeting-end-${option.value}`} value={option.value}>{hourToLabel(option.hour, displayLocale)}</option>
                     ))}
@@ -2240,7 +2395,7 @@ Otherwise, provide a helpful response about their calendar.`;
                           <button
                             type="button"
                             onClick={() => setSelectedParticipants(participants.map(p => p.id))}
-                            className="text-[10px] text-[#8B1E1E] font-bold hover:underline"
+                            className="text-[10px] text-[#7a1717] font-bold hover:underline"
                           >
                             {t('calendar.selectAll')}
                           </button>
@@ -2254,7 +2409,7 @@ Otherwise, provide a helpful response about their calendar.`;
                               type="checkbox"
                               checked={selectedParticipants.includes(p.id)}
                               onChange={() => toggleParticipant(p.id)}
-                              className="w-4 h-4 rounded border-gray-300 text-[#8B1E1E] focus:ring-[#8B1E1E]"
+                              className="w-4 h-4 rounded border-gray-300 text-[#7a1717] focus:ring-[#7a1717]"
                             />
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-bold truncate">{p.name}</div>
@@ -2271,7 +2426,7 @@ Otherwise, provide a helpful response about their calendar.`;
                   {selectedCount > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {selectedNames.map((name, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-[#f8eeee] text-[#8B1E1E] px-2 py-1 rounded-full">
+                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-[#f8eeee] text-[#7a1717] px-2 py-1 rounded-full">
                           {name}
                           <button type="button" onClick={() => toggleParticipant(selectedParticipants[i])} className="hover:text-red-500">
                             <X size={10} />
@@ -2324,7 +2479,7 @@ Otherwise, provide a helpful response about their calendar.`;
                         const link = generatePlaceholderLink();
                         setNewMeeting(p => ({ ...p, meetLink: link }));
                       }}
-                      className="flex items-center gap-1 text-[10px] font-bold text-[#8B1E1E] hover:underline"
+                      className="flex items-center gap-1 text-[10px] font-bold text-[#7a1717] hover:underline"
                     >
                       <Wand2 size={10} />
                       {t('calendar.genFake')}
@@ -2333,7 +2488,7 @@ Otherwise, provide a helpful response about their calendar.`;
                 </div>
                 <div className="relative">
                   <Video className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input type="url" placeholder="https://meet.google.com/..." className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none" value={newMeeting.meetLink} onChange={e => setNewMeeting(p => ({ ...p, meetLink: e.target.value }))} />
+                  <input type="url" placeholder="https://meet.google.com/..." className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.meetLink} onChange={e => setNewMeeting(p => ({ ...p, meetLink: e.target.value }))} />
                 </div>
               </div>
 
@@ -2341,7 +2496,7 @@ Otherwise, provide a helpful response about their calendar.`;
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.location')}</label>
                 <div className="relative">
                   <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input type="text" className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none" value={newMeeting.location} onChange={e => setNewMeeting(p => ({ ...p, location: e.target.value }))} />
+                  <input type="text" className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.location} onChange={e => setNewMeeting(p => ({ ...p, location: e.target.value }))} />
                 </div>
               </div>
 
@@ -2352,7 +2507,7 @@ Otherwise, provide a helpful response about their calendar.`;
                 </div>
               )}
 
-              <button disabled={loading} type="submit" className="w-full py-4 bg-[#8B1E1E] text-white rounded-2xl font-bold shadow-xl shadow-[#8B1E1E]/10 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2">
+              <button disabled={loading} type="submit" className="w-full py-4 bg-[#7a1717] text-white rounded-2xl font-bold shadow-xl shadow-[#7a1717]/10 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2">
                 {loading ? (
                   <>{t('calendar.saving')}</>
                 ) : (
@@ -2708,6 +2863,7 @@ Otherwise, provide a helpful response about their calendar.`;
           </motion.div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
