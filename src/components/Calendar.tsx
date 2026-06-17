@@ -694,6 +694,200 @@ ${safeFullReport}
   };
 
 
+  const buildMeetingStatusEmail = (params: {
+    kind: 'rejection' | 'cancellation';
+    name?: string;
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+    location?: string;
+    requesterLocale?: string;
+  }): {
+    subject: string;
+    requesterName: string;
+    htmlBody: string;
+    fullReport: string;
+  } => {
+    const requesterLocale: 'en' | 'ar' = params.requesterLocale === 'ar' ? 'ar' : 'en';
+    const displayName = params.name || (requesterLocale === 'ar' ? 'صديقنا العزيز' : 'Friend');
+    const meetingDate = params.date
+      ? format(parseISO(params.date), 'EEEE, MMMM d, yyyy', { locale: requesterLocale === 'ar' ? ar : enUS })
+      : '';
+    const meetingTime = timeRangeToLabel(params.startTime, params.endTime, requesterLocale);
+    const meetingLocation = params.location || (requesterLocale === 'ar' ? 'اجتماع عبر الإنترنت' : 'Online meeting');
+    const isCancellation = params.kind === 'cancellation';
+
+    const safeName = escapeHtml(displayName);
+    const safeMeetingDate = escapeHtml(meetingDate);
+    const safeMeetingTime = escapeHtml(meetingTime);
+    const safeMeetingLocation = escapeHtml(meetingLocation);
+
+    if (requesterLocale === 'ar') {
+      const title = isCancellation ? 'إلغاء موعد الاجتماع' : 'تحديث بخصوص طلب الاجتماع';
+      const intro = isCancellation
+        ? 'نود إعلامك بأنه تم إلغاء موعد اجتماعك مع Pastor.'
+        : 'نشكرك على طلب الاجتماع مع Pastor. نعتذر، لن نتمكن من تأكيد هذا الموعد حالياً.';
+      const closing = isCancellation
+        ? 'نعتذر عن أي إزعاج، ويمكنك حجز موعد آخر من خلال صفحة الحجز عند توفر موعد مناسب.'
+        : 'يمكنك حجز موعد آخر من خلال صفحة الحجز عند توفر موعد مناسب.';
+      const subject = isCancellation
+        ? `إلغاء موعد اجتماع LINC - ${displayName}`
+        : `تحديث طلب اجتماع LINC - ${displayName}`;
+
+      const fullReport = [
+        title,
+        '=========================================',
+        '',
+        `مرحباً ${displayName}،`,
+        '',
+        intro,
+        '',
+        `التاريخ: ${meetingDate}`,
+        `الوقت: ${meetingTime}`,
+        `المكان: ${meetingLocation}`,
+        '',
+        closing,
+        '',
+        'شكراً لتفهمك.',
+      ].join('\n');
+
+      const safeFullReport = escapeHtml(fullReport);
+      const htmlBody = `
+<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto; direction: rtl; text-align: right;">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">${escapeHtml(title)}</h2>
+    <div style="margin-top: 6px; font-size: 13px;">اجتماع مع Pastor</div>
+  </div>
+
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <p style="margin: 0 0 14px;">مرحباً ${safeName}،</p>
+    <p style="margin: 0 0 18px;">${escapeHtml(intro)}</p>
+
+    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
+      <tr><td style="padding: 8px 0; width: 160px; color: #666666; font-weight: 700;">التاريخ</td><td style="padding: 8px 0;">${safeMeetingDate}</td></tr>
+      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">الوقت</td><td style="padding: 8px 0;">${safeMeetingTime}</td></tr>
+      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">المكان</td><td style="padding: 8px 0;">${safeMeetingLocation}</td></tr>
+    </table>
+
+    <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">${safeFullReport}</div>
+    <div style="margin-top: 22px; color: #777777; font-size: 12px;">تم إرسال هذا البريد تلقائياً بخصوص طلب اجتماعك مع Pastor.</div>
+  </div>
+</div>
+      `.trim();
+
+      return { subject, requesterName: displayName, htmlBody, fullReport };
+    }
+
+    const title = isCancellation ? 'Meeting Cancelled' : 'Meeting Request Update';
+    const intro = isCancellation
+      ? 'We would like to let you know that your meeting with Pastor has been cancelled.'
+      : 'Thank you for requesting a meeting with Pastor. Unfortunately, we are not able to confirm this time right now.';
+    const closing = isCancellation
+      ? 'We apologize for any inconvenience. You may book another meeting through the booking page when another suitable time is available.'
+      : 'You may book another meeting through the booking page when another suitable time is available.';
+    const subject = isCancellation
+      ? `LINC Meeting Cancelled - ${displayName}`
+      : `LINC Meeting Request Update - ${displayName}`;
+
+    const fullReport = [
+      title,
+      '=========================================',
+      '',
+      `Hi ${displayName},`,
+      '',
+      intro,
+      '',
+      `Date: ${meetingDate}`,
+      `Time: ${meetingTime}`,
+      `Location: ${meetingLocation}`,
+      '',
+      closing,
+      '',
+      'Thank you for your understanding.',
+    ].join('\n');
+
+    const safeFullReport = escapeHtml(fullReport);
+    const htmlBody = `
+<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto;">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">${escapeHtml(title)}</h2>
+    <div style="margin-top: 6px; font-size: 13px;">Meeting with Pastor</div>
+  </div>
+
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <p style="margin: 0 0 14px;">Hi ${safeName},</p>
+    <p style="margin: 0 0 18px;">${escapeHtml(intro)}</p>
+
+    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
+      <tr><td style="padding: 8px 0; width: 160px; color: #666666; font-weight: 700;">Date</td><td style="padding: 8px 0;">${safeMeetingDate}</td></tr>
+      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">Time</td><td style="padding: 8px 0;">${safeMeetingTime}</td></tr>
+      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">Location</td><td style="padding: 8px 0;">${safeMeetingLocation}</td></tr>
+    </table>
+
+    <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">${safeFullReport}</div>
+    <div style="margin-top: 22px; color: #777777; font-size: 12px;">This email was automatically generated regarding your meeting request with Pastor.</div>
+  </div>
+</div>
+    `.trim();
+
+    return { subject, requesterName: displayName, htmlBody, fullReport };
+  };
+
+  const sendMeetingStatusEmailViaEmailJs = async (params: {
+    kind: 'rejection' | 'cancellation';
+    recipientEmail: string;
+    name?: string;
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+    location?: string;
+    requesterLocale?: string;
+    sourceId?: string;
+  }) => {
+    if (!params.recipientEmail) {
+      throw new Error('Recipient email is missing.');
+    }
+
+    const statusEmail = buildMeetingStatusEmail(params);
+
+    const response = await emailjs.send(
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
+      {
+        to_email: params.recipientEmail,
+        subject: statusEmail.subject,
+        fullName: statusEmail.requesterName,
+        message_html: statusEmail.htmlBody,
+        reply_to: params.recipientEmail,
+      },
+      EMAILJS_PUBLIC_KEY,
+    );
+
+    await push(ref(database, 'emailJsSendLogs/'), {
+      recipientEmail: params.recipientEmail,
+      subject: statusEmail.subject,
+      fullName: statusEmail.requesterName,
+      sentUsing: 'EmailJS',
+      serviceId: EMAILJS_SERVICE_ID,
+      templateId: EMAILJS_TEMPLATE_ID,
+      source: params.kind === 'cancellation' ? 'calendarMeetingCancellation' : 'calendarMeetingRejection',
+      sourceId: params.sourceId || '',
+      meetingDate: params.date || '',
+      meetingStartTime: params.startTime || '',
+      meetingEndTime: params.endTime || '',
+      requesterLocale: params.requesterLocale === 'ar' ? 'ar' : 'en',
+      sentAt: Date.now(),
+      sentAtISO: new Date().toISOString(),
+      emailJsResponse: {
+        status: response.status,
+        text: response.text,
+      },
+    });
+
+    return response;
+  };
+
+
   const sendMeetingConfirmationViaEmailJs = async (meeting: Meeting) => {
     const recipientEmail = getMeetingRequestEmail(meeting);
     const confirmationEmail = buildMeetingConfirmationEmail(meeting);
@@ -901,11 +1095,32 @@ ${safeFullReport}
 
   const handleDelete = async (id: string) => {
     if (confirm(t('calendar.confirmDelete'))) {
+      setLoading(true);
+
       try {
+        const meetingToCancel = meetings.find(meeting => meeting.id === id);
+
+        if (meetingToCancel && getMeetingRequestEmail(meetingToCancel)) {
+          await sendMeetingStatusEmailViaEmailJs({
+            kind: 'cancellation',
+            recipientEmail: getMeetingRequestEmail(meetingToCancel),
+            name: (meetingToCancel as any).requestName || '',
+            date: meetingToCancel.date,
+            startTime: meetingToCancel.startTime,
+            endTime: meetingToCancel.endTime,
+            location: meetingToCancel.location || '',
+            requesterLocale: (meetingToCancel as any).requesterLocale || 'en',
+            sourceId: id,
+          });
+        }
+
         const { remove } = await import('firebase/database');
         await remove(ref(database, `meetings/${id}`));
       } catch (err) {
         console.error(err);
+        alert(displayLocale === 'ar' ? 'فشل إرسال بريد الإلغاء أو حذف الاجتماع.' : 'Failed to send cancellation email or delete the meeting.');
+      } finally {
+        setLoading(false);
       }
     }
   };
@@ -1166,15 +1381,35 @@ Otherwise, provide a helpful response about their calendar.`;
     setLoading(true);
 
     try {
-      if (status === 'rejected') {
-        await update(ref(database, `meetingRequests/${id}`), { status, updatedAt: Date.now() });
-        return;
-      }
-
       const req = meetingRequests.find(r => r.id === id);
 
       if (!req) {
         alert(t('booking.statusFailed'));
+        return;
+      }
+
+      if (status === 'rejected') {
+        if (req.email) {
+          await sendMeetingStatusEmailViaEmailJs({
+            kind: 'rejection',
+            recipientEmail: req.email,
+            name: req.name,
+            date: req.date,
+            startTime: req.startTime,
+            endTime: req.endTime,
+            location: '',
+            requesterLocale: (req as any).requesterLocale || 'en',
+            sourceId: id,
+          });
+        }
+
+        await update(ref(database, `meetingRequests/${id}`), {
+          status,
+          rejectionEmailSent: Boolean(req.email),
+          rejectionEmailSentUsing: req.email ? 'EmailJS' : null,
+          rejectionEmailSentAt: req.email ? Date.now() : null,
+          updatedAt: Date.now(),
+        });
         return;
       }
 
