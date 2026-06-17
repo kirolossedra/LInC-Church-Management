@@ -269,6 +269,8 @@ export default function BookingCalendar() {
         startTime: hourToTime(selectedSlot),
         endTime: hourToTime(selectedSlot + SLOT_DURATION),
         reason,
+        requesterLocale: displayLocale,
+        requesterLanguage: displayLocale === 'ar' ? 'Arabic' : 'English',
         status: 'pending',
         createdAt: Date.now(),
       };
