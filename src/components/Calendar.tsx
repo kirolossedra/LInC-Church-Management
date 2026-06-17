@@ -483,6 +483,10 @@ export default function Calendar() {
     return Boolean((meeting as any).acknowledged);
   };
 
+  const getMeetingRequesterLocale = (meeting: Meeting): 'en' | 'ar' => {
+    return (meeting as any).requesterLocale === 'ar' ? 'ar' : 'en';
+  };
+
   const buildMeetingConfirmationEmail = (meeting: Meeting): {
     subject: string;
     requesterName: string;
@@ -495,52 +499,17 @@ export default function Calendar() {
     fullReport: string;
     htmlBody: string;
   } => {
+    const requesterLocale = getMeetingRequesterLocale(meeting);
     const requesterName = (meeting as any).requestName || '';
-    const displayName = requesterName || (displayLocale === 'ar' ? 'صديقنا العزيز' : 'Friend');
+    const displayName = requesterName || (requesterLocale === 'ar' ? 'صديقنا العزيز' : 'Friend');
     const meetingTitle = getMeetingDisplayTitle(meeting) || t('calendar.meetingWithPastor');
-    const meetingType = 'اجتماع مع Pastor / Meeting with Pastor';
-    const dateTextEn = meeting.date ? format(parseISO(meeting.date), 'EEEE, MMMM d, yyyy', { locale: enUS }) : '';
-    const dateTextAr = meeting.date ? format(parseISO(meeting.date), 'EEEE, MMMM d, yyyy', { locale: ar }) : '';
-    const timeTextEn = timeRangeToLabel(meeting.startTime, meeting.endTime, 'en');
-    const timeTextAr = timeRangeToLabel(meeting.startTime, meeting.endTime, 'ar');
+    const meetingType = requesterLocale === 'ar' ? 'اجتماع مع Pastor' : 'Meeting with Pastor';
     const meetingLink = meeting.meetLink || '';
-    const locationTextEn = meeting.location || 'Online meeting';
-    const locationTextAr = meeting.location || 'اجتماع عبر الإنترنت';
-    const meetingDate = `${dateTextAr} / ${dateTextEn}`;
-    const meetingTime = `${timeTextAr} / ${timeTextEn}`;
-    const meetingLocation = `${locationTextAr} / ${locationTextEn}`;
-
-    const fullReport = [
-      'تأكيد موعد الاجتماع',
-      '=========================================',
-      '',
-      `مرحباً ${displayName}،`,
-      '',
-      'نود تأكيد موعد اجتماعك مع Pastor بالتفاصيل التالية:',
-      `نوع الاجتماع: ${meetingType}`,
-      `التاريخ: ${dateTextAr}`,
-      `الوقت: ${timeTextAr}`,
-      `المكان: ${locationTextAr}`,
-      meetingLink ? `رابط الانضمام: ${meetingLink}` : 'رابط الانضمام: سيتم إرساله لاحقاً.',
-      '',
-      'شكراً لك، ونتطلع إلى لقائك.',
-      '',
-      '=========================================',
-      '',
-      'Meeting Confirmation',
-      '=========================================',
-      '',
-      `Hi ${displayName},`,
-      '',
-      'We would like to confirm your meeting with Pastor using the details below:',
-      `Meeting Type: ${meetingType}`,
-      `Date: ${dateTextEn}`,
-      `Time: ${timeTextEn}`,
-      `Location: ${locationTextEn}`,
-      meetingLink ? `Joining Link: ${meetingLink}` : 'Joining Link: The joining link will be sent later.',
-      '',
-      'Thank you, and we look forward to meeting with you.',
-    ].join('\n');
+    const meetingDate = meeting.date
+      ? format(parseISO(meeting.date), 'EEEE, MMMM d, yyyy', { locale: requesterLocale === 'ar' ? ar : enUS })
+      : '';
+    const meetingTime = timeRangeToLabel(meeting.startTime, meeting.endTime, requesterLocale);
+    const meetingLocation = meeting.location || (requesterLocale === 'ar' ? 'اجتماع عبر الإنترنت' : 'Online meeting');
 
     const safeName = escapeHtml(displayName);
     const safeMeetingType = escapeHtml(meetingType);
@@ -548,53 +517,69 @@ export default function Calendar() {
     const safeMeetingTime = escapeHtml(meetingTime);
     const safeMeetingLocation = escapeHtml(meetingLocation);
     const safeMeetLink = escapeHtml(meetingLink);
-    const safeFullReport = escapeHtml(fullReport);
-    const meetingLinkHtml = meetingLink
-      ? `<a href="${safeMeetLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetLink}</a>`
-      : '<span style="color: #666666; font-weight: 700;">سيتم إرساله لاحقاً / Will be sent later</span>';
 
-    const htmlBody = `
-<div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto;">
+    if (requesterLocale === 'ar') {
+      const fullReport = [
+        'تأكيد موعد الاجتماع',
+        '=========================================',
+        '',
+        `مرحباً ${displayName}،`,
+        '',
+        'نود تأكيد موعد اجتماعك مع Pastor بالتفاصيل التالية:',
+        `نوع الاجتماع: ${meetingType}`,
+        `التاريخ: ${meetingDate}`,
+        `الوقت: ${meetingTime}`,
+        `المكان: ${meetingLocation}`,
+        meetingLink ? `رابط الانضمام: ${meetingLink}` : 'رابط الانضمام: سيتم إرساله لاحقاً.',
+        '',
+        'شكراً لك، ونتطلع إلى لقائك.',
+      ].join('\n');
+
+      const safeFullReport = escapeHtml(fullReport);
+      const meetingLinkHtml = meetingLink
+        ? `<a href="${safeMeetLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetLink}</a>`
+        : '<span style="color: #666666; font-weight: 700;">سيتم إرساله لاحقاً</span>';
+
+      const htmlBody = `
+<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto; direction: rtl; text-align: right;">
   <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">تأكيد موعد الاجتماع / Meeting Confirmation</h2>
-    <div style="margin-top: 6px; font-size: 13px;">اجتماع مع Pastor / Meeting with Pastor</div>
+    <h2 style="margin: 0; font-size: 20px;">تأكيد موعد الاجتماع</h2>
+    <div style="margin-top: 6px; font-size: 13px;">اجتماع مع Pastor</div>
   </div>
 
   <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
     <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
       <tr>
-        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">الاسم / Name</td>
+        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">الاسم</td>
         <td style="padding: 8px 0;">${safeName}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">نوع الاجتماع / Meeting Type</td>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">نوع الاجتماع</td>
         <td style="padding: 8px 0;">${safeMeetingType}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">التاريخ / Date</td>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">التاريخ</td>
         <td style="padding: 8px 0;">${safeMeetingDate}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">الوقت / Time</td>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">الوقت</td>
         <td style="padding: 8px 0;">${safeMeetingTime}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">المكان / Location</td>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">المكان</td>
         <td style="padding: 8px 0;">${safeMeetingLocation}</td>
       </tr>
     </table>
 
-    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; border-left: 5px solid #8b1e1e; border-radius: 10px;">
-      <h3 style="margin: 0 0 10px; color: #5e1010; font-size: 17px;">رابط الانضمام / Joining Link</h3>
-
+    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; border-right: 5px solid #8b1e1e; border-radius: 10px;">
+      <h3 style="margin: 0 0 10px; color: #5e1010; font-size: 17px;">رابط الانضمام</h3>
       <div style="margin-bottom: 8px;">
         ${meetingLinkHtml}
       </div>
     </div>
 
     <div style="margin-top: 22px;">
-      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">تأكيد موعد الاجتماع / Meeting Confirmation</h3>
-
+      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">تأكيد موعد الاجتماع</h3>
       <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
 ${safeFullReport}
       </div>
@@ -602,7 +587,92 @@ ${safeFullReport}
 
     <div style="margin-top: 22px; color: #777777; font-size: 12px;">
       تم إرسال هذا البريد تلقائياً لتأكيد موعد اجتماعك مع Pastor.
-      <br />
+    </div>
+  </div>
+</div>
+      `.trim();
+
+      return {
+        subject: `تأكيد موعد اجتماع LINC - ${displayName}`,
+        requesterName: displayName,
+        meetingTitle,
+        meetingType,
+        meetingDate,
+        meetingTime,
+        meetingLocation,
+        meetingLink,
+        fullReport,
+        htmlBody,
+      };
+    }
+
+    const fullReport = [
+      'Meeting Confirmation',
+      '=========================================',
+      '',
+      `Hi ${displayName},`,
+      '',
+      'We would like to confirm your meeting with Pastor using the details below:',
+      `Meeting Type: ${meetingType}`,
+      `Date: ${meetingDate}`,
+      `Time: ${meetingTime}`,
+      `Location: ${meetingLocation}`,
+      meetingLink ? `Joining Link: ${meetingLink}` : 'Joining Link: The joining link will be sent later.',
+      '',
+      'Thank you, and we look forward to meeting with you.',
+    ].join('\n');
+
+    const safeFullReport = escapeHtml(fullReport);
+    const meetingLinkHtml = meetingLink
+      ? `<a href="${safeMeetLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetLink}</a>`
+      : '<span style="color: #666666; font-weight: 700;">The joining link will be sent later.</span>';
+
+    const htmlBody = `
+<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto;">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">Meeting Confirmation</h2>
+    <div style="margin-top: 6px; font-size: 13px;">Meeting with Pastor</div>
+  </div>
+
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
+      <tr>
+        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">Name</td>
+        <td style="padding: 8px 0;">${safeName}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Meeting Type</td>
+        <td style="padding: 8px 0;">${safeMeetingType}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Date</td>
+        <td style="padding: 8px 0;">${safeMeetingDate}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Time</td>
+        <td style="padding: 8px 0;">${safeMeetingTime}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Location</td>
+        <td style="padding: 8px 0;">${safeMeetingLocation}</td>
+      </tr>
+    </table>
+
+    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; border-left: 5px solid #8b1e1e; border-radius: 10px;">
+      <h3 style="margin: 0 0 10px; color: #5e1010; font-size: 17px;">Joining Link</h3>
+      <div style="margin-bottom: 8px;">
+        ${meetingLinkHtml}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px;">
+      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">Meeting Confirmation</h3>
+      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
+${safeFullReport}
+      </div>
+    </div>
+
+    <div style="margin-top: 22px; color: #777777; font-size: 12px;">
       This email was automatically generated to confirm your meeting with Pastor.
     </div>
   </div>
@@ -744,7 +814,7 @@ ${safeFullReport}
       };
 
       if (editingMeeting) {
-        const requestFieldsToPreserve = ['requestName', 'requestEmail', 'requestReason', 'sourceRequestId'];
+        const requestFieldsToPreserve = ['requestName', 'requestEmail', 'requestReason', 'sourceRequestId', 'requesterLocale', 'requesterLanguage'];
 
         requestFieldsToPreserve.forEach(field => {
           const value = (editingMeeting as any)[field];
@@ -1132,6 +1202,8 @@ Otherwise, provide a helpful response about their calendar.`;
         requestName: req.name,
         requestEmail: req.email,
         requestReason: req.reason || '',
+        requesterLocale: (req as any).requesterLocale === 'ar' ? 'ar' : 'en',
+        requesterLanguage: (req as any).requesterLanguage || ((req as any).requesterLocale === 'ar' ? 'Arabic' : 'English'),
         sourceRequestId: id,
         acknowledged: true,
         acknowledgedAt: confirmationTimestamp,
