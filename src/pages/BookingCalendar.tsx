@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '../i18n';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, startOfDay, isBefore } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Ban, Bot, X } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Bot, X } from 'lucide-react';
 import AIBookingAssistant from '../components/AIBookingAssistant';
 import { sendEmailViaEmailJS } from '../services/gmail';
 
@@ -257,14 +257,6 @@ export default function BookingCalendar() {
     setShowBookingFormPopup(true);
   };
 
-  const closeSelectedDay = () => {
-    setSelectedDay(null);
-    setSelectedSlot(null);
-    setSuccess(false);
-    setShowDayPopup(false);
-    setShowBookingFormPopup(false);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDay || selectedSlot === null) return;
@@ -313,8 +305,6 @@ export default function BookingCalendar() {
       setLoading(false);
     }
   };
-
-  const daySlots = selectedDay ? scheduleBlocks.filter(b => b.date === format(selectedDay, 'yyyy-MM-dd')) : [];
 
   const numberOfSlots = Math.floor((BUSINESS_END - BUSINESS_START) / SLOT_DURATION);
 
@@ -678,122 +668,6 @@ export default function BookingCalendar() {
             })}
           </div>
         </div>
-
-        <AnimatePresence>
-          {selectedDay && !isPastDay && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold flex items-center gap-2 text-[#8b1e1e]">
-                  <Clock size={18} />
-                  {format(selectedDay, 'EEEE, MMMM d, yyyy', { locale: dateLocale })}
-                </h3>
-                <button onClick={closeSelectedDay} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X size={18} /></button>
-              </div>
-
-              {daySlots.length > 0 && (
-                <div className="mb-6 bg-stone-50 rounded-xl p-4 border border-gray-100">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Ban size={14} className="text-red-500" />
-                    <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t('booking.scheduleBlocks')}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {daySlots.map((slot, i) => (
-                      <div key={i} className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold ${
-                        slot.type === 'available'
-                          ? 'bg-green-100 text-green-700 border border-green-200'
-                          : slot.type === 'unavailable'
-                          ? 'bg-red-100 text-red-700 border border-red-200'
-                          : 'bg-amber-100 text-amber-700 border border-amber-200'
-                      }`}>
-                        <div className="flex items-center gap-2">
-                          {slot.type === 'available' ? <CheckCircle size={12} /> : slot.type === 'unavailable' ? <Ban size={12} /> : <CalendarIcon size={12} />}
-                          <span>{slot.title}</span>
-                        </div>
-                        <span className="opacity-75">{hourToLabel(slot.startHour, displayLocale)} - {hourToLabel(slot.endHour, displayLocale)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {daySlots.filter(slot => slot.type === 'available').length === 0 && (
-                <div className="mb-6 bg-red-50 rounded-xl p-4 border border-red-100 text-center">
-                  <AlertCircle size={22} className="text-red-500 mx-auto mb-2" />
-                  <p className="text-red-600 font-bold text-sm">{t('booking.noAvailabilityOpenedForDay')}</p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
-                {slotHours.map(hour => {
-                  const status = slotStatus(selectedDay, hour);
-                  const isSel = selectedSlot === hour;
-                  return (
-                    <button
-                      key={hour}
-                      onClick={() => handleSlotClick(hour)}
-                      className={`relative p-3 rounded-xl border text-sm font-bold transition-all ${
-                        status === 'booked'
-                          ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                          : status === 'infeasible'
-                          ? 'bg-red-50 border-red-200 text-red-300 cursor-not-allowed'
-                          : isSel
-                          ? 'bg-[#8b1e1e] border-[#8b1e1e] text-white shadow-md scale-105'
-                          : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100 hover:scale-102 cursor-pointer'
-                      }`}
-                    >
-                      {hourToLabel(hour, displayLocale)}
-                      {status === 'booked' && <div className="text-[9px] mt-1">{t('booking.booked')}</div>}
-                      {status === 'infeasible' && <div className="text-[9px] mt-1">—</div>}
-                      {status === 'available' && <div className="text-[9px] mt-1 text-green-500">{t('booking.slotAvailable')}</div>}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {selectedSlot !== null && !success && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-stone-50 rounded-2xl p-5 border border-gray-100">
-                  <h4 className="font-bold text-sm text-gray-500 mb-3 uppercase tracking-widest">
-                    {t('booking.bookFor')} {hourToLabel(selectedSlot, displayLocale)}
-                  </h4>
-                  <form onSubmit={handleSubmit} className="space-y-3">
-                    <div>
-                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1"><User size={12} /> {t('booking.name')}</label>
-                      <input required type="text" className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm" value={name} onChange={e => setName(e.target.value)} placeholder={t('booking.namePlaceholder')} />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1"><Mail size={12} /> {t('booking.email')}</label>
-                      <input required type="email" className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('booking.emailPlaceholder')} />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1"><MessageSquare size={12} /> {t('booking.reason')}</label>
-                      <textarea required rows={2} className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none" value={reason} onChange={e => setReason(e.target.value)} placeholder={t('booking.reasonPlaceholder')} />
-                    </div>
-                    <button disabled={loading} type="submit" className="w-full py-3 bg-[#8B1E1E] text-white rounded-xl font-bold shadow hover:bg-[#641414] transition-all flex items-center justify-center gap-2 text-sm">
-                      {loading ? <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div> : <><CheckCircle size={14} /> {t('booking.submit')}</>}
-                    </button>
-                  </form>
-                </motion.div>
-              )}
-
-              {success && (
-                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center py-8">
-                  <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle size={32} className="text-green-600" />
-                  </div>
-                  <h4 className="text-xl font-bold text-[#8b1e1e] mb-2">{t('booking.successTitle')}</h4>
-                  <p className="text-gray-500 text-sm">{t('booking.successDesc')}</p>
-                </motion.div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {selectedDay && isPastDay && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-50 rounded-2xl p-5 border border-red-100 text-center">
-            <AlertCircle size={24} className="text-red-500 mx-auto mb-2" />
-            <p className="text-red-600 font-bold">{t('booking.pastDay')}</p>
-          </motion.div>
-        )}
 
         <AIBookingAssistant isOpen={showAi} onClose={() => setShowAi(false)} />
       </div>
