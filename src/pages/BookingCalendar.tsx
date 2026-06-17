@@ -13,6 +13,8 @@ const BUSINESS_START = 9;
 const BUSINESS_END = 20; // don't change this
 const SLOT_DURATION = 0.5;
 
+const APP_FONT = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
 function timeToHour(t: string): number {
   const [hours, minutes] = t.split(':').map(Number);
   return hours + minutes / 60;
@@ -324,10 +326,10 @@ export default function BookingCalendar() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/45 backdrop-blur-md px-4 py-6"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#2a0f0f]/55 backdrop-blur-md px-4 py-6"
           onClick={() => setShowDayPopup(false)}
           dir={dir}
-          style={{ fontFamily: 'Arial, sans-serif' }}
+          style={{ fontFamily: APP_FONT }}
         >
           <motion.div
             key="booking-day-popup-panel"
@@ -335,35 +337,35 @@ export default function BookingCalendar() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 18 }}
             transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-3xl bg-white shadow-2xl border border-white/70"
+            className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-[2rem] bg-[#fffdfb] shadow-[0_28px_90px_rgba(70,16,16,0.32)] border border-[#ead7d7]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative bg-[#8b1e1e] px-6 py-5 text-white">
+            <div className="relative bg-gradient-to-br from-[#8b1e1e] via-[#741818] to-[#4f1010] px-6 py-5 text-white">
               <button
                 type="button"
                 onClick={() => setShowDayPopup(false)}
-                className="absolute top-4 end-4 rounded-full bg-white/15 p-2 transition-colors hover:bg-white/25"
+                className="absolute top-4 end-4 rounded-full bg-[#fffdfb]/15 p-2 text-white transition-colors hover:bg-[#fffdfb]/25 ring-1 ring-white/20"
               >
                 <X size={18} />
               </button>
 
               <div className="flex items-center gap-3 pe-10">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#fffdfb]/15 ring-1 ring-white/20">
                   <Clock size={24} />
                 </div>
 
                 <div>
-                  <h3 className="text-xl font-bold">
+                  <h3 className="text-xl font-extrabold tracking-tight">
                     {t('booking.legendAvailable')} {t('booking.timeLabel')}
                   </h3>
-                  <p className="mt-1 text-sm text-white/80">
+                  <p className="mt-1 text-sm font-semibold text-white/85">
                     {selectedDayTitle}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="max-h-[62vh] overflow-y-auto p-6">
+            <div className="max-h-[62vh] overflow-y-auto bg-[#fffdfb] p-6">
               {availableSlotHours.length > 0 ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {availableSlotHours.map(hour => {
@@ -374,10 +376,10 @@ export default function BookingCalendar() {
                         type="button"
                         key={hour}
                         onClick={() => handlePopupSlotClick(hour)}
-                        className={`rounded-2xl border p-4 text-sm font-bold transition-all ${
+                        className={`rounded-2xl border p-4 text-sm font-extrabold transition-all ${
                           isSel
-                            ? 'scale-[1.02] border-[#8b1e1e] bg-[#8b1e1e] text-white shadow-lg'
-                            : 'border-green-200 bg-green-50 text-green-700 hover:-translate-y-0.5 hover:border-green-300 hover:bg-green-100 hover:shadow-md'
+                            ? 'scale-[1.02] border-[#7f1d1d] bg-gradient-to-br from-[#8b1e1e] to-[#5f1414] text-white shadow-lg'
+                            : 'border-[#bde9c8] bg-[#f2fbf4] text-[#206a38] hover:-translate-y-0.5 hover:border-[#8b1e1e]/35 hover:bg-[#fffdfb] hover:shadow-md'
                         }`}
                       >
                         <div className="flex items-center justify-center gap-2">
@@ -385,7 +387,7 @@ export default function BookingCalendar() {
                           <span>{hourToLabel(hour, displayLocale)}</span>
                         </div>
 
-                        <div className={`mt-1 text-[10px] ${isSel ? 'text-white/80' : 'text-green-500'}`}>
+                        <div className={`mt-1 text-[10px] ${isSel ? 'text-white/80' : 'text-[#2f8f4e]'}`}>
                           {t('booking.slotAvailable')}
                         </div>
                       </button>
@@ -394,15 +396,15 @@ export default function BookingCalendar() {
                 </div>
               ) : (
                 <div className="py-10 text-center">
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
-                    <AlertCircle size={30} className="text-red-500" />
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#fff1f1]">
+                    <AlertCircle size={30} className="text-[#b91c1c]" />
                   </div>
 
-                  <p className="font-bold text-[#8b1e1e]">
+                  <p className="font-extrabold text-[#7f1d1d]">
                     {t('booking.noAvailabilityOpenedForDay')}
                   </p>
 
-                  <p className="mt-2 text-sm text-gray-500">
+                  <p className="mt-2 text-sm font-semibold text-[#6b5f5f]">
                     {t('booking.legendInfeasible')}
                   </p>
                 </div>
@@ -422,12 +424,12 @@ export default function BookingCalendar() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/45 backdrop-blur-md px-4 py-6"
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-[#2a0f0f]/55 backdrop-blur-md px-4 py-6"
           onClick={() => {
             if (!loading) setShowBookingFormPopup(false);
           }}
           dir={dir}
-          style={{ fontFamily: 'Arial, sans-serif' }}
+          style={{ fontFamily: APP_FONT }}
         >
           <motion.div
             key="booking-form-popup-panel"
@@ -435,29 +437,29 @@ export default function BookingCalendar() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 18 }}
             transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="w-full max-w-xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-white/70"
+            className="w-full max-w-xl overflow-hidden rounded-[2rem] bg-[#fffdfb] shadow-[0_28px_90px_rgba(70,16,16,0.32)] border border-[#ead7d7]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative bg-[#8b1e1e] px-6 py-5 text-white">
+            <div className="relative bg-gradient-to-br from-[#8b1e1e] via-[#741818] to-[#4f1010] px-6 py-5 text-white">
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => setShowBookingFormPopup(false)}
-                className="absolute top-4 end-4 rounded-full bg-white/15 p-2 transition-colors hover:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="absolute top-4 end-4 rounded-full bg-[#fffdfb]/15 p-2 text-white transition-colors hover:bg-[#fffdfb]/25 ring-1 ring-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <X size={18} />
               </button>
 
               <div className="flex items-center gap-3 pe-10">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#fffdfb]/15 ring-1 ring-white/20">
                   <CheckCircle size={24} />
                 </div>
 
                 <div>
-                  <h3 className="text-xl font-bold">
+                  <h3 className="text-xl font-extrabold tracking-tight">
                     {t('booking.bookFor')} {hourToLabel(selectedSlot, displayLocale)}
                   </h3>
-                  <p className="mt-1 text-sm text-white/80">
+                  <p className="mt-1 text-sm font-semibold text-white/85">
                     {selectedDayTitle}
                   </p>
                 </div>
@@ -471,10 +473,10 @@ export default function BookingCalendar() {
                   animate={{ scale: 1, opacity: 1 }}
                   className="text-center py-8"
                 >
-                  <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle size={32} className="text-green-600" />
+                  <div className="w-16 h-16 bg-[#f0fbf2] rounded-full flex items-center justify-center mx-auto mb-4 ring-1 ring-[#bde9c8]">
+                    <CheckCircle size={32} className="text-[#206a38]" />
                   </div>
-                  <h4 className="text-xl font-bold text-[#8b1e1e] mb-2">{t('booking.successTitle')}</h4>
+                  <h4 className="text-xl font-extrabold text-[#7f1d1d] mb-2">{t('booking.successTitle')}</h4>
                   <p className="text-gray-500 text-sm">{t('booking.successDesc')}</p>
                   <button
                     type="button"
@@ -482,7 +484,7 @@ export default function BookingCalendar() {
                       setShowBookingFormPopup(false);
                       setSuccess(false);
                     }}
-                    className="mt-6 px-5 py-2.5 rounded-xl bg-[#8b1e1e] text-white font-bold text-sm hover:bg-[#641414] transition-colors"
+                    className="mt-6 px-5 py-2.5 rounded-xl bg-gradient-to-br from-[#8b1e1e] to-[#5f1414] text-white font-extrabold text-sm hover:from-[#7f1d1d] hover:to-[#4f1010] transition-colors shadow-md"
                   >
                     {t('booking.close')}
                   </button>
@@ -490,13 +492,13 @@ export default function BookingCalendar() {
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-3">
                   <div>
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1">
+                    <label className="text-xs font-extrabold text-[#8c6f6f] uppercase tracking-[0.18em] flex items-center gap-1 mb-1">
                       <User size={12} /> {t('booking.name')}
                     </label>
                     <input
                       required
                       type="text"
-                      className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+                      className="w-full px-4 py-2.5 bg-white border border-[#ead7d7] rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 focus:border-[#8b1e1e] outline-none text-sm font-semibold text-[#231a1a] placeholder:text-[#b8a0a0]"
                       value={name}
                       onChange={e => setName(e.target.value)}
                       placeholder={t('booking.namePlaceholder')}
@@ -504,13 +506,13 @@ export default function BookingCalendar() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1">
+                    <label className="text-xs font-extrabold text-[#8c6f6f] uppercase tracking-[0.18em] flex items-center gap-1 mb-1">
                       <Mail size={12} /> {t('booking.email')}
                     </label>
                     <input
                       required
                       type="email"
-                      className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm"
+                      className="w-full px-4 py-2.5 bg-white border border-[#ead7d7] rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 focus:border-[#8b1e1e] outline-none text-sm font-semibold text-[#231a1a] placeholder:text-[#b8a0a0]"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
                       placeholder={t('booking.emailPlaceholder')}
@@ -518,13 +520,13 @@ export default function BookingCalendar() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1 mb-1">
+                    <label className="text-xs font-extrabold text-[#8c6f6f] uppercase tracking-[0.18em] flex items-center gap-1 mb-1">
                       <MessageSquare size={12} /> {t('booking.reason')}
                     </label>
                     <textarea
                       required
                       rows={3}
-                      className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none text-sm resize-none"
+                      className="w-full px-4 py-2.5 bg-white border border-[#ead7d7] rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 focus:border-[#8b1e1e] outline-none text-sm font-semibold text-[#231a1a] placeholder:text-[#b8a0a0] resize-none"
                       value={reason}
                       onChange={e => setReason(e.target.value)}
                       placeholder={t('booking.reasonPlaceholder')}
@@ -539,7 +541,7 @@ export default function BookingCalendar() {
                         setShowBookingFormPopup(false);
                         setShowDayPopup(true);
                       }}
-                      className="py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="py-3 bg-[#f4eeee] text-[#5f3b3b] rounded-xl font-extrabold hover:bg-[#ead7d7] transition-all text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {t('booking.close')}
                     </button>
@@ -547,7 +549,7 @@ export default function BookingCalendar() {
                     <button
                       disabled={loading}
                       type="submit"
-                      className="py-3 bg-[#8B1E1E] text-white rounded-xl font-bold shadow hover:bg-[#641414] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="py-3 bg-gradient-to-br from-[#8B1E1E] to-[#5f1414] text-white rounded-xl font-extrabold shadow-md hover:from-[#7f1d1d] hover:to-[#4f1010] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {loading ? (
                         <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
@@ -569,43 +571,43 @@ export default function BookingCalendar() {
 
   return (
     <>
-      <div className="space-y-8 max-w-5xl mx-auto px-4 py-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
+      <div className="min-h-screen space-y-8 max-w-5xl mx-auto px-4 py-8 text-[#231a1a] font-semibold" dir={dir} style={{ fontFamily: APP_FONT }}>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#8b1e1e] flex items-center gap-2">
+            <h1 className="text-2xl font-extrabold text-[#7f1d1d] flex items-center gap-2">
               <CalendarIcon size={22} />
               {t('booking.pageTitle')}
             </h1>
-            <p className="text-gray-500 text-sm mt-1">{t('booking.pageDesc')}</p>
+            <p className="text-[#6b5f5f] text-sm font-semibold mt-1">{t('booking.pageDesc')}</p>
           </div>
           <button
             onClick={() => setShowAi(true)}
-            className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-purple-200"
+            className="flex items-center gap-2 bg-[#fff1f1] hover:bg-[#ffe7e7] text-[#7f1d1d] px-5 py-3 rounded-xl font-extrabold transition-colors text-sm border border-[#e8c4c4] shadow-sm"
           >
             <Bot size={16} />
             {t('booking.aiAssistant')}
           </button>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-4 text-xs font-bold">
-          <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-red-100 border border-red-200"></div>{t('booking.legendInfeasible')}</div>
-          <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-green-50 border border-green-200"></div>{t('booking.legendAvailable')}</div>
-          <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-gray-200 border border-gray-300"></div>{t('booking.legendBooked')}</div>
+        <div className="flex flex-wrap justify-center gap-3 text-xs font-extrabold text-[#4f3b3b]">
+          <div className="flex items-center gap-2 rounded-full bg-[#fffdfb]/80 px-4 py-2 border border-[#ead7d7] shadow-sm"><div className="w-4 h-4 rounded bg-[#fff1f1] border border-[#efcccc]"></div>{t('booking.legendInfeasible')}</div>
+          <div className="flex items-center gap-2 rounded-full bg-[#fffdfb]/80 px-4 py-2 border border-[#ead7d7] shadow-sm"><div className="w-4 h-4 rounded bg-[#f2fbf4] border border-[#bde9c8]"></div>{t('booking.legendAvailable')}</div>
+          <div className="flex items-center gap-2 rounded-full bg-[#fffdfb]/80 px-4 py-2 border border-[#ead7d7] shadow-sm"><div className="w-4 h-4 rounded bg-[#eee6e6] border border-[#d8caca]"></div>{t('booking.legendBooked')}</div>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-[#fffdfb] rounded-[2rem] shadow-[0_20px_60px_rgba(91,25,25,0.08)] border border-[#ead7d7] p-6">
           <div className="flex items-center justify-between mb-6">
-            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft size={20} /></button>
+            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 rounded-full text-[#7f1d1d] hover:bg-[#fff1f1] transition-colors"><ChevronLeft size={20} /></button>
             <div className="text-center">
-              <h2 className="text-xl font-bold text-[#1A1A1A]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
-              <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">{t('calendar.schedule')}</p>
+              <h2 className="text-2xl font-extrabold tracking-tight text-[#231a1a]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
+              <p className="text-xs text-[#8c6f6f] uppercase tracking-[0.22em] mt-1 font-extrabold">{t('calendar.schedule')}</p>
             </div>
-            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronRight size={20} /></button>
+            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 rounded-full text-[#7f1d1d] hover:bg-[#fff1f1] transition-colors"><ChevronRight size={20} /></button>
           </div>
 
           <div className="grid grid-cols-7 gap-2 mb-2">
             {[t('calendar.sun'), t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat')].map(d => (
-              <div key={d} className="text-center text-[10px] uppercase tracking-widest text-gray-400 font-bold">{d}</div>
+              <div key={d} className="text-center text-[11px] uppercase tracking-[0.2em] text-[#8c6f6f] font-extrabold">{d}</div>
             ))}
           </div>
 
@@ -627,39 +629,39 @@ export default function BookingCalendar() {
                   key={day.toISOString()}
                   onClick={() => handleDayClick(day)}
                   disabled={isPast}
-                  className={`min-h-[90px] rounded-xl border transition-all text-center p-2 flex flex-col ${
+                  className={`min-h-[94px] rounded-2xl border transition-all text-center p-2 flex flex-col shadow-sm ${
                     isPast
-                      ? 'bg-red-50 border-red-100 text-gray-300 cursor-not-allowed opacity-50'
+                      ? 'bg-[#fff1f1] border-red-100 text-gray-300 cursor-not-allowed opacity-50'
                       : isSelected
-                      ? 'bg-[#8b1e1e] border-[#8b1e1e] text-white shadow-lg'
+                      ? 'bg-gradient-to-br from-[#8b1e1e] via-[#7f1d1d] to-[#551111] border-[#7f1d1d] text-white shadow-[0_18px_35px_rgba(127,29,29,0.28)]'
                       : today
-                      ? 'bg-green-50 border-green-300 text-[#8b1e1e] font-bold'
+                      ? 'bg-[#fff7f3] border-[#8b1e1e] text-[#7f1d1d] font-extrabold shadow-sm ring-2 ring-[#8b1e1e]/10'
                       : hasAvailability
-                      ? 'bg-green-50 border-green-200 hover:border-[#8b1e1e]/30 hover:bg-stone-50'
-                      : 'bg-red-50 border-red-100 text-gray-400 hover:border-[#8b1e1e]/30'
+                      ? 'bg-[#f2fbf4] border-[#bde9c8] text-[#205c34] hover:border-[#8b1e1e]/40 hover:bg-[#fffdfb] hover:shadow-md'
+                      : 'bg-[#fff1f1] border-red-100 text-[#8c6f6f] hover:border-[#8b1e1e]/30'
                   }`}
                 >
-                  <div className={`text-sm font-bold ${isSelected ? 'text-white' : ''}`}>{format(day, 'd', { locale: dateLocale })}</div>
-                  {isPast && <div className="text-[8px] text-gray-300 mt-1">✕</div>}
+                  <div className={`text-base font-extrabold ${isSelected ? 'text-white' : ''}`}>{format(day, 'd', { locale: dateLocale })}</div>
+                  {isPast && <div className="text-[10px] text-[#b8a0a0] mt-1 font-extrabold">✕</div>}
                   {!isPast && !hasAvailability && (
-                    <div className="text-[8px] text-red-400 mt-1">{t('booking.unavailable')}</div>
+                    <div className="text-[10px] text-[#b91c1c] mt-1 font-extrabold">{t('booking.unavailable')}</div>
                   )}
                   {!isPast && hasAvailability && (
-                    <div className={`text-[8px] mt-1 ${isSelected ? 'text-white/80' : 'text-green-600'}`}>{t('booking.slotAvailable')}</div>
+                    <div className={`text-[10px] mt-1 font-extrabold ${isSelected ? 'text-white/85' : 'text-[#206a38]'}`}>{t('booking.slotAvailable')}</div>
                   )}
                   {!isPast && visibleDayBlocks.length > 0 && (
-                    <div className="flex flex-col gap-0.5 mt-1 flex-1 justify-end">
+                    <div className="flex flex-col gap-1 mt-1 flex-1 justify-end">
                       {visibleDayBlocks.slice(0, 2).map((b, i) => (
-                        <div key={i} className={`text-[8px] px-1 py-0.5 rounded truncate ${
+                        <div key={i} className={`text-[9px] px-1.5 py-0.5 rounded-md truncate font-extrabold ${
                           b.type === 'unavailable'
-                            ? (isSelected ? 'bg-white/20 text-white/80' : 'bg-red-100 text-red-600')
-                            : (isSelected ? 'bg-white/20 text-white/80' : 'bg-amber-100 text-amber-600')
+                            ? (isSelected ? 'bg-[#fffdfb]/20 text-white/80' : 'bg-[#fff1f1] text-[#b91c1c]')
+                            : (isSelected ? 'bg-[#fffdfb]/20 text-white/80' : 'bg-[#fff7e6] text-[#a15c00]')
                         }`}>
                           {b.title}
                         </div>
                       ))}
                       {visibleDayBlocks.length > 2 && (
-                        <div className={`text-[8px] ${isSelected ? 'text-white/60' : 'text-gray-400'}`}>+{visibleDayBlocks.length - 2} {t('booking.more')}</div>
+                        <div className={`text-[8px] ${isSelected ? 'text-white/60' : 'text-[#8c6f6f]'}`}>+{visibleDayBlocks.length - 2} {t('booking.more')}</div>
                       )}
                     </div>
                   )}
