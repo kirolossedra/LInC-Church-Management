@@ -820,14 +820,16 @@ function buildIdentifierSharingEmailHtml(params: {
 
   const labels = isArabic
     ? {
+        title: 'برنامج ارشاد وتلمذة الخدام',
         greeting: name ? `مرحباً ${name}،` : 'مرحباً،',
-        thankYou: 'شكراً لتعبئة نموذج برنامج LinC للإرشاد الروحي.',
-        intro: 'هذا هو معرّفك الخاص في برنامج LinC Mentorship:',
-        identifierLabel: 'معرّفك',
-        saveNote: 'يرجى حفظ هذا المعرّف في مكان آمن، لأنه سيتم استخدامه في جميع أنشطة برنامج الإرشاد الروحي القادمة.',
-        footer: 'تم إرسال هذه الرسالة تلقائياً من نظام LinC Mentorship.',
+        thankYou: 'شكراً لتعبئة النموذج.',
+        intro: 'هذا هو رمز العبور الشخصي الخاص في برنامج ارشاد وتلمذة الخدام',
+        identifierLabel: 'رمز العبور الشخصي',
+        saveNote: 'يرجى حفظ رمز العبور الشخصي في مكان آمن، لأنه سيتم استخدامه في جميع الأنشطة اللاحقة في برنامج ارشاد وتلمذة الخدام.',
+        footer: 'تم إرسال هذه الرسالة تلقائياً من نظام برنامج ارشاد وتلمذة الخدام.',
       }
     : {
+        title: 'LinC Mentorship Identifier',
         greeting: name ? `Hello ${name},` : 'Hello,',
         thankYou: 'Thank you for filling out the LinC Spiritual Mentorship form.',
         intro: 'This is your LinC Mentorship identifier:',
@@ -843,7 +845,7 @@ function buildIdentifierSharingEmailHtml(params: {
   return `
 <div dir="${direction}" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; color: #242424; line-height: 1.7; text-align: ${align};">
   <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">LinC Mentorship Identifier</h2>
+    <h2 style="margin: 0; font-size: 20px;">${escapeHtml(labels.title)}</h2>
   </div>
   <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
     <p style="margin: 0 0 12px; font-weight: 700;">${escapeHtml(labels.greeting)}</p>
