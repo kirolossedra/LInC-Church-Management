@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import emailjs from '@emailjs/browser';
 import { database } from '../firebase';
-import { ref, push } from 'firebase/database';
+import { ref, push, get, update } from 'firebase/database';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
@@ -13,6 +13,7 @@ import spiritualGiftsDiscoveryYaml from './spiritual-gifts-discovery.yml?raw';
 const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
+const USER_LINKAGE_PASSCODE = '9910';
 
 type Lang = 'en' | 'ar';
 type InterfaceLang = 'English' | 'Arabic';
@@ -122,9 +123,116 @@ interface RuntimeResult {
   summary: string;
 }
 
+interface LinkageRow {
+  key: string;
+  formId: string;
+  path: string;
+  fullName: string;
+  email: string;
+  userIdentifier: string;
+  createdAt: number;
+  createdAtEasternTime: string;
+  raw: Record<string, unknown>;
+}
+
 const FORMS = [fiveServicePathwaysYaml, spiritualGiftsDiscoveryYaml]
   .map(raw => YAML.parse(raw) as FormDef)
   .filter(form => form.status !== 'disabled');
+
+function firebaseResponsePath(form: FormDef): string {
+  return form.firebase?.path || 'form';
+}
+
+function linkageDraftKey(formId: string, responseKey: string): string {
+  return `${formId}-${responseKey}`;
+}
+
+function normalizeLookupKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function unwrapStoredValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (typeof value !== 'object' || Array.isArray(value)) return '';
+
+  const record = value as Record<string, unknown>;
+  for (const key of ['value', 'answer', 'currentValue', 'userIdentifier', 'linkedUserIdentifier']) {
+    const nested = record[key];
+    if (typeof nested === 'string' || typeof nested === 'number') return String(nested).trim();
+  }
+
+  return '';
+}
+
+function extractResponseValue(value: unknown, candidateKeys: string[]): string {
+  const wantedKeys = new Set(candidateKeys.map(normalizeLookupKey));
+
+  const visit = (current: unknown, currentKey = ''): string => {
+    if (current === null || current === undefined) return '';
+
+    if (typeof current === 'string' || typeof current === 'number') {
+      return wantedKeys.has(normalizeLookupKey(currentKey)) ? String(current).trim() : '';
+    }
+
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        const found = visit(item, currentKey);
+        if (found) return found;
+      }
+      return '';
+    }
+
+    if (typeof current !== 'object') return '';
+
+    const record = current as Record<string, unknown>;
+
+    for (const [key, nested] of Object.entries(record)) {
+      if (wantedKeys.has(normalizeLookupKey(key))) {
+        const directValue = unwrapStoredValue(nested);
+        if (directValue) return directValue;
+
+        const nestedValue = visit(nested, key);
+        if (nestedValue) return nestedValue;
+      }
+    }
+
+    for (const [key, nested] of Object.entries(record)) {
+      const found = visit(nested, key);
+      if (found) return found;
+    }
+
+    return '';
+  };
+
+  return visit(value);
+}
+
+function buildLinkageRows(form: FormDef, snapshotValue: unknown): LinkageRow[] {
+  if (!snapshotValue || typeof snapshotValue !== 'object' || Array.isArray(snapshotValue)) return [];
+
+  return Object.entries(snapshotValue as Record<string, Record<string, unknown>>)
+    .map(([key, raw]) => {
+      const fullName = extractResponseValue(raw, ['fullName', 'full_name', 'name', 'firstName', 'lastName']);
+      const email = extractResponseValue(raw, ['email', 'emailAddress', 'userEmail']);
+      const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']);
+      const createdAt = Number(raw.createdAt || 0);
+      const createdAtEasternTime = String(raw.createdAtEasternTime || raw.createdAtISO || '');
+
+      return {
+        key,
+        formId: form.id,
+        path: firebaseResponsePath(form),
+        fullName: fullName || 'N/A',
+        email: email || 'N/A',
+        userIdentifier,
+        createdAt,
+        createdAtEasternTime,
+        raw,
+      };
+    })
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
 
 function escapeHtml(value: string): string {
   return String(value || '')
@@ -678,6 +786,16 @@ export default function AssessmentForm() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState<'assessmentChoices' | 'userLinkage'>('assessmentChoices');
+  const [linkagePasscode, setLinkagePasscode] = useState('');
+  const [isLinkageUnlocked, setIsLinkageUnlocked] = useState(false);
+  const [selectedLinkageFormId, setSelectedLinkageFormId] = useState<string | null>(null);
+  const [linkageRowsByForm, setLinkageRowsByForm] = useState<Record<string, LinkageRow[]>>({});
+  const [identifierDrafts, setIdentifierDrafts] = useState<Record<string, string>>({});
+  const [linkageLoading, setLinkageLoading] = useState(false);
+  const [linkageSavingKey, setLinkageSavingKey] = useState<string | null>(null);
+  const [linkageError, setLinkageError] = useState<string | null>(null);
+  const [linkageMessage, setLinkageMessage] = useState<string | null>(null);
 
   const answers = selectedForm ? answersByForm[selectedForm.id] || initialAnswers(selectedForm) : {};
   const result = useMemo(
@@ -697,6 +815,7 @@ export default function AssessmentForm() {
   };
 
   const selectForm = (formId: string) => {
+    setActivePage('assessmentChoices');
     setSelectedFormId(formId);
     setSubmitted(false);
     setError(null);
@@ -711,10 +830,107 @@ export default function AssessmentForm() {
   };
 
   const handleBackToAssessmentChoices = () => {
+    setActivePage('assessmentChoices');
     setSelectedFormId(null);
     setSubmitted(false);
     setError(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openUserLinkage = () => {
+    setActivePage('userLinkage');
+    setSelectedFormId(null);
+    setSubmitted(false);
+    setError(null);
+    setLinkageError(null);
+    setLinkageMessage(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleUserLinkagePasscode = (event: React.FormEvent) => {
+    event.preventDefault();
+    setLinkageMessage(null);
+
+    if (linkagePasscode.trim() !== USER_LINKAGE_PASSCODE) {
+      setIsLinkageUnlocked(false);
+      setLinkageError(isArabicUI ? 'رمز المرور غير صحيح.' : 'Incorrect passcode.');
+      return;
+    }
+
+    setIsLinkageUnlocked(true);
+    setLinkageError(null);
+  };
+
+  const loadLinkageRows = async (form: FormDef) => {
+    setSelectedLinkageFormId(form.id);
+    setLinkageLoading(true);
+    setLinkageError(null);
+    setLinkageMessage(null);
+
+    try {
+      const snapshot = await get(ref(database, `${firebaseResponsePath(form)}/`));
+      const rows = buildLinkageRows(form, snapshot.val());
+
+      setLinkageRowsByForm(previous => ({ ...previous, [form.id]: rows }));
+      setIdentifierDrafts(previous => ({
+        ...previous,
+        ...Object.fromEntries(rows.map(row => [linkageDraftKey(row.formId, row.key), row.userIdentifier])),
+      }));
+    } catch (err) {
+      console.error(err);
+      setLinkageError(isArabicUI ? 'تعذر تحميل ردود النموذج من قاعدة البيانات.' : 'Unable to load form responses from the database.');
+    } finally {
+      setLinkageLoading(false);
+    }
+  };
+
+  const saveUserIdentifier = async (row: LinkageRow) => {
+    const draftKey = linkageDraftKey(row.formId, row.key);
+    const userIdentifier = String(identifierDrafts[draftKey] ?? '').trim();
+
+    if (!userIdentifier) {
+      setLinkageError(isArabicUI ? 'أدخل معرّف المستخدم قبل الحفظ.' : 'Enter a user identifier before saving.');
+      return;
+    }
+
+    setLinkageSavingKey(draftKey);
+    setLinkageError(null);
+    setLinkageMessage(null);
+
+    try {
+      const updatedAt = Date.now();
+      const updatedAtISO = new Date().toISOString();
+
+      await update(ref(database, `${row.path}/${row.key}`), {
+        userIdentifier,
+        linkedUserIdentifier: userIdentifier,
+        userLinkage: {
+          userIdentifier,
+          updatedAt,
+          updatedAtISO,
+        },
+        'fields/userLinkage/userIdentifier': {
+          fieldEnglish: 'User Identifier',
+          fieldArabic: 'معرّف المستخدم',
+          value: userIdentifier,
+          updatedAt,
+          updatedAtISO,
+        },
+      });
+
+      setLinkageRowsByForm(previous => ({
+        ...previous,
+        [row.formId]: (previous[row.formId] || []).map(item =>
+          item.key === row.key ? { ...item, userIdentifier } : item,
+        ),
+      }));
+      setLinkageMessage(isArabicUI ? 'تم حفظ معرّف المستخدم.' : 'User identifier saved.');
+    } catch (err) {
+      console.error(err);
+      setLinkageError(isArabicUI ? 'تعذر حفظ معرّف المستخدم.' : 'Unable to save the user identifier.');
+    } finally {
+      setLinkageSavingKey(null);
+    }
   };
 
 
@@ -959,6 +1175,182 @@ export default function AssessmentForm() {
     );
   };
 
+  if (!selectedForm && activePage === 'userLinkage') {
+    const selectedLinkageForm = FORMS.find(item => item.id === selectedLinkageFormId) || null;
+    const linkageRows = selectedLinkageFormId ? linkageRowsByForm[selectedLinkageFormId] || [] : [];
+
+    return (
+      <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
+        <PageTitle title={isArabicUI ? 'ربط المستخدمين' : 'User Linkage'} subtitle={isArabicUI ? 'ربط ردود النماذج بمعرّف مستخدم واحد.' : 'Member Linking: connect form responses using one user identifier.'} icon={<ClipboardList size={22} />} />
+
+        <button
+          type="button"
+          onClick={handleBackToAssessmentChoices}
+          className="mb-[18px] min-h-[46px] px-5 py-3 rounded-[16px] border border-[rgba(139,30,30,0.18)] bg-white text-[#8b1e1e] font-bold cursor-pointer shadow-[0_6px_16px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[1px] hover:bg-[#fffafa]"
+        >
+          {isArabicUI ? 'الرجوع لاختيار التقييم' : 'Back to assessment choices'}
+        </button>
+
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white border border-[rgba(139,30,30,0.12)] rounded-[24px] p-[clamp(20px,4vw,34px)] shadow-[0_8px_28px_rgba(0,0,0,0.08)]"
+        >
+          <div className="text-center max-w-3xl mx-auto mb-8">
+            <h2 className="m-0 text-[#8b1e1e] text-[clamp(1.35rem,4vw,1.9rem)] font-bold">
+              {isArabicUI ? 'ربط الأعضاء' : 'Member Linking'}
+            </h2>
+            <p className="mt-3 mb-0 text-[#666] text-[1rem] leading-relaxed">
+              {isArabicUI
+                ? 'اعرض ردود النموذجين كصفوف، ثم أضف أو عدّل معرّف المستخدم لربط نفس الشخص عبر النماذج.'
+                : 'View both form responses as rows, then add or modify a user identifier to link the same person across forms.'}
+            </p>
+          </div>
+
+          {!isLinkageUnlocked ? (
+            <form onSubmit={handleUserLinkagePasscode} className="max-w-md mx-auto bg-[#fffafa] border border-[rgba(139,30,30,0.16)] rounded-[22px] p-[22px]">
+              <label className="block font-bold mb-[7px] text-[#333]">
+                {isArabicUI ? 'رمز المرور' : 'Passcode'}
+              </label>
+              <input
+                type="password"
+                value={linkagePasscode}
+                onChange={event => setLinkagePasscode(event.target.value)}
+                className="w-full px-[14px] py-[13px] border border-[#ddd] rounded-[14px] text-[1rem] bg-white text-[#242424] outline-none transition-[border-color,box-shadow,transform] duration-200 focus:border-[#8b1e1e] focus:shadow-[0_0_0_4px_rgba(139,30,30,0.12)]"
+              />
+              {linkageError && <div className="bg-red-50 text-red-600 px-4 py-3 rounded-[14px] font-bold mt-4">{linkageError}</div>}
+              <button
+                type="submit"
+                className="w-full min-h-[52px] mt-5 border-none bg-[#8b1e1e] text-white py-3 rounded-[18px] font-bold cursor-pointer shadow-[0_8px_18px_rgba(139,30,30,0.24)] transition-transform hover:-translate-y-[1px] text-[1.02rem]"
+              >
+                {isArabicUI ? 'فتح ربط المستخدمين' : 'Open User Linkage'}
+              </button>
+            </form>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px] mb-6">
+                {FORMS.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => loadLinkageRows(item)}
+                    className={`group relative text-start min-h-[150px] border-2 rounded-[22px] p-[22px] cursor-pointer shadow-[0_8px_18px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[2px] hover:border-[#8b1e1e] hover:shadow-[0_12px_28px_rgba(139,30,30,0.16)] ${
+                      selectedLinkageFormId === item.id
+                        ? 'bg-[#f8eeee] border-[#8b1e1e]'
+                        : 'bg-[#fffafa] border-[rgba(139,30,30,0.16)]'
+                    }`}
+                  >
+                    <div
+                      className="absolute top-4 w-9 h-9 rounded-full bg-[#8b1e1e] text-white grid place-items-center text-[1rem] font-bold shadow-[0_8px_18px_rgba(139,30,30,0.24)]"
+                      style={dir === 'rtl' ? { right: '16px' } : { left: '16px' }}
+                    >
+                      {index + 1}
+                    </div>
+
+                    <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center mb-5 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
+                      <ClipboardList size={22} />
+                    </div>
+
+                    <div className="text-[#8b1e1e] text-[1.18rem] font-bold mb-2">
+                      {cardTitle(item, t, langCode)}
+                    </div>
+
+                    <p className="m-0 text-[#666] text-sm leading-relaxed">
+                      {isArabicUI ? 'عرض الردود كصفوف للاسم والبريد الإلكتروني ومعرّف المستخدم.' : 'View responses as rows with name, email, and user identifier.'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {linkageError && <div className="bg-red-50 text-red-600 px-4 py-3 rounded-[14px] font-bold mb-4">{linkageError}</div>}
+              {linkageMessage && <div className="bg-green-50 text-green-700 px-4 py-3 rounded-[14px] font-bold mb-4">{linkageMessage}</div>}
+
+              {selectedLinkageForm && (
+                <div className="border border-[rgba(139,30,30,0.12)] rounded-[22px] overflow-hidden bg-[#fffafa]">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 border-b border-[rgba(139,30,30,0.12)] bg-[#f8eeee]">
+                    <div>
+                      <h3 className="m-0 text-[#641414] text-[1.1rem] font-bold">
+                        {cardTitle(selectedLinkageForm, t, langCode)}
+                      </h3>
+                      <p className="m-0 mt-1 text-[#666] text-sm">
+                        {isArabicUI ? `المسار: ${firebaseResponsePath(selectedLinkageForm)}` : `Database path: ${firebaseResponsePath(selectedLinkageForm)}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => loadLinkageRows(selectedLinkageForm)}
+                      disabled={linkageLoading}
+                      className="min-h-[42px] px-4 py-2 rounded-[14px] border border-[rgba(139,30,30,0.18)] bg-white text-[#8b1e1e] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {linkageLoading ? (isArabicUI ? 'جار التحميل...' : 'Loading...') : (isArabicUI ? 'تحديث الصفوف' : 'Refresh rows')}
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse min-w-[820px]">
+                      <thead>
+                        <tr className="bg-white text-[#641414]">
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'الاسم' : 'Name'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'البريد الإلكتروني' : 'Email'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'المعرّف الحالي' : 'Current Identifier'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'تعديل معرّف المستخدم' : 'Modify User Identifier'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'وقت الإرسال' : 'Submitted'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'حفظ' : 'Save'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linkageRows.length === 0 && !linkageLoading && (
+                          <tr>
+                            <td colSpan={6} className="p-5 text-center text-[#666] font-bold">
+                              {isArabicUI ? 'لا توجد ردود لهذا النموذج.' : 'No responses found for this form.'}
+                            </td>
+                          </tr>
+                        )}
+
+                        {linkageRows.map(row => {
+                          const draftKey = linkageDraftKey(row.formId, row.key);
+                          const savingThisRow = linkageSavingKey === draftKey;
+
+                          return (
+                            <tr key={row.key} className="bg-white border-b border-[#eeeeee] align-top">
+                              <td className="p-3 text-[#242424] font-bold">{row.fullName}</td>
+                              <td className="p-3 text-[#242424]">{row.email}</td>
+                              <td className="p-3 text-[#641414] font-bold">{row.userIdentifier || '-'}</td>
+                              <td className="p-3">
+                                <input
+                                  type="text"
+                                  value={identifierDrafts[draftKey] ?? row.userIdentifier}
+                                  onChange={event => setIdentifierDrafts(previous => ({ ...previous, [draftKey]: event.target.value }))}
+                                  placeholder={isArabicUI ? 'مثال: member-001' : 'Example: member-001'}
+                                  className="w-full px-[12px] py-[10px] border border-[#ddd] rounded-[12px] text-[0.95rem] bg-white text-[#242424] outline-none focus:border-[#8b1e1e] focus:shadow-[0_0_0_3px_rgba(139,30,30,0.10)]"
+                                />
+                              </td>
+                              <td className="p-3 text-[#666] text-sm whitespace-nowrap">{row.createdAtEasternTime || '-'}</td>
+                              <td className="p-3">
+                                <button
+                                  type="button"
+                                  onClick={() => saveUserIdentifier(row)}
+                                  disabled={savingThisRow}
+                                  className="min-h-[38px] px-4 py-2 rounded-[12px] border-none bg-[#8b1e1e] text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(139,30,30,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                  {savingThisRow ? (isArabicUI ? 'حفظ...' : 'Saving...') : (isArabicUI ? 'حفظ' : 'Save')}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </motion.div>
+      </div>
+    );
+  }
+
   if (!selectedForm) {
     const firstForm = FORMS[0];
 
@@ -1010,6 +1402,31 @@ export default function AssessmentForm() {
                 </p>
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={openUserLinkage}
+              className="group relative text-start min-h-[190px] bg-[#fffafa] border-2 border-[rgba(139,30,30,0.16)] rounded-[22px] p-[22px] cursor-pointer shadow-[0_8px_18px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[2px] hover:border-[#8b1e1e] hover:shadow-[0_12px_28px_rgba(139,30,30,0.16)]"
+            >
+              <div
+                className="absolute top-4 w-9 h-9 rounded-full bg-[#8b1e1e] text-white grid place-items-center text-[1rem] font-bold shadow-[0_8px_18px_rgba(139,30,30,0.24)]"
+                style={dir === 'rtl' ? { right: '16px' } : { left: '16px' }}
+              >
+                {FORMS.length + 1}
+              </div>
+
+              <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center mb-5 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
+                <ClipboardList size={22} />
+              </div>
+
+              <div className="text-[#8b1e1e] text-[1.28rem] font-bold mb-3">
+                {isArabicUI ? 'ربط المستخدمين' : 'User Linkage'}
+              </div>
+
+              <p className="m-0 text-[#666] text-sm leading-relaxed">
+                {isArabicUI ? 'قسم محمي لربط ردود النماذج بمعرّف مستخدم واحد.' : 'Protected member linking section for connecting form responses with one user identifier.'}
+              </p>
+            </button>
           </div>
         </motion.div>
       </div>
