@@ -15,6 +15,7 @@ const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 const USER_LINKAGE_PASSCODE = '9910';
 const SUPPORTED_LINKAGE_FORM_IDS = ['0', '1'];
+const IDENTIFIER_EMAIL_SUBJECT = 'LinC Mentorship Identifier';
 
 type Lang = 'en' | 'ar';
 type InterfaceLang = 'English' | 'Arabic';
@@ -132,6 +133,8 @@ interface LinkageRow {
   email: string;
   userIdentifier: string;
   databaseFormId: string;
+  fillingLanguage: InterfaceLang;
+  identifierEmailSentAt?: number;
   createdAt: number;
   createdAtEasternTime: string;
   raw: Record<string, unknown>;
@@ -210,6 +213,52 @@ function extractResponseValue(value: unknown, candidateKeys: string[]): string {
   return visit(value);
 }
 
+
+function normalizeInterfaceLanguage(value: string): InterfaceLang {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === 'ar' || normalized.includes('arabic') || normalized.includes('عربي')) {
+    return 'Arabic';
+  }
+
+  return 'English';
+}
+
+function detectResponseLanguage(raw: Record<string, unknown>): InterfaceLang {
+  const languageValue = extractResponseValue(raw, [
+    'interfaceLanguageUsed',
+    'requesterLanguage',
+    'requesterLocale',
+    'languageUsed',
+    'locale',
+    'lang',
+  ]);
+
+  return normalizeInterfaceLanguage(languageValue || 'English');
+}
+
+function isUsableEmail(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 3 && trimmed !== 'N/A' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+}
+
+function uniqueRowsWithCurrentIdentifier(rows: LinkageRow[]): LinkageRow[] {
+  const seenIdentifiers = new Set<string>();
+  const uniqueRows: LinkageRow[] = [];
+
+  for (const row of rows) {
+    const identifier = row.userIdentifier.trim();
+    const normalizedIdentifier = identifier.toLowerCase();
+
+    if (!identifier || !isUsableEmail(row.email) || seenIdentifiers.has(normalizedIdentifier)) continue;
+
+    seenIdentifiers.add(normalizedIdentifier);
+    uniqueRows.push(row);
+  }
+
+  return uniqueRows;
+}
+
 function buildLinkageRows(form: FormDef, snapshotValue: unknown): LinkageRow[] {
   if (!snapshotValue || typeof snapshotValue !== 'object' || Array.isArray(snapshotValue)) return [];
 
@@ -220,6 +269,8 @@ function buildLinkageRows(form: FormDef, snapshotValue: unknown): LinkageRow[] {
       const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']);
       const rawDatabaseFormId = extractResponseValue(raw, ['databaseFormId', 'linkedFormId', 'supportedFormId', 'formNumber', 'formNumericId', 'formId']);
       const databaseFormId = SUPPORTED_LINKAGE_FORM_IDS.includes(rawDatabaseFormId) ? rawDatabaseFormId : '';
+      const fillingLanguage = detectResponseLanguage(raw);
+      const identifierEmailSentAt = Number(raw.identifierEmailSentAt || 0) || undefined;
       const createdAt = Number(raw.createdAt || 0);
       const createdAtEasternTime = String(raw.createdAtEasternTime || raw.createdAtISO || '');
 
@@ -231,6 +282,8 @@ function buildLinkageRows(form: FormDef, snapshotValue: unknown): LinkageRow[] {
         email: email || 'N/A',
         userIdentifier,
         databaseFormId,
+        fillingLanguage,
+        identifierEmailSentAt,
         createdAt,
         createdAtEasternTime,
         raw,
@@ -756,6 +809,58 @@ function buildAssessmentEmailHtml(params: {
 </div>`;
 }
 
+
+function buildIdentifierSharingEmailHtml(params: {
+  row: LinkageRow;
+  userIdentifier: string;
+  lang: InterfaceLang;
+}): string {
+  const isArabic = params.lang === 'Arabic';
+  const name = params.row.fullName && params.row.fullName !== 'N/A' ? params.row.fullName : '';
+
+  const labels = isArabic
+    ? {
+        greeting: name ? `مرحباً ${name}،` : 'مرحباً،',
+        thankYou: 'شكراً لتعبئة نموذج برنامج LinC للإرشاد الروحي.',
+        intro: 'هذا هو معرّفك الخاص في برنامج LinC Mentorship:',
+        identifierLabel: 'معرّفك',
+        saveNote: 'يرجى حفظ هذا المعرّف في مكان آمن، لأنه سيتم استخدامه في جميع أنشطة برنامج الإرشاد الروحي القادمة.',
+        footer: 'تم إرسال هذه الرسالة تلقائياً من نظام LinC Mentorship.',
+      }
+    : {
+        greeting: name ? `Hello ${name},` : 'Hello,',
+        thankYou: 'Thank you for filling out the LinC Spiritual Mentorship form.',
+        intro: 'This is your LinC Mentorship identifier:',
+        identifierLabel: 'Your Identifier',
+        saveNote: 'Please save this identifier somewhere safe because it will be used in all subsequent spiritual mentorship program activities.',
+        footer: 'This email was automatically sent by the LinC Mentorship system.',
+      };
+
+  const direction = isArabic ? 'rtl' : 'ltr';
+  const align = isArabic ? 'right' : 'left';
+  const borderSide = isArabic ? 'border-right' : 'border-left';
+
+  return `
+<div dir="${direction}" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; color: #242424; line-height: 1.7; text-align: ${align};">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">LinC Mentorship Identifier</h2>
+  </div>
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <p style="margin: 0 0 12px; font-weight: 700;">${escapeHtml(labels.greeting)}</p>
+    <p style="margin: 0 0 12px;">${escapeHtml(labels.thankYou)}</p>
+    <p style="margin: 0 0 16px;">${escapeHtml(labels.intro)}</p>
+
+    <div style="margin: 18px 0; padding: 18px; background-color: #f8eeee; ${borderSide}: 5px solid #8b1e1e; border-radius: 12px;">
+      <div style="font-size: 13px; color: #641414; font-weight: 800; margin-bottom: 6px;">${escapeHtml(labels.identifierLabel)}</div>
+      <div style="font-size: 28px; color: #641414; font-weight: 900; letter-spacing: 0.06em;">${escapeHtml(params.userIdentifier)}</div>
+    </div>
+
+    <p style="margin: 0 0 14px; font-weight: 700; color: #641414;">${escapeHtml(labels.saveNote)}</p>
+    <div style="margin-top: 22px; color: #777777; font-size: 12px;">${escapeHtml(labels.footer)}</div>
+  </div>
+</div>`;
+}
+
 async function sendEmailViaEmailJs(params: {
   to: string;
   subject: string;
@@ -801,6 +906,8 @@ export default function AssessmentForm() {
   const [linkageLoading, setLinkageLoading] = useState(false);
   const [linkageSavingKey, setLinkageSavingKey] = useState<string | null>(null);
   const [linkageDeletingKey, setLinkageDeletingKey] = useState<string | null>(null);
+  const [linkageEmailSendingKey, setLinkageEmailSendingKey] = useState<string | null>(null);
+  const [linkageEmailSendingAll, setLinkageEmailSendingAll] = useState(false);
   const [expandedPreviewKeys, setExpandedPreviewKeys] = useState<Record<string, boolean>>({});
   const [linkageError, setLinkageError] = useState<string | null>(null);
   const [linkageMessage, setLinkageMessage] = useState<string | null>(null);
@@ -1023,6 +1130,132 @@ export default function AssessmentForm() {
     } finally {
       setLinkageDeletingKey(null);
     }
+  };
+
+
+  const sendIdentifierEmailForRow = async (row: LinkageRow, options?: { silent?: boolean }): Promise<boolean> => {
+    const draftKey = linkageDraftKey(row.formId, row.key);
+    const userIdentifier = row.userIdentifier.trim();
+    const email = row.email.trim();
+
+    if (!userIdentifier) {
+      if (!options?.silent) setLinkageError(isArabicUI ? 'لا يوجد معرّف حالي لهذا الصف. احفظ المعرّف أولاً.' : 'This row has no current identifier. Save the identifier first.');
+      return false;
+    }
+
+    if (!isUsableEmail(email)) {
+      if (!options?.silent) setLinkageError(isArabicUI ? 'لا يوجد بريد إلكتروني صالح لهذا الصف.' : 'This row does not have a valid email address.');
+      return false;
+    }
+
+    setLinkageEmailSendingKey(draftKey);
+    if (!options?.silent) {
+      setLinkageError(null);
+      setLinkageMessage(null);
+    }
+
+    try {
+      const sentAt = Date.now();
+      const sentAtISO = new Date().toISOString();
+      const language = row.fillingLanguage || 'English';
+      const htmlBody = buildIdentifierSharingEmailHtml({ row, userIdentifier, lang: language });
+
+      const emailJsResponse = await sendEmailViaEmailJs({
+        to: email,
+        subject: IDENTIFIER_EMAIL_SUBJECT,
+        fullName: row.fullName === 'N/A' ? '' : row.fullName,
+        htmlBody,
+        replyToEmail: '',
+      });
+
+      await update(ref(database, `${row.path}/${row.key}`), {
+        identifierEmailSentAt: sentAt,
+        identifierEmailSentAtISO: sentAtISO,
+        identifierEmailLanguage: language,
+        identifierEmailSubject: IDENTIFIER_EMAIL_SUBJECT,
+        userLinkage: {
+          ...(row.raw.userLinkage && typeof row.raw.userLinkage === 'object' && !Array.isArray(row.raw.userLinkage) ? row.raw.userLinkage as Record<string, unknown> : {}),
+          identifierEmailSentAt: sentAt,
+          identifierEmailSentAtISO: sentAtISO,
+          identifierEmailLanguage: language,
+        },
+      });
+
+      await push(ref(database, 'emailJsSendLogs/'), {
+        recipientEmail: email,
+        subject: IDENTIFIER_EMAIL_SUBJECT,
+        fullName: row.fullName,
+        sentUsing: 'EmailJS',
+        serviceId: EMAILJS_SERVICE_ID,
+        templateId: EMAILJS_TEMPLATE_ID,
+        formId: row.databaseFormId || row.formId,
+        responseKey: row.key,
+        emailType: 'identifierSharing',
+        userIdentifier,
+        language,
+        sentAt,
+        sentAtISO,
+        emailJsResponse: {
+          status: emailJsResponse.status,
+          text: emailJsResponse.text,
+        },
+      });
+
+      setLinkageRowsByForm(previous => ({
+        ...previous,
+        [row.formId]: (previous[row.formId] || []).map(item =>
+          item.key === row.key ? { ...item, identifierEmailSentAt: sentAt } : item,
+        ),
+      }));
+
+      if (!options?.silent) setLinkageMessage(isArabicUI ? 'تم إرسال بريد المعرّف.' : 'Identifier email sent.');
+      return true;
+    } catch (err) {
+      console.error(err);
+      if (!options?.silent) setLinkageError(isArabicUI ? 'تعذر إرسال بريد المعرّف.' : 'Unable to send the identifier email.');
+      return false;
+    } finally {
+      setLinkageEmailSendingKey(null);
+    }
+  };
+
+  const sendIdentifierEmailsToAll = async () => {
+    if (!selectedLinkageFormId) return;
+
+    const rows = uniqueRowsWithCurrentIdentifier(linkageRowsByForm[selectedLinkageFormId] || []);
+
+    if (rows.length === 0) {
+      setLinkageError(isArabicUI ? 'لا توجد صفوف فريدة تحتوي على معرّف حالي وبريد إلكتروني صالح.' : 'No unique rows found with a current identifier and valid email.');
+      return;
+    }
+
+    const confirmMessage = isArabicUI
+      ? `سيتم إرسال بريد المعرّف إلى ${rows.length} صف/معرّف فريد. هل تريد المتابعة؟`
+      : `Send identifier emails to ${rows.length} unique current identifiers?`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setLinkageEmailSendingAll(true);
+    setLinkageError(null);
+    setLinkageMessage(null);
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (const row of rows) {
+      const sent = await sendIdentifierEmailForRow(row, { silent: true });
+      if (sent) sentCount += 1;
+      else failedCount += 1;
+    }
+
+    setLinkageEmailSendingAll(false);
+
+    if (failedCount > 0) {
+      setLinkageError(isArabicUI ? `تم إرسال ${sentCount} بريد، وفشل إرسال ${failedCount}.` : `${sentCount} emails sent, ${failedCount} failed.`);
+      return;
+    }
+
+    setLinkageMessage(isArabicUI ? `تم إرسال ${sentCount} بريد معرّف بنجاح.` : `${sentCount} identifier emails sent successfully.`);
   };
 
 
@@ -1367,19 +1600,34 @@ export default function AssessmentForm() {
                       <p className="m-0 mt-1 text-[#666] text-sm">
                         {isArabicUI ? `المسار: ${firebaseResponsePath(selectedLinkageForm)}` : `Database path: ${firebaseResponsePath(selectedLinkageForm)}`}
                       </p>
+                      <p className="m-0 mt-2 text-red-700 text-sm font-bold">
+                        {isArabicUI
+                          ? 'زر حذف الصف موجود داخل كل صف ويحذف الرد من Firebase بعد التأكيد.'
+                          : 'Each row has a Delete Row button that removes that response from Firebase after confirmation.'}
+                      </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => loadLinkageRows(selectedLinkageForm)}
-                      disabled={linkageLoading}
-                      className="min-h-[42px] px-4 py-2 rounded-[14px] border border-[rgba(139,30,30,0.18)] bg-white text-[#8b1e1e] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {linkageLoading ? (isArabicUI ? 'جار التحميل...' : 'Loading...') : (isArabicUI ? 'تحديث الصفوف' : 'Refresh rows')}
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        type="button"
+                        onClick={sendIdentifierEmailsToAll}
+                        disabled={linkageEmailSendingAll || linkageLoading}
+                        className="min-h-[42px] px-4 py-2 rounded-[14px] border-none bg-[#8b1e1e] text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(139,30,30,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {linkageEmailSendingAll ? (isArabicUI ? 'جار الإرسال...' : 'Sending...') : (isArabicUI ? 'إرسال المعرّفات للكل' : 'Send all identifier emails')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => loadLinkageRows(selectedLinkageForm)}
+                        disabled={linkageLoading || linkageEmailSendingAll}
+                        className="min-h-[42px] px-4 py-2 rounded-[14px] border border-[rgba(139,30,30,0.18)] bg-white text-[#8b1e1e] font-bold cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {linkageLoading ? (isArabicUI ? 'جار التحميل...' : 'Loading...') : (isArabicUI ? 'تحديث الصفوف' : 'Refresh rows')}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full border-collapse min-w-[1240px]">
+                    <table className="w-full border-collapse min-w-[1540px]">
                       <thead>
                         <tr className="bg-white text-[#641414]">
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'الاسم' : 'Name'}</th>
@@ -1387,16 +1635,18 @@ export default function AssessmentForm() {
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'المعرّف الحالي' : 'Current Identifier'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'تعديل معرّف المستخدم' : 'Modify User Identifier'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'رقم النموذج' : 'Form ID'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'لغة البريد' : 'Email Language'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'وقت الإرسال' : 'Submitted'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'معاينة' : 'Preview'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'إرسال المعرّف' : 'Send Identifier'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'حفظ' : 'Save'}</th>
-                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'حذف' : 'Delete'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'حذف الصف' : 'Delete Row'}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {linkageRows.length === 0 && !linkageLoading && (
                           <tr>
-                            <td colSpan={9} className="p-5 text-center text-[#666] font-bold">
+                            <td colSpan={11} className="p-5 text-center text-[#666] font-bold">
                               {isArabicUI ? 'لا توجد ردود لهذا النموذج.' : 'No responses found for this form.'}
                             </td>
                           </tr>
@@ -1406,12 +1656,23 @@ export default function AssessmentForm() {
                           const draftKey = linkageDraftKey(row.formId, row.key);
                           const savingThisRow = linkageSavingKey === draftKey;
                           const deletingThisRow = linkageDeletingKey === draftKey;
+                          const emailingThisRow = linkageEmailSendingKey === draftKey;
                           const previewOpen = Boolean(expandedPreviewKeys[draftKey]);
 
                           return (
                             <React.Fragment key={row.key}>
                               <tr className="bg-white border-b border-[#eeeeee] align-top">
-                                <td className="p-3 text-[#242424] font-bold">{row.fullName}</td>
+                                <td className="p-3 text-[#242424] font-bold min-w-[180px]">
+                                  <div>{row.fullName}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteLinkageRow(row)}
+                                    disabled={savingThisRow || deletingThisRow || emailingThisRow || linkageEmailSendingAll}
+                                    className="min-h-[34px] mt-2 px-3 py-1 rounded-[10px] border-none bg-red-600 text-white text-xs font-bold cursor-pointer shadow-[0_5px_12px_rgba(220,38,38,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
+                                  >
+                                    {deletingThisRow ? (isArabicUI ? 'حذف...' : 'Deleting...') : (isArabicUI ? 'حذف الصف' : 'Delete Row')}
+                                  </button>
+                                </td>
                                 <td className="p-3 text-[#242424]">{row.email}</td>
                                 <td className="p-3 text-[#641414] font-bold">{row.userIdentifier || '-'}</td>
                                 <td className="p-3">
@@ -1437,6 +1698,7 @@ export default function AssessmentForm() {
                                     ))}
                                   </select>
                                 </td>
+                                <td className="p-3 text-[#641414] text-sm font-bold whitespace-nowrap">{row.fillingLanguage}</td>
                                 <td className="p-3 text-[#666] text-sm whitespace-nowrap">{row.createdAtEasternTime || '-'}</td>
                                 <td className="p-3">
                                   <button
@@ -1450,8 +1712,23 @@ export default function AssessmentForm() {
                                 <td className="p-3">
                                   <button
                                     type="button"
+                                    onClick={() => sendIdentifierEmailForRow(row)}
+                                    disabled={savingThisRow || deletingThisRow || emailingThisRow || linkageEmailSendingAll || !row.userIdentifier || !isUsableEmail(row.email)}
+                                    className="min-h-[38px] px-4 py-2 rounded-[12px] border-none bg-[#641414] text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(100,20,20,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {emailingThisRow ? (isArabicUI ? 'إرسال...' : 'Sending...') : (isArabicUI ? 'إرسال' : 'Send')}
+                                  </button>
+                                  {row.identifierEmailSentAt && (
+                                    <div className="mt-2 text-[11px] text-green-700 font-bold">
+                                      {isArabicUI ? 'تم الإرسال سابقاً' : 'Sent before'}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-3">
+                                  <button
+                                    type="button"
                                     onClick={() => saveUserIdentifier(row)}
-                                    disabled={savingThisRow || deletingThisRow}
+                                    disabled={savingThisRow || deletingThisRow || emailingThisRow || linkageEmailSendingAll}
                                     className="min-h-[38px] px-4 py-2 rounded-[12px] border-none bg-[#8b1e1e] text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(139,30,30,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
                                   >
                                     {savingThisRow ? (isArabicUI ? 'حفظ...' : 'Saving...') : (isArabicUI ? 'حفظ' : 'Save')}
@@ -1461,17 +1738,17 @@ export default function AssessmentForm() {
                                   <button
                                     type="button"
                                     onClick={() => deleteLinkageRow(row)}
-                                    disabled={savingThisRow || deletingThisRow}
+                                    disabled={savingThisRow || deletingThisRow || emailingThisRow || linkageEmailSendingAll}
                                     className="min-h-[38px] px-4 py-2 rounded-[12px] border-none bg-red-600 text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(220,38,38,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
                                   >
-                                    {deletingThisRow ? (isArabicUI ? 'حذف...' : 'Deleting...') : (isArabicUI ? 'حذف' : 'Delete')}
+                                    {deletingThisRow ? (isArabicUI ? 'حذف...' : 'Deleting...') : (isArabicUI ? 'حذف الصف' : 'Delete Row')}
                                   </button>
                                 </td>
                               </tr>
 
                               {previewOpen && (
                                 <tr className="bg-[#fffafa] border-b border-[#eeeeee]">
-                                  <td colSpan={9} className="p-4">
+                                  <td colSpan={11} className="p-4">
                                     <div className="border border-[rgba(139,30,30,0.14)] rounded-[16px] bg-white overflow-hidden">
                                       <div className="px-4 py-3 bg-[#f8eeee] text-[#641414] font-bold">
                                         {isArabicUI ? 'معاينة الرد الكامل' : 'Full response preview'}
