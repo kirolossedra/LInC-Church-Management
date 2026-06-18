@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import YAML from 'yaml';
 import emailjs from '@emailjs/browser';
 import { database } from '../firebase';
-import { ref, push, get, update } from 'firebase/database';
+import { ref, push, get, update, remove } from 'firebase/database';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
@@ -794,6 +794,8 @@ export default function AssessmentForm() {
   const [identifierDrafts, setIdentifierDrafts] = useState<Record<string, string>>({});
   const [linkageLoading, setLinkageLoading] = useState(false);
   const [linkageSavingKey, setLinkageSavingKey] = useState<string | null>(null);
+  const [linkageDeletingKey, setLinkageDeletingKey] = useState<string | null>(null);
+  const [expandedPreviewKeys, setExpandedPreviewKeys] = useState<Record<string, boolean>>({});
   const [linkageError, setLinkageError] = useState<string | null>(null);
   const [linkageMessage, setLinkageMessage] = useState<string | null>(null);
 
@@ -930,6 +932,56 @@ export default function AssessmentForm() {
       setLinkageError(isArabicUI ? 'تعذر حفظ معرّف المستخدم.' : 'Unable to save the user identifier.');
     } finally {
       setLinkageSavingKey(null);
+    }
+  };
+
+
+  const toggleResponsePreview = (row: LinkageRow) => {
+    const draftKey = linkageDraftKey(row.formId, row.key);
+    setExpandedPreviewKeys(previous => ({
+      ...previous,
+      [draftKey]: !previous[draftKey],
+    }));
+  };
+
+  const deleteLinkageRow = async (row: LinkageRow) => {
+    const draftKey = linkageDraftKey(row.formId, row.key);
+    const confirmMessage = isArabicUI
+      ? `هل أنت متأكد من حذف رد ${row.fullName || row.email || row.key}؟ لا يمكن التراجع عن هذا الإجراء.`
+      : `Delete the response for ${row.fullName || row.email || row.key}? This cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setLinkageDeletingKey(draftKey);
+    setLinkageError(null);
+    setLinkageMessage(null);
+
+    try {
+      await remove(ref(database, `${row.path}/${row.key}`));
+
+      setLinkageRowsByForm(previous => ({
+        ...previous,
+        [row.formId]: (previous[row.formId] || []).filter(item => item.key !== row.key),
+      }));
+
+      setIdentifierDrafts(previous => {
+        const next = { ...previous };
+        delete next[draftKey];
+        return next;
+      });
+
+      setExpandedPreviewKeys(previous => {
+        const next = { ...previous };
+        delete next[draftKey];
+        return next;
+      });
+
+      setLinkageMessage(isArabicUI ? 'تم حذف الرد.' : 'Response deleted.');
+    } catch (err) {
+      console.error(err);
+      setLinkageError(isArabicUI ? 'تعذر حذف الرد.' : 'Unable to delete the response.');
+    } finally {
+      setLinkageDeletingKey(null);
     }
   };
 
@@ -1287,7 +1339,7 @@ export default function AssessmentForm() {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full border-collapse min-w-[820px]">
+                    <table className="w-full border-collapse min-w-[1120px]">
                       <thead>
                         <tr className="bg-white text-[#641414]">
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'الاسم' : 'Name'}</th>
@@ -1295,13 +1347,15 @@ export default function AssessmentForm() {
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'المعرّف الحالي' : 'Current Identifier'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'تعديل معرّف المستخدم' : 'Modify User Identifier'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'وقت الإرسال' : 'Submitted'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'معاينة' : 'Preview'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'حفظ' : 'Save'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'حذف' : 'Delete'}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {linkageRows.length === 0 && !linkageLoading && (
                           <tr>
-                            <td colSpan={6} className="p-5 text-center text-[#666] font-bold">
+                            <td colSpan={8} className="p-5 text-center text-[#666] font-bold">
                               {isArabicUI ? 'لا توجد ردود لهذا النموذج.' : 'No responses found for this form.'}
                             </td>
                           </tr>
@@ -1310,33 +1364,71 @@ export default function AssessmentForm() {
                         {linkageRows.map(row => {
                           const draftKey = linkageDraftKey(row.formId, row.key);
                           const savingThisRow = linkageSavingKey === draftKey;
+                          const deletingThisRow = linkageDeletingKey === draftKey;
+                          const previewOpen = Boolean(expandedPreviewKeys[draftKey]);
 
                           return (
-                            <tr key={row.key} className="bg-white border-b border-[#eeeeee] align-top">
-                              <td className="p-3 text-[#242424] font-bold">{row.fullName}</td>
-                              <td className="p-3 text-[#242424]">{row.email}</td>
-                              <td className="p-3 text-[#641414] font-bold">{row.userIdentifier || '-'}</td>
-                              <td className="p-3">
-                                <input
-                                  type="text"
-                                  value={identifierDrafts[draftKey] ?? row.userIdentifier}
-                                  onChange={event => setIdentifierDrafts(previous => ({ ...previous, [draftKey]: event.target.value }))}
-                                  placeholder={isArabicUI ? 'مثال: member-001' : 'Example: member-001'}
-                                  className="w-full px-[12px] py-[10px] border border-[#ddd] rounded-[12px] text-[0.95rem] bg-white text-[#242424] outline-none focus:border-[#8b1e1e] focus:shadow-[0_0_0_3px_rgba(139,30,30,0.10)]"
-                                />
-                              </td>
-                              <td className="p-3 text-[#666] text-sm whitespace-nowrap">{row.createdAtEasternTime || '-'}</td>
-                              <td className="p-3">
-                                <button
-                                  type="button"
-                                  onClick={() => saveUserIdentifier(row)}
-                                  disabled={savingThisRow}
-                                  className="min-h-[38px] px-4 py-2 rounded-[12px] border-none bg-[#8b1e1e] text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(139,30,30,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
-                                >
-                                  {savingThisRow ? (isArabicUI ? 'حفظ...' : 'Saving...') : (isArabicUI ? 'حفظ' : 'Save')}
-                                </button>
-                              </td>
-                            </tr>
+                            <React.Fragment key={row.key}>
+                              <tr className="bg-white border-b border-[#eeeeee] align-top">
+                                <td className="p-3 text-[#242424] font-bold">{row.fullName}</td>
+                                <td className="p-3 text-[#242424]">{row.email}</td>
+                                <td className="p-3 text-[#641414] font-bold">{row.userIdentifier || '-'}</td>
+                                <td className="p-3">
+                                  <input
+                                    type="text"
+                                    value={identifierDrafts[draftKey] ?? row.userIdentifier}
+                                    onChange={event => setIdentifierDrafts(previous => ({ ...previous, [draftKey]: event.target.value }))}
+                                    placeholder={isArabicUI ? 'مثال: member-001' : 'Example: member-001'}
+                                    className="w-full px-[12px] py-[10px] border border-[#ddd] rounded-[12px] text-[0.95rem] bg-white text-[#242424] outline-none focus:border-[#8b1e1e] focus:shadow-[0_0_0_3px_rgba(139,30,30,0.10)]"
+                                  />
+                                </td>
+                                <td className="p-3 text-[#666] text-sm whitespace-nowrap">{row.createdAtEasternTime || '-'}</td>
+                                <td className="p-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleResponsePreview(row)}
+                                    className="min-h-[38px] px-4 py-2 rounded-[12px] border border-[rgba(139,30,30,0.22)] bg-white text-[#8b1e1e] font-bold cursor-pointer shadow-[0_6px_14px_rgba(0,0,0,0.05)]"
+                                  >
+                                    {previewOpen ? (isArabicUI ? 'إخفاء' : 'Collapse') : (isArabicUI ? 'معاينة' : 'Preview')}
+                                  </button>
+                                </td>
+                                <td className="p-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => saveUserIdentifier(row)}
+                                    disabled={savingThisRow || deletingThisRow}
+                                    className="min-h-[38px] px-4 py-2 rounded-[12px] border-none bg-[#8b1e1e] text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(139,30,30,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
+                                  >
+                                    {savingThisRow ? (isArabicUI ? 'حفظ...' : 'Saving...') : (isArabicUI ? 'حفظ' : 'Save')}
+                                  </button>
+                                </td>
+                                <td className="p-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteLinkageRow(row)}
+                                    disabled={savingThisRow || deletingThisRow}
+                                    className="min-h-[38px] px-4 py-2 rounded-[12px] border-none bg-red-600 text-white font-bold cursor-pointer shadow-[0_6px_14px_rgba(220,38,38,0.18)] disabled:cursor-not-allowed disabled:opacity-70"
+                                  >
+                                    {deletingThisRow ? (isArabicUI ? 'حذف...' : 'Deleting...') : (isArabicUI ? 'حذف' : 'Delete')}
+                                  </button>
+                                </td>
+                              </tr>
+
+                              {previewOpen && (
+                                <tr className="bg-[#fffafa] border-b border-[#eeeeee]">
+                                  <td colSpan={8} className="p-4">
+                                    <div className="border border-[rgba(139,30,30,0.14)] rounded-[16px] bg-white overflow-hidden">
+                                      <div className="px-4 py-3 bg-[#f8eeee] text-[#641414] font-bold">
+                                        {isArabicUI ? 'معاينة الرد الكامل' : 'Full response preview'}
+                                      </div>
+                                      <pre className="m-0 p-4 text-xs leading-relaxed overflow-x-auto whitespace-pre-wrap text-[#242424] bg-white">
+                                        {JSON.stringify(row.raw, null, 2)}
+                                      </pre>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
