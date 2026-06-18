@@ -14,6 +14,7 @@ const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 const USER_LINKAGE_PASSCODE = '9910';
+const SUPPORTED_LINKAGE_FORM_IDS = ['0', '1'];
 
 type Lang = 'en' | 'ar';
 type InterfaceLang = 'English' | 'Arabic';
@@ -130,6 +131,7 @@ interface LinkageRow {
   fullName: string;
   email: string;
   userIdentifier: string;
+  databaseFormId: string;
   createdAt: number;
   createdAtEasternTime: string;
   raw: Record<string, unknown>;
@@ -216,6 +218,8 @@ function buildLinkageRows(form: FormDef, snapshotValue: unknown): LinkageRow[] {
       const fullName = extractResponseValue(raw, ['fullName', 'full_name', 'name', 'firstName', 'lastName']);
       const email = extractResponseValue(raw, ['email', 'emailAddress', 'userEmail']);
       const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']);
+      const rawDatabaseFormId = extractResponseValue(raw, ['databaseFormId', 'linkedFormId', 'supportedFormId', 'formNumber', 'formNumericId', 'formId']);
+      const databaseFormId = SUPPORTED_LINKAGE_FORM_IDS.includes(rawDatabaseFormId) ? rawDatabaseFormId : '';
       const createdAt = Number(raw.createdAt || 0);
       const createdAtEasternTime = String(raw.createdAtEasternTime || raw.createdAtISO || '');
 
@@ -226,6 +230,7 @@ function buildLinkageRows(form: FormDef, snapshotValue: unknown): LinkageRow[] {
         fullName: fullName || 'N/A',
         email: email || 'N/A',
         userIdentifier,
+        databaseFormId,
         createdAt,
         createdAtEasternTime,
         raw,
@@ -792,6 +797,7 @@ export default function AssessmentForm() {
   const [selectedLinkageFormId, setSelectedLinkageFormId] = useState<string | null>(null);
   const [linkageRowsByForm, setLinkageRowsByForm] = useState<Record<string, LinkageRow[]>>({});
   const [identifierDrafts, setIdentifierDrafts] = useState<Record<string, string>>({});
+  const [formIdDrafts, setFormIdDrafts] = useState<Record<string, string>>({});
   const [linkageLoading, setLinkageLoading] = useState(false);
   const [linkageSavingKey, setLinkageSavingKey] = useState<string | null>(null);
   const [linkageDeletingKey, setLinkageDeletingKey] = useState<string | null>(null);
@@ -878,6 +884,10 @@ export default function AssessmentForm() {
         ...previous,
         ...Object.fromEntries(rows.map(row => [linkageDraftKey(row.formId, row.key), row.userIdentifier])),
       }));
+      setFormIdDrafts(previous => ({
+        ...previous,
+        ...Object.fromEntries(rows.map(row => [linkageDraftKey(row.formId, row.key), row.databaseFormId])),
+      }));
     } catch (err) {
       console.error(err);
       setLinkageError(isArabicUI ? 'تعذر تحميل ردود النموذج من قاعدة البيانات.' : 'Unable to load form responses from the database.');
@@ -889,9 +899,15 @@ export default function AssessmentForm() {
   const saveUserIdentifier = async (row: LinkageRow) => {
     const draftKey = linkageDraftKey(row.formId, row.key);
     const userIdentifier = String(identifierDrafts[draftKey] ?? '').trim();
+    const databaseFormId = String(formIdDrafts[draftKey] ?? '').trim();
 
-    if (!userIdentifier) {
-      setLinkageError(isArabicUI ? 'أدخل معرّف المستخدم قبل الحفظ.' : 'Enter a user identifier before saving.');
+    if (!userIdentifier && !databaseFormId) {
+      setLinkageError(isArabicUI ? 'أدخل معرّف المستخدم أو اختر رقم النموذج قبل الحفظ.' : 'Enter a user identifier or choose a form ID before saving.');
+      return;
+    }
+
+    if (databaseFormId && !SUPPORTED_LINKAGE_FORM_IDS.includes(databaseFormId)) {
+      setLinkageError(isArabicUI ? 'رقم النموذج المدعوم يجب أن يكون 0 أو 1 فقط.' : 'Supported form ID must be 0 or 1 only.');
       return;
     }
 
@@ -902,34 +918,52 @@ export default function AssessmentForm() {
     try {
       const updatedAt = Date.now();
       const updatedAtISO = new Date().toISOString();
-
-      await update(ref(database, `${row.path}/${row.key}`), {
-        userIdentifier,
-        linkedUserIdentifier: userIdentifier,
+      const updates: Record<string, unknown> = {
         userLinkage: {
           userIdentifier,
+          databaseFormId,
           updatedAt,
           updatedAtISO,
         },
-        'fields/userLinkage/userIdentifier': {
+      };
+
+      if (userIdentifier) {
+        updates.userIdentifier = userIdentifier;
+        updates.linkedUserIdentifier = userIdentifier;
+        updates['fields/userLinkage/userIdentifier'] = {
           fieldEnglish: 'User Identifier',
           fieldArabic: 'معرّف المستخدم',
           value: userIdentifier,
           updatedAt,
           updatedAtISO,
-        },
-      });
+        };
+      }
+
+      if (databaseFormId) {
+        updates.formId = databaseFormId;
+        updates.databaseFormId = databaseFormId;
+        updates.linkedFormId = databaseFormId;
+        updates['fields/userLinkage/formId'] = {
+          fieldEnglish: 'Form ID',
+          fieldArabic: 'رقم النموذج',
+          value: databaseFormId,
+          updatedAt,
+          updatedAtISO,
+        };
+      }
+
+      await update(ref(database, `${row.path}/${row.key}`), updates);
 
       setLinkageRowsByForm(previous => ({
         ...previous,
         [row.formId]: (previous[row.formId] || []).map(item =>
-          item.key === row.key ? { ...item, userIdentifier } : item,
+          item.key === row.key ? { ...item, userIdentifier: userIdentifier || item.userIdentifier, databaseFormId: databaseFormId || item.databaseFormId } : item,
         ),
       }));
-      setLinkageMessage(isArabicUI ? 'تم حفظ معرّف المستخدم.' : 'User identifier saved.');
+      setLinkageMessage(isArabicUI ? 'تم حفظ بيانات الربط.' : 'Linkage data saved.');
     } catch (err) {
       console.error(err);
-      setLinkageError(isArabicUI ? 'تعذر حفظ معرّف المستخدم.' : 'Unable to save the user identifier.');
+      setLinkageError(isArabicUI ? 'تعذر حفظ بيانات الربط.' : 'Unable to save the linkage data.');
     } finally {
       setLinkageSavingKey(null);
     }
@@ -965,6 +999,12 @@ export default function AssessmentForm() {
       }));
 
       setIdentifierDrafts(previous => {
+        const next = { ...previous };
+        delete next[draftKey];
+        return next;
+      });
+
+      setFormIdDrafts(previous => {
         const next = { ...previous };
         delete next[draftKey];
         return next;
@@ -1339,13 +1379,14 @@ export default function AssessmentForm() {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full border-collapse min-w-[1120px]">
+                    <table className="w-full border-collapse min-w-[1240px]">
                       <thead>
                         <tr className="bg-white text-[#641414]">
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'الاسم' : 'Name'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'البريد الإلكتروني' : 'Email'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'المعرّف الحالي' : 'Current Identifier'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'تعديل معرّف المستخدم' : 'Modify User Identifier'}</th>
+                          <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'رقم النموذج' : 'Form ID'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'وقت الإرسال' : 'Submitted'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'معاينة' : 'Preview'}</th>
                           <th className="text-start p-3 border-b border-[#ead1d1] text-sm">{isArabicUI ? 'حفظ' : 'Save'}</th>
@@ -1355,7 +1396,7 @@ export default function AssessmentForm() {
                       <tbody>
                         {linkageRows.length === 0 && !linkageLoading && (
                           <tr>
-                            <td colSpan={8} className="p-5 text-center text-[#666] font-bold">
+                            <td colSpan={9} className="p-5 text-center text-[#666] font-bold">
                               {isArabicUI ? 'لا توجد ردود لهذا النموذج.' : 'No responses found for this form.'}
                             </td>
                           </tr>
@@ -1381,6 +1422,20 @@ export default function AssessmentForm() {
                                     placeholder={isArabicUI ? 'مثال: member-001' : 'Example: member-001'}
                                     className="w-full px-[12px] py-[10px] border border-[#ddd] rounded-[12px] text-[0.95rem] bg-white text-[#242424] outline-none focus:border-[#8b1e1e] focus:shadow-[0_0_0_3px_rgba(139,30,30,0.10)]"
                                   />
+                                </td>
+                                <td className="p-3">
+                                  <select
+                                    value={formIdDrafts[draftKey] ?? row.databaseFormId}
+                                    onChange={event => setFormIdDrafts(previous => ({ ...previous, [draftKey]: event.target.value }))}
+                                    className="w-full px-[12px] py-[10px] border border-[#ddd] rounded-[12px] text-[0.95rem] bg-white text-[#242424] outline-none focus:border-[#8b1e1e] focus:shadow-[0_0_0_3px_rgba(139,30,30,0.10)]"
+                                  >
+                                    <option value="">{isArabicUI ? 'اختر' : 'Select'}</option>
+                                    {SUPPORTED_LINKAGE_FORM_IDS.map(formIdOption => (
+                                      <option key={formIdOption} value={formIdOption}>
+                                        {formIdOption}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </td>
                                 <td className="p-3 text-[#666] text-sm whitespace-nowrap">{row.createdAtEasternTime || '-'}</td>
                                 <td className="p-3">
@@ -1416,7 +1471,7 @@ export default function AssessmentForm() {
 
                               {previewOpen && (
                                 <tr className="bg-[#fffafa] border-b border-[#eeeeee]">
-                                  <td colSpan={8} className="p-4">
+                                  <td colSpan={9} className="p-4">
                                     <div className="border border-[rgba(139,30,30,0.14)] rounded-[16px] bg-white overflow-hidden">
                                       <div className="px-4 py-3 bg-[#f8eeee] text-[#641414] font-bold">
                                         {isArabicUI ? 'معاينة الرد الكامل' : 'Full response preview'}
