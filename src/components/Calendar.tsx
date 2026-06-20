@@ -474,21 +474,25 @@ export default function Calendar() {
         const raw = val || {};
         const fullName = extractResponseValue(raw, ['fullName', 'full_name', 'name', 'firstName', 'lastName']);
         const email = extractResponseValue(raw, ['email', 'emailAddress', 'userEmail']);
-        const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']);
+        const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']).trim();
+        const normalizedIdentifier = userIdentifier.toLowerCase();
+
+        if (!normalizedIdentifier) {
+          return;
+        }
+
         const result = raw.results;
         const lang = raw.interfaceLanguageUsed === 'Arabic' ? 'Arabic' : 'English';
         const primaryGift = result?.[lang]?.primaryGift || '';
-        const memberKey = userIdentifier
-          ? `identifier_${safeFirebaseKey(userIdentifier)}`
-          : `response_${safeFirebaseKey(id)}`;
+        const memberKey = `identifier_${safeFirebaseKey(normalizedIdentifier)}`;
         const existing = peopleByKey.get(memberKey);
         const peopleGroup = extractPeopleDevelopmentGroup(raw);
 
         if (existing) {
           peopleByKey.set(memberKey, {
             ...existing,
-            name: existing.name !== 'N/A' && existing.name ? existing.name : fullName,
-            email: existing.email !== 'N/A' && existing.email ? existing.email : email,
+            name: existing.name !== 'N/A' && existing.name ? existing.name : fullName || existing.name,
+            email: existing.email !== 'N/A' && existing.email ? existing.email : email || existing.email,
             primaryGift: existing.primaryGift || primaryGift,
             identifier: existing.identifier || userIdentifier,
             peopleGroup: existing.peopleGroup || peopleGroup,
@@ -512,7 +516,7 @@ export default function Calendar() {
       });
 
       const parsed = Array.from(peopleByKey.values())
-        .filter(person => person.identifier || person.name !== 'N/A' || person.email !== 'N/A')
+        .filter(person => person.identifier.trim())
         .sort((a, b) => a.name.localeCompare(b.name));
 
       setParticipants(parsed);
