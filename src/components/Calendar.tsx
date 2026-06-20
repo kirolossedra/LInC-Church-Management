@@ -30,7 +30,17 @@ const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
-type PeopleDevelopmentGroupId = 'prophets' | 'helpers' | 'evangelists' | 'apostles';
+type PeopleDevelopmentGroupId =
+  | 'pastors'
+  | 'prophets'
+  | 'evangelists'
+  | 'teachers'
+  | 'apostles'
+  | 'helpers'
+  | 'mercy'
+  | 'facilitators'
+  | 'services'
+  | 'giving';
 type PeoplePersonalNoteType = 'strength' | 'weakness';
 
 const PEOPLE_DEVELOPMENT_ROOT = 'peopleDevelopment';
@@ -47,6 +57,17 @@ const PEOPLE_DEVELOPMENT_GROUPS: {
   badgeClass: string;
 }[] = [
   {
+    id: 'pastors',
+    labelEn: 'Pastors',
+    labelAr: 'الرعاة',
+    descriptionEn: 'Care, shepherding, and spiritual follow-up',
+    descriptionAr: 'رعاية، متابعة، واهتمام روحي',
+    cardClass: 'bg-rose-50 border-rose-200 text-rose-800',
+    softClass: 'bg-rose-50 border-rose-100 text-rose-800',
+    buttonClass: 'bg-rose-700 hover:bg-rose-800 text-white',
+    badgeClass: 'bg-rose-100 text-rose-800 border-rose-200',
+  },
+  {
     id: 'prophets',
     labelEn: 'Prophets',
     labelAr: 'الأنبياء',
@@ -56,17 +77,6 @@ const PEOPLE_DEVELOPMENT_GROUPS: {
     softClass: 'bg-purple-50 border-purple-100 text-purple-800',
     buttonClass: 'bg-purple-700 hover:bg-purple-800 text-white',
     badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
-  },
-  {
-    id: 'helpers',
-    labelEn: 'Helpers',
-    labelAr: 'المساعدون',
-    descriptionEn: 'Care, support, and practical service',
-    descriptionAr: 'رعاية، دعم، وخدمة عملية',
-    cardClass: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-    softClass: 'bg-emerald-50 border-emerald-100 text-emerald-800',
-    buttonClass: 'bg-emerald-700 hover:bg-emerald-800 text-white',
-    badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   },
   {
     id: 'evangelists',
@@ -80,6 +90,17 @@ const PEOPLE_DEVELOPMENT_GROUPS: {
     badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
   },
   {
+    id: 'teachers',
+    labelEn: 'Teachers',
+    labelAr: 'المعلمون',
+    descriptionEn: 'Teaching, explaining, and grounding people in truth',
+    descriptionAr: 'تعليم، شرح، وتثبيت الناس في الحق',
+    cardClass: 'bg-indigo-50 border-indigo-200 text-indigo-800',
+    softClass: 'bg-indigo-50 border-indigo-100 text-indigo-800',
+    buttonClass: 'bg-indigo-700 hover:bg-indigo-800 text-white',
+    badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+  },
+  {
     id: 'apostles',
     labelEn: 'Apostles',
     labelAr: 'الرسل',
@@ -89,6 +110,61 @@ const PEOPLE_DEVELOPMENT_GROUPS: {
     softClass: 'bg-sky-50 border-sky-100 text-sky-800',
     buttonClass: 'bg-sky-700 hover:bg-sky-800 text-white',
     badgeClass: 'bg-sky-100 text-sky-800 border-sky-200',
+  },
+  {
+    id: 'helpers',
+    labelEn: 'Helpers',
+    labelAr: 'المساعدون',
+    descriptionEn: 'Care, support, and practical service',
+    descriptionAr: 'رعاية، دعم، وخدمة عملية',
+    cardClass: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+    softClass: 'bg-emerald-50 border-emerald-100 text-emerald-800',
+    buttonClass: 'bg-emerald-700 hover:bg-emerald-800 text-white',
+    badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  },
+  {
+    id: 'mercy',
+    labelEn: 'Mercy',
+    labelAr: 'الرحمة',
+    descriptionEn: 'Compassion, comfort, and support for hurting people',
+    descriptionAr: 'رحمة، تعزية، ومساندة للمتألمين',
+    cardClass: 'bg-pink-50 border-pink-200 text-pink-800',
+    softClass: 'bg-pink-50 border-pink-100 text-pink-800',
+    buttonClass: 'bg-pink-700 hover:bg-pink-800 text-white',
+    badgeClass: 'bg-pink-100 text-pink-800 border-pink-200',
+  },
+  {
+    id: 'facilitators',
+    labelEn: 'Facilitators',
+    labelAr: 'الميسّرون',
+    descriptionEn: 'Organizing, connecting, and making ministry flow',
+    descriptionAr: 'تنظيم، ربط، وتسهيل سير الخدمة',
+    cardClass: 'bg-cyan-50 border-cyan-200 text-cyan-800',
+    softClass: 'bg-cyan-50 border-cyan-100 text-cyan-800',
+    buttonClass: 'bg-cyan-700 hover:bg-cyan-800 text-white',
+    badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  },
+  {
+    id: 'services',
+    labelEn: 'Services',
+    labelAr: 'الخدمات',
+    descriptionEn: 'Practical ministry, operations, and serving needs',
+    descriptionAr: 'خدمة عملية، تشغيل، وتلبية الاحتياجات',
+    cardClass: 'bg-stone-50 border-stone-200 text-stone-800',
+    softClass: 'bg-stone-50 border-stone-100 text-stone-800',
+    buttonClass: 'bg-stone-700 hover:bg-stone-800 text-white',
+    badgeClass: 'bg-stone-100 text-stone-800 border-stone-200',
+  },
+  {
+    id: 'giving',
+    labelEn: 'Giving',
+    labelAr: 'العطاء',
+    descriptionEn: 'Generosity, resources, and practical contribution',
+    descriptionAr: 'سخاء، موارد، ومساهمة عملية',
+    cardClass: 'bg-lime-50 border-lime-200 text-lime-800',
+    softClass: 'bg-lime-50 border-lime-100 text-lime-800',
+    buttonClass: 'bg-lime-700 hover:bg-lime-800 text-white',
+    badgeClass: 'bg-lime-100 text-lime-800 border-lime-200',
   },
 ];
 
@@ -223,12 +299,21 @@ function safeFirebaseKey(value: string): string {
 }
 
 function normalizePeopleDevelopmentGroup(value: unknown): PeopleDevelopmentGroupId | '' {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
 
-  if (normalized === 'prophet' || normalized === 'prophets') return 'prophets';
+  if (normalized === 'pastor' || normalized === 'pastors' || normalized === 'pastoral') return 'pastors';
+  if (normalized === 'prophet' || normalized === 'prophets' || normalized === 'prophetic') return 'prophets';
+  if (normalized === 'evangelist' || normalized === 'evangelists' || normalized === 'evangelistic') return 'evangelists';
+  if (normalized === 'teacher' || normalized === 'teachers' || normalized === 'teaching') return 'teachers';
+  if (normalized === 'apostle' || normalized === 'apostles' || normalized === 'apostolic') return 'apostles';
   if (normalized === 'helper' || normalized === 'helpers') return 'helpers';
-  if (normalized === 'evangelist' || normalized === 'evangelists') return 'evangelists';
-  if (normalized === 'apostle' || normalized === 'apostles') return 'apostles';
+  if (normalized === 'mercy' || normalized === 'mercies' || normalized === 'merciful') return 'mercy';
+  if (normalized === 'facilitator' || normalized === 'facilitators' || normalized === 'facilitation') return 'facilitators';
+  if (normalized === 'service' || normalized === 'services' || normalized === 'serving') return 'services';
+  if (normalized === 'giving' || normalized === 'giver' || normalized === 'givers') return 'giving';
 
   return '';
 }
@@ -426,16 +511,28 @@ export default function Calendar() {
   const [peopleDevelopmentSavingKey, setPeopleDevelopmentSavingKey] = useState<string | null>(null);
   const [peopleDevelopmentPostingGroup, setPeopleDevelopmentPostingGroup] = useState<PeopleDevelopmentGroupId | null>(null);
   const [peopleAssignmentDrafts, setPeopleAssignmentDrafts] = useState<Record<PeopleDevelopmentGroupId, string>>({
+    pastors: '',
     prophets: '',
-    helpers: '',
     evangelists: '',
+    teachers: '',
     apostles: '',
+    helpers: '',
+    mercy: '',
+    facilitators: '',
+    services: '',
+    giving: '',
   });
   const [peopleGroupSelectDrafts, setPeopleGroupSelectDrafts] = useState<Record<PeopleDevelopmentGroupId, string>>({
+    pastors: '',
     prophets: '',
-    helpers: '',
     evangelists: '',
+    teachers: '',
     apostles: '',
+    helpers: '',
+    mercy: '',
+    facilitators: '',
+    services: '',
+    giving: '',
   });
   const [showPeopleNotePopup, setShowPeopleNotePopup] = useState(false);
   const [selectedPeopleNotePerson, setSelectedPeopleNotePerson] = useState<Participant | null>(null);
@@ -2524,7 +2621,7 @@ Otherwise, provide a helpful response about their calendar.`;
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {PEOPLE_DEVELOPMENT_GROUPS.map(group => {
               const groupPeople = getGroupPeople(group.id);
 
