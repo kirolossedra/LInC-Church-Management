@@ -84,13 +84,20 @@ export default function LandingPage() {
                 {t('landing.adminLogin')}
               </button>
             </div>
-            <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="mt-6 flex flex-col sm:flex-row sm:flex-wrap gap-4 justify-center">
               <button
                 onClick={() => navigate('/booking')}
                 className="inline-flex items-center justify-center gap-3 min-h-[52px] px-8 bg-stone-100 text-[#8b1e1e] rounded-full font-bold transition-transform hover:-translate-y-[2px] hover:bg-stone-200"
               >
                 <CalendarIcon size={18} />
                 {t('landing.bookMeeting')}
+              </button>
+              <button
+                onClick={() => navigate('/group-notes')}
+                className="inline-flex items-center justify-center gap-3 min-h-[52px] px-8 bg-[#eef6ff] text-[#8b1e1e] border-2 border-[#b9d7f3] rounded-full font-bold transition-transform hover:-translate-y-[2px] hover:bg-[#dcecff] hover:border-[#8bbce8]"
+              >
+                <Users size={18} />
+                {locale === 'ar' ? 'ملاحظات مجموعتي' : 'My Group Notes'}
               </button>
               <button
                 onMouseDown={() => setNextGenButtonClicked(true)}
@@ -237,8 +244,3 @@ export default function LandingPage() {
     </div>
   );
 }
-
-
-
-
-
