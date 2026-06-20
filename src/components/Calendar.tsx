@@ -5,8 +5,8 @@ import { ref, onValue, update, push } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, MessageSquare } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   createCalendarMeetLink,
   generatePlaceholderLink,
@@ -31,6 +31,7 @@ const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
 type PeopleDevelopmentGroupId = 'prophets' | 'helpers' | 'evangelists' | 'apostles';
+type PeoplePersonalNoteType = 'strength' | 'weakness';
 
 const PEOPLE_DEVELOPMENT_ROOT = 'peopleDevelopment';
 
@@ -232,6 +233,11 @@ function normalizePeopleDevelopmentGroup(value: unknown): PeopleDevelopmentGroup
   return '';
 }
 
+function normalizePeoplePersonalNoteType(value: unknown): PeoplePersonalNoteType {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'weakness' ? 'weakness' : 'strength';
+}
+
 function extractPeopleDevelopmentGroup(raw: Record<string, any>): PeopleDevelopmentGroupId | '' {
   return normalizePeopleDevelopmentGroup(
     raw.peopleDevelopmentGroup ||
@@ -318,6 +324,22 @@ interface PeopleDevelopmentEntry {
   createdAtISO: string;
 }
 
+interface PeoplePersonalNote {
+  id: string;
+  identifier: string;
+  memberKey: string;
+  fullName: string;
+  email: string;
+  group: PeopleDevelopmentGroupId | '';
+  groupLabel: string;
+  type: PeoplePersonalNoteType;
+  text: string;
+  date: string;
+  createdAt: number;
+  createdAtISO: string;
+  source: string;
+}
+
 interface Availability {
   id: string;
   date: string;
@@ -398,6 +420,7 @@ export default function Calendar() {
   const [showPeopleDevelopment, setShowPeopleDevelopment] = useState(false);
   const [peopleDevelopmentMembers, setPeopleDevelopmentMembers] = useState<Record<string, PeopleDevelopmentMember>>({});
   const [peopleDevelopmentEntries, setPeopleDevelopmentEntries] = useState<PeopleDevelopmentEntry[]>([]);
+  const [peoplePersonalNotes, setPeoplePersonalNotes] = useState<PeoplePersonalNote[]>([]);
   const [peopleSearchTerm, setPeopleSearchTerm] = useState('');
   const [draggedPeopleMemberKey, setDraggedPeopleMemberKey] = useState<string | null>(null);
   const [peopleDevelopmentSavingKey, setPeopleDevelopmentSavingKey] = useState<string | null>(null);
@@ -414,6 +437,11 @@ export default function Calendar() {
     evangelists: '',
     apostles: '',
   });
+  const [showPeopleNotePopup, setShowPeopleNotePopup] = useState(false);
+  const [selectedPeopleNotePerson, setSelectedPeopleNotePerson] = useState<Participant | null>(null);
+  const [peopleNoteType, setPeopleNoteType] = useState<PeoplePersonalNoteType>('strength');
+  const [peopleNoteText, setPeopleNoteText] = useState('');
+  const [peopleNoteSaving, setPeopleNoteSaving] = useState(false);
   const [nextGenSelectionLoadingId, setNextGenSelectionLoadingId] = useState<string | null>(null);
   const [selectedSlotDay, setSelectedSlotDay] = useState<Date | null>(null);
   const [slotBlockingLoading, setSlotBlockingLoading] = useState(false);
@@ -647,6 +675,41 @@ export default function Calendar() {
         .sort((a, b) => b.createdAt - a.createdAt);
 
       setPeopleDevelopmentEntries(parsed);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const personalNotesRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/personalNotes/`);
+    const unsubscribe = onValue(personalNotesRef, (snapshot) => {
+      const data = snapshot.val();
+
+      if (!data) {
+        setPeoplePersonalNotes([]);
+        return;
+      }
+
+      const parsed = Object.entries(data)
+        .map(([id, value]: [string, any]) => ({
+          id,
+          identifier: String(value?.identifier || '').trim(),
+          memberKey: String(value?.memberKey || '').trim(),
+          fullName: String(value?.fullName || value?.name || '').trim(),
+          email: String(value?.email || '').trim(),
+          group: normalizePeopleDevelopmentGroup(value?.group),
+          groupLabel: String(value?.groupLabel || '').trim(),
+          type: normalizePeoplePersonalNoteType(value?.type),
+          text: String(value?.text || '').trim(),
+          date: String(value?.date || '').trim(),
+          createdAt: normalizeNumber(value?.createdAt),
+          createdAtISO: String(value?.createdAtISO || '').trim(),
+          source: String(value?.source || 'pastorCalendar').trim(),
+        }))
+        .filter((note): note is PeoplePersonalNote => Boolean((note.memberKey || note.identifier) && note.text))
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+      setPeoplePersonalNotes(parsed);
     });
 
     return () => unsubscribe();
@@ -1939,6 +2002,81 @@ Otherwise, provide a helpful response about their calendar.`;
       person.identifier.toLowerCase().includes(search);
   });
 
+  const getPersonPersonalNotes = (person: Participant): PeoplePersonalNote[] => {
+    const normalizedIdentifier = person.identifier.trim().toLowerCase();
+
+    return peoplePersonalNotes.filter(note =>
+      note.memberKey === person.memberKey ||
+      (normalizedIdentifier && note.identifier.trim().toLowerCase() === normalizedIdentifier)
+    );
+  };
+
+  const getPersonNoteCount = (person: Participant, type: PeoplePersonalNoteType): number => {
+    return getPersonPersonalNotes(person).filter(note => note.type === type).length;
+  };
+
+  const openPeopleNotePopup = (person: Participant, type: PeoplePersonalNoteType = 'strength') => {
+    setSelectedPeopleNotePerson(person);
+    setPeopleNoteType(type);
+    setPeopleNoteText('');
+    setShowPeopleNotePopup(true);
+  };
+
+  const closePeopleNotePopup = () => {
+    if (peopleNoteSaving) return;
+    setShowPeopleNotePopup(false);
+    setSelectedPeopleNotePerson(null);
+    setPeopleNoteType('strength');
+    setPeopleNoteText('');
+  };
+
+  const handleSubmitPeoplePersonalNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!selectedPeopleNotePerson) return;
+
+    const text = peopleNoteText.trim();
+    if (!text) {
+      alert(displayLocale === 'ar' ? 'اكتب نص الملاحظة أولاً.' : 'Write the note text first.');
+      return;
+    }
+
+    setPeopleNoteSaving(true);
+
+    try {
+      const createdAt = Date.now();
+      const createdAtISO = new Date().toISOString();
+      const date = format(new Date(), 'yyyy-MM-dd');
+      const assignedGroup = getPersonGroup(selectedPeopleNotePerson);
+      const groupLabel = assignedGroup ? getPeopleDevelopmentGroupLabel(assignedGroup) : '';
+
+      await push(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/personalNotes/`), {
+        identifier: selectedPeopleNotePerson.identifier,
+        memberKey: selectedPeopleNotePerson.memberKey,
+        fullName: selectedPeopleNotePerson.name,
+        email: selectedPeopleNotePerson.email,
+        group: assignedGroup,
+        groupLabel,
+        type: peopleNoteType,
+        text,
+        date,
+        createdAt,
+        createdAtISO,
+        source: 'pastorCalendar',
+      });
+
+      setPeopleNoteText('');
+      setShowPeopleNotePopup(false);
+      setSelectedPeopleNotePerson(null);
+      setPeopleNoteType('strength');
+    } catch (err) {
+      console.error('Failed to save personal people note:', err);
+      alert(displayLocale === 'ar' ? 'فشل حفظ الملاحظة الشخصية.' : 'Failed to save the personal note.');
+    } finally {
+      setPeopleNoteSaving(false);
+    }
+  };
+
   const handleAssignPersonToGroup = async (person: Participant, group: PeopleDevelopmentGroupId | '') => {
     const currentGroup = getPersonGroup(person);
     if (currentGroup === group) return;
@@ -2508,20 +2646,27 @@ Otherwise, provide a helpful response about their calendar.`;
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {groupPeople.map(person => (
-                            <button
+                            <div
                               key={`chip-${group.id}-${person.memberKey}`}
-                              type="button"
                               draggable
                               onDragStart={event => {
                                 setDraggedPeopleMemberKey(person.memberKey);
                                 event.dataTransfer.setData('text/plain', person.memberKey);
                               }}
                               onDragEnd={() => setDraggedPeopleMemberKey(null)}
-                              className="rounded-full bg-white px-3 py-2 text-sm font-black shadow-sm border border-white/80"
+                              className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-2 text-sm font-black shadow-sm border border-white/80"
                               title={person.identifier || person.email}
                             >
-                              {person.name}
-                            </button>
+                              <span>{person.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => openPeopleNotePopup(person)}
+                                className="rounded-full bg-[#f8eeee] p-1 text-[#7a1717] hover:bg-[#efd8d8] transition-colors"
+                                title={displayLocale === 'ar' ? 'إضافة ملاحظة شخصية' : 'Add personal note'}
+                              >
+                                <MessageSquare size={13} />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -2583,6 +2728,10 @@ Otherwise, provide a helpful response about their calendar.`;
                 ) : searchedPeople.map(person => {
                   const assignedGroup = getPersonGroup(person);
                   const savingThisPerson = peopleDevelopmentSavingKey === person.memberKey;
+                  const personNotes = getPersonPersonalNotes(person);
+                  const latestPersonNotes = personNotes.slice(0, 2);
+                  const strengthCount = personNotes.filter(note => note.type === 'strength').length;
+                  const weaknessCount = personNotes.filter(note => note.type === 'weakness').length;
 
                   return (
                     <div
@@ -2633,6 +2782,49 @@ Otherwise, provide a helpful response about their calendar.`;
                           {savingThisPerson ? '...' : assignedGroup ? <X size={16} /> : <Plus size={16} />}
                         </button>
                       </div>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openPeopleNotePopup(person, 'strength')}
+                          className="flex items-center justify-center gap-2 rounded-xl bg-green-50 px-3 py-2 text-green-700 font-black border border-green-100 hover:bg-green-100 transition-colors"
+                        >
+                          <MessageSquare size={15} />
+                          {displayLocale === 'ar' ? `قوة (${strengthCount})` : `Strength (${strengthCount})`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openPeopleNotePopup(person, 'weakness')}
+                          className="flex items-center justify-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-red-700 font-black border border-red-100 hover:bg-red-100 transition-colors"
+                        >
+                          <MessageSquare size={15} />
+                          {displayLocale === 'ar' ? `ضعف (${weaknessCount})` : `Weakness (${weaknessCount})`}
+                        </button>
+                      </div>
+
+                      {latestPersonNotes.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {latestPersonNotes.map(note => (
+                            <div
+                              key={`latest-note-${person.memberKey}-${note.id}`}
+                              className={`rounded-xl border px-3 py-2 ${
+                                note.type === 'strength'
+                                  ? 'bg-green-50 border-green-100 text-green-800'
+                                  : 'bg-red-50 border-red-100 text-red-800'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 text-xs font-black">
+                                <span>{note.type === 'strength'
+                                  ? (displayLocale === 'ar' ? 'قوة' : 'Strength')
+                                  : (displayLocale === 'ar' ? 'ضعف' : 'Weakness')}
+                                </span>
+                                <span>{note.date}</span>
+                              </div>
+                              <p className="mt-1 line-clamp-2 text-sm text-[#242424]">{note.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3782,6 +3974,182 @@ Otherwise, provide a helpful response about their calendar.`;
           </motion.div>
         </div>
       )}
+
+      <AnimatePresence>
+        {selectedPeopleNotePerson && showPeopleNotePopup && (
+          <motion.div
+            key="people-personal-note-popup-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 backdrop-blur-md px-4 py-6"
+            onClick={closePeopleNotePopup}
+            dir={dir}
+            style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}
+          >
+            <motion.div
+              key="people-personal-note-popup-panel"
+              initial={{ opacity: 0, scale: 0.94, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 18 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+              className="w-full max-w-xl overflow-hidden rounded-3xl bg-[#fffdf9] shadow-2xl border border-[#ead9d0] font-bold"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="relative bg-[#7a1717] px-6 py-5 text-white">
+                <button
+                  type="button"
+                  disabled={peopleNoteSaving}
+                  onClick={closePeopleNotePopup}
+                  className="absolute top-4 end-4 rounded-full bg-white/15 p-2 transition-colors hover:bg-white/25 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <X size={18} />
+                </button>
+
+                <div className="flex items-center gap-3 pe-10">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+                    <MessageSquare size={24} />
+                  </div>
+
+                  <div>
+                    <h3 className="text-2xl font-bold">
+                      {displayLocale === 'ar' ? 'إضافة ملاحظة شخصية' : 'Add Personal Note'}
+                    </h3>
+                    <p className="mt-1 text-base text-white/90">
+                      {selectedPeopleNotePerson.name} • {selectedPeopleNotePerson.identifier}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmitPeoplePersonalNote} className="p-6 space-y-4">
+                <div>
+                  <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest flex items-center gap-1 mb-2">
+                    <MessageSquare size={12} />
+                    {displayLocale === 'ar' ? 'نوع الملاحظة' : 'Note Type'}
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPeopleNoteType('strength')}
+                      disabled={peopleNoteSaving}
+                      className={`rounded-2xl border-2 px-4 py-3 font-black transition-all disabled:opacity-60 ${
+                        peopleNoteType === 'strength'
+                          ? 'bg-green-600 border-green-600 text-white shadow-md'
+                          : 'bg-green-50 border-green-100 text-green-700 hover:bg-green-100'
+                      }`}
+                    >
+                      {displayLocale === 'ar' ? 'قوة' : 'Strength'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPeopleNoteType('weakness')}
+                      disabled={peopleNoteSaving}
+                      className={`rounded-2xl border-2 px-4 py-3 font-black transition-all disabled:opacity-60 ${
+                        peopleNoteType === 'weakness'
+                          ? 'bg-red-600 border-red-600 text-white shadow-md'
+                          : 'bg-red-50 border-red-100 text-red-700 hover:bg-red-100'
+                      }`}
+                    >
+                      {displayLocale === 'ar' ? 'ضعف' : 'Weakness'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest flex items-center gap-1 mb-2">
+                    <User size={12} />
+                    {displayLocale === 'ar' ? 'الشخص' : 'Person'}
+                  </label>
+
+                  <div className="rounded-2xl border-2 border-[#ead9d0] bg-[#fffdf9] px-4 py-3">
+                    <div className="text-[#2b1717] font-black">{selectedPeopleNotePerson.name}</div>
+                    <div className="mt-1 text-sm text-[#6b4b4b]">
+                      {selectedPeopleNotePerson.email} • {getPersonGroup(selectedPeopleNotePerson)
+                        ? getPeopleDevelopmentGroupLabel(getPersonGroup(selectedPeopleNotePerson) as PeopleDevelopmentGroupId)
+                        : (displayLocale === 'ar' ? 'غير محدد' : 'Unassigned')}
+                    </div>
+                  </div>
+                </div>
+
+                {getPersonPersonalNotes(selectedPeopleNotePerson).length > 0 && (
+                  <div className="rounded-2xl border-2 border-[#ead9d0] bg-[#fffdf9] p-4">
+                    <div className="mb-3 text-base font-bold text-[#7a1717]/70 uppercase tracking-widest">
+                      {displayLocale === 'ar' ? 'آخر الملاحظات الشخصية' : 'Latest Personal Notes'}
+                    </div>
+                    <div className="space-y-2 max-h-44 overflow-y-auto">
+                      {getPersonPersonalNotes(selectedPeopleNotePerson).slice(0, 5).map(note => (
+                        <div
+                          key={`popup-person-note-${note.id}`}
+                          className={`rounded-xl border px-3 py-2 ${
+                            note.type === 'strength'
+                              ? 'bg-green-50 border-green-100 text-green-800'
+                              : 'bg-red-50 border-red-100 text-red-800'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 text-xs font-black">
+                            <span>
+                              {note.type === 'strength'
+                                ? (displayLocale === 'ar' ? 'قوة' : 'Strength')
+                                : (displayLocale === 'ar' ? 'ضعف' : 'Weakness')}
+                            </span>
+                            <span>{note.date}</span>
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[#242424]">{note.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest flex items-center gap-1 mb-2">
+                    <MessageSquare size={12} />
+                    {displayLocale === 'ar' ? 'نص الملاحظة' : 'Note'}
+                  </label>
+                  <textarea
+                    required
+                    rows={5}
+                    value={peopleNoteText}
+                    disabled={peopleNoteSaving}
+                    onChange={event => setPeopleNoteText(event.target.value)}
+                    placeholder={displayLocale === 'ar' ? 'اكتب الملاحظة هنا...' : 'Write the note here...'}
+                    className="w-full px-4 py-3 bg-[#fffdf9] border-2 border-[#ead9d0] rounded-xl focus:ring-2 focus:ring-[#7a1717]/25 focus:border-[#7a1717] outline-none text-base font-bold text-[#2b1717] placeholder:text-[#9b7b7b] resize-none disabled:opacity-60"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={peopleNoteSaving}
+                    onClick={closePeopleNotePopup}
+                    className="py-3 bg-[#f4e8e2] text-[#7a1717] rounded-xl font-bold hover:bg-[#ead9d0] transition-all text-base disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {displayLocale === 'ar' ? 'إغلاق' : 'Close'}
+                  </button>
+
+                  <button
+                    disabled={peopleNoteSaving || !peopleNoteText.trim()}
+                    type="submit"
+                    className="py-3 bg-[#7a1717] text-white rounded-xl font-bold shadow hover:bg-[#5e1010] transition-all flex items-center justify-center gap-2 text-base disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {peopleNoteSaving ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                    ) : (
+                      <>
+                        <CheckCircle size={14} />
+                        {displayLocale === 'ar' ? 'حفظ الملاحظة' : 'Save Note'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {showAiAssistant && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
