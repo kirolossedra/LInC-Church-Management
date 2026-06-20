@@ -2011,10 +2011,6 @@ Otherwise, provide a helpful response about their calendar.`;
     );
   };
 
-  const getPersonNoteCount = (person: Participant, type: PeoplePersonalNoteType): number => {
-    return getPersonPersonalNotes(person).filter(note => note.type === type).length;
-  };
-
   const openPeopleNotePopup = (person: Participant, type: PeoplePersonalNoteType = 'strength') => {
     setSelectedPeopleNotePerson(person);
     setPeopleNoteType(type);
