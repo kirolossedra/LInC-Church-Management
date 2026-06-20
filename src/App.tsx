@@ -12,6 +12,7 @@ import BookingCalendar from './pages/BookingCalendar';
 import NextGenActivities from './pages/NextGenActivities';
 import PeopleNotesPage from './pages/PeopleNotesPage';
 import AttendancePage from './pages/AttendancePage';
+import CongregationGroupNotes from './components/CongregationGroupNotes';
 import { auth, signInWithGoogle, signInWithEmail, signUpWithEmail } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { database } from './firebase';
@@ -301,6 +302,7 @@ function AppRoutes() {
     if (path === '/pastor/people-notes') return 'people-notes';
     if (path === '/assessment') return 'assessment';
     if (path === '/guide') return 'guide';
+    if (path === '/group-notes') return 'group-notes';
 
     return 'home';
   };
@@ -385,6 +387,15 @@ function AppRoutes() {
         element={
           <Layout activeTab="attendance" isAdmin={false} isSuperAdmin={false}>
             <AttendancePage />
+          </Layout>
+        }
+      />
+
+      <Route
+        path="/group-notes"
+        element={
+          <Layout activeTab={getActiveTab()} isAdmin={false} isSuperAdmin={false}>
+            <CongregationGroupNotes />
           </Layout>
         }
       />
