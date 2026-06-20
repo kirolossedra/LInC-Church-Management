@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import emailjs from '@emailjs/browser';
-import { Link } from 'react-router-dom';
 import { database } from '../firebase';
 import { ref, onValue, update, push } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy } from 'lucide-react';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
   createCalendarMeetLink,
@@ -30,6 +29,68 @@ const SLOT_BLOCK_DURATION = 0.5;
 const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
+
+type PeopleDevelopmentGroupId = 'prophets' | 'helpers' | 'evangelists' | 'apostles';
+
+const PEOPLE_DEVELOPMENT_ROOT = 'peopleDevelopment';
+
+const PEOPLE_DEVELOPMENT_GROUPS: {
+  id: PeopleDevelopmentGroupId;
+  labelEn: string;
+  labelAr: string;
+  descriptionEn: string;
+  descriptionAr: string;
+  cardClass: string;
+  softClass: string;
+  buttonClass: string;
+  badgeClass: string;
+}[] = [
+  {
+    id: 'prophets',
+    labelEn: 'Prophets',
+    labelAr: 'الأنبياء',
+    descriptionEn: 'Discernment, direction, and spiritual clarity',
+    descriptionAr: 'تمييز، توجيه، ووضوح روحي',
+    cardClass: 'bg-purple-50 border-purple-200 text-purple-800',
+    softClass: 'bg-purple-50 border-purple-100 text-purple-800',
+    buttonClass: 'bg-purple-700 hover:bg-purple-800 text-white',
+    badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+  },
+  {
+    id: 'helpers',
+    labelEn: 'Helpers',
+    labelAr: 'المساعدون',
+    descriptionEn: 'Care, support, and practical service',
+    descriptionAr: 'رعاية، دعم، وخدمة عملية',
+    cardClass: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+    softClass: 'bg-emerald-50 border-emerald-100 text-emerald-800',
+    buttonClass: 'bg-emerald-700 hover:bg-emerald-800 text-white',
+    badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  },
+  {
+    id: 'evangelists',
+    labelEn: 'Evangelists',
+    labelAr: 'المبشرون',
+    descriptionEn: 'Outreach, invitation, and sharing faith',
+    descriptionAr: 'خدمة خارجية، دعوة، ومشاركة الإيمان',
+    cardClass: 'bg-amber-50 border-amber-200 text-amber-800',
+    softClass: 'bg-amber-50 border-amber-100 text-amber-800',
+    buttonClass: 'bg-amber-600 hover:bg-amber-700 text-white',
+    badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
+  },
+  {
+    id: 'apostles',
+    labelEn: 'Apostles',
+    labelAr: 'الرسل',
+    descriptionEn: 'Building, sending, and starting new work',
+    descriptionAr: 'بناء، إرسال، وبدء أعمال جديدة',
+    cardClass: 'bg-sky-50 border-sky-200 text-sky-800',
+    softClass: 'bg-sky-50 border-sky-100 text-sky-800',
+    buttonClass: 'bg-sky-700 hover:bg-sky-800 text-white',
+    badgeClass: 'bg-sky-100 text-sky-800 border-sky-200',
+  },
+];
+
 
 function timeToHour(time?: string): number {
   if (!time) return 0;
@@ -90,6 +151,101 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#039;');
 }
 
+function normalizeLookupKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function unwrapStoredValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (typeof value !== 'object' || Array.isArray(value)) return '';
+
+  const record = value as Record<string, unknown>;
+  for (const key of ['value', 'answer', 'currentValue', 'userIdentifier', 'linkedUserIdentifier', 'group']) {
+    const nested = record[key];
+    if (typeof nested === 'string' || typeof nested === 'number') return String(nested).trim();
+  }
+
+  return '';
+}
+
+function extractResponseValue(value: unknown, candidateKeys: string[]): string {
+  const wantedKeys = new Set(candidateKeys.map(normalizeLookupKey));
+
+  const visit = (current: unknown, currentKey = ''): string => {
+    if (current === null || current === undefined) return '';
+
+    if (typeof current === 'string' || typeof current === 'number') {
+      return wantedKeys.has(normalizeLookupKey(currentKey)) ? String(current).trim() : '';
+    }
+
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        const found = visit(item, currentKey);
+        if (found) return found;
+      }
+      return '';
+    }
+
+    if (typeof current !== 'object') return '';
+
+    const record = current as Record<string, unknown>;
+
+    for (const [key, nested] of Object.entries(record)) {
+      if (wantedKeys.has(normalizeLookupKey(key))) {
+        const directValue = unwrapStoredValue(nested);
+        if (directValue) return directValue;
+
+        const nestedValue = visit(nested, key);
+        if (nestedValue) return nestedValue;
+      }
+    }
+
+    for (const [key, nested] of Object.entries(record)) {
+      const found = visit(nested, key);
+      if (found) return found;
+    }
+
+    return '';
+  };
+
+  return visit(value);
+}
+
+function safeFirebaseKey(value: string): string {
+  const safeValue = String(value || '')
+    .trim()
+    .replace(/[.#$/[\]]/g, '_')
+    .replace(/\s+/g, '_');
+
+  return safeValue || `unknown_${Date.now()}`;
+}
+
+function normalizePeopleDevelopmentGroup(value: unknown): PeopleDevelopmentGroupId | '' {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (normalized === 'prophet' || normalized === 'prophets') return 'prophets';
+  if (normalized === 'helper' || normalized === 'helpers') return 'helpers';
+  if (normalized === 'evangelist' || normalized === 'evangelists') return 'evangelists';
+  if (normalized === 'apostle' || normalized === 'apostles') return 'apostles';
+
+  return '';
+}
+
+function extractPeopleDevelopmentGroup(raw: Record<string, any>): PeopleDevelopmentGroupId | '' {
+  return normalizePeopleDevelopmentGroup(
+    raw.peopleDevelopmentGroup ||
+    raw.peopleDevelopment?.group ||
+    raw.fields?.peopleDevelopment?.group?.value ||
+    raw.fields?.peopleDevelopment?.group?.answer ||
+    '',
+  );
+}
+
+function getFirstName(value: string): string {
+  return String(value || '').trim().split(/\s+/)[0] || '';
+}
+
 function normalizeNumber(value: unknown): number {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
@@ -133,6 +289,33 @@ interface Participant {
   name: string;
   email: string;
   primaryGift: string;
+  identifier: string;
+  memberKey: string;
+  firstName: string;
+  peopleGroup?: PeopleDevelopmentGroupId | '';
+  sourcePath: string;
+  sourceKeys: string[];
+}
+
+interface PeopleDevelopmentMember {
+  memberKey: string;
+  identifier: string;
+  fullName: string;
+  email: string;
+  group: PeopleDevelopmentGroupId | '';
+  sourcePath?: string;
+  sourceKeys?: string[];
+  updatedAt?: number;
+  updatedAtISO?: string;
+}
+
+interface PeopleDevelopmentEntry {
+  id: string;
+  group: PeopleDevelopmentGroupId;
+  text: string;
+  date: string;
+  createdAt: number;
+  createdAtISO: string;
 }
 
 interface Availability {
@@ -212,6 +395,25 @@ export default function Calendar() {
   const [showRequests, setShowRequests] = useState(false);
   const [nextGenQuestions, setNextGenQuestions] = useState<NextGenQuestion[]>([]);
   const [showNextGenQuestions, setShowNextGenQuestions] = useState(false);
+  const [showPeopleDevelopment, setShowPeopleDevelopment] = useState(false);
+  const [peopleDevelopmentMembers, setPeopleDevelopmentMembers] = useState<Record<string, PeopleDevelopmentMember>>({});
+  const [peopleDevelopmentEntries, setPeopleDevelopmentEntries] = useState<PeopleDevelopmentEntry[]>([]);
+  const [peopleSearchTerm, setPeopleSearchTerm] = useState('');
+  const [draggedPeopleMemberKey, setDraggedPeopleMemberKey] = useState<string | null>(null);
+  const [peopleDevelopmentSavingKey, setPeopleDevelopmentSavingKey] = useState<string | null>(null);
+  const [peopleDevelopmentPostingGroup, setPeopleDevelopmentPostingGroup] = useState<PeopleDevelopmentGroupId | null>(null);
+  const [peopleAssignmentDrafts, setPeopleAssignmentDrafts] = useState<Record<PeopleDevelopmentGroupId, string>>({
+    prophets: '',
+    helpers: '',
+    evangelists: '',
+    apostles: '',
+  });
+  const [peopleGroupSelectDrafts, setPeopleGroupSelectDrafts] = useState<Record<PeopleDevelopmentGroupId, string>>({
+    prophets: '',
+    helpers: '',
+    evangelists: '',
+    apostles: '',
+  });
   const [nextGenSelectionLoadingId, setNextGenSelectionLoadingId] = useState<string | null>(null);
   const [selectedSlotDay, setSelectedSlotDay] = useState<Date | null>(null);
   const [slotBlockingLoading, setSlotBlockingLoading] = useState(false);
@@ -260,22 +462,62 @@ export default function Calendar() {
     const formRef = ref(database, 'form/');
     const unsubscribe = onValue(formRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        const parsed: Participant[] = Object.entries(data)
-          .map(([id, val]: [string, any]) => {
-            const fullName = val.fields?.trainee?.fullName?.value || '';
-            const email = val.fields?.trainee?.email?.value || '';
-            const result = val.results;
-            const lang = val.interfaceLanguageUsed === 'Arabic' ? 'Arabic' : 'English';
-            const primaryGift = result?.[lang]?.primaryGift || '';
-            return { id, name: fullName, email, primaryGift };
-          })
-          .filter(p => p.name && p.email);
-        setParticipants(parsed);
-      } else {
+
+      if (!data) {
         setParticipants([]);
+        return;
       }
+
+      const peopleByKey = new Map<string, Participant>();
+
+      Object.entries(data).forEach(([id, val]: [string, any]) => {
+        const raw = val || {};
+        const fullName = extractResponseValue(raw, ['fullName', 'full_name', 'name', 'firstName', 'lastName']);
+        const email = extractResponseValue(raw, ['email', 'emailAddress', 'userEmail']);
+        const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']);
+        const result = raw.results;
+        const lang = raw.interfaceLanguageUsed === 'Arabic' ? 'Arabic' : 'English';
+        const primaryGift = result?.[lang]?.primaryGift || '';
+        const memberKey = userIdentifier
+          ? `identifier_${safeFirebaseKey(userIdentifier)}`
+          : `response_${safeFirebaseKey(id)}`;
+        const existing = peopleByKey.get(memberKey);
+        const peopleGroup = extractPeopleDevelopmentGroup(raw);
+
+        if (existing) {
+          peopleByKey.set(memberKey, {
+            ...existing,
+            name: existing.name !== 'N/A' && existing.name ? existing.name : fullName,
+            email: existing.email !== 'N/A' && existing.email ? existing.email : email,
+            primaryGift: existing.primaryGift || primaryGift,
+            identifier: existing.identifier || userIdentifier,
+            peopleGroup: existing.peopleGroup || peopleGroup,
+            sourceKeys: Array.from(new Set([...existing.sourceKeys, id])),
+          });
+          return;
+        }
+
+        peopleByKey.set(memberKey, {
+          id,
+          name: fullName || 'N/A',
+          email: email || 'N/A',
+          primaryGift,
+          identifier: userIdentifier,
+          memberKey,
+          firstName: getFirstName(fullName || 'N/A'),
+          peopleGroup,
+          sourcePath: 'form',
+          sourceKeys: [id],
+        });
+      });
+
+      const parsed = Array.from(peopleByKey.values())
+        .filter(person => person.identifier || person.name !== 'N/A' || person.email !== 'N/A')
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      setParticipants(parsed);
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -340,6 +582,67 @@ export default function Calendar() {
       } else {
         setNextGenQuestions([]);
       }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const membersRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/members/`);
+    const unsubscribe = onValue(membersRef, (snapshot) => {
+      const data = snapshot.val();
+
+      if (!data) {
+        setPeopleDevelopmentMembers({});
+        return;
+      }
+
+      const parsed = Object.fromEntries(
+        Object.entries(data).map(([memberKey, value]: [string, any]) => [
+          memberKey,
+          {
+            memberKey,
+            identifier: String(value?.identifier || ''),
+            fullName: String(value?.fullName || value?.name || ''),
+            email: String(value?.email || ''),
+            group: normalizePeopleDevelopmentGroup(value?.group),
+            sourcePath: String(value?.sourcePath || 'form'),
+            sourceKeys: Array.isArray(value?.sourceKeys) ? value.sourceKeys.map((item: any) => String(item)) : [],
+            updatedAt: normalizeNumber(value?.updatedAt),
+            updatedAtISO: String(value?.updatedAtISO || ''),
+          } as PeopleDevelopmentMember,
+        ]),
+      );
+
+      setPeopleDevelopmentMembers(parsed);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const assignmentsRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/`);
+    const unsubscribe = onValue(assignmentsRef, (snapshot) => {
+      const data = snapshot.val();
+
+      if (!data) {
+        setPeopleDevelopmentEntries([]);
+        return;
+      }
+
+      const parsed = Object.entries(data)
+        .map(([id, value]: [string, any]) => ({
+          id,
+          group: normalizePeopleDevelopmentGroup(value?.group),
+          text: String(value?.text || '').trim(),
+          date: String(value?.date || ''),
+          createdAt: normalizeNumber(value?.createdAt),
+          createdAtISO: String(value?.createdAtISO || ''),
+        }))
+        .filter((entry): entry is PeopleDevelopmentEntry => Boolean(entry.group && entry.text))
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+      setPeopleDevelopmentEntries(parsed);
     });
 
     return () => unsubscribe();
@@ -1605,6 +1908,156 @@ Otherwise, provide a helpful response about their calendar.`;
     (_, index) => SLOT_BLOCK_START + index * SLOT_BLOCK_DURATION
   );
 
+  const getPeopleDevelopmentGroupLabel = (groupId: PeopleDevelopmentGroupId): string => {
+    const group = PEOPLE_DEVELOPMENT_GROUPS.find(item => item.id === groupId);
+    if (!group) return groupId;
+    return displayLocale === 'ar' ? group.labelAr : group.labelEn;
+  };
+
+  const getPersonGroup = (person: Participant): PeopleDevelopmentGroupId | '' => {
+    return peopleDevelopmentMembers[person.memberKey]?.group || person.peopleGroup || '';
+  };
+
+  const getGroupPeople = (groupId: PeopleDevelopmentGroupId): Participant[] => {
+    return participants.filter(person => getPersonGroup(person) === groupId);
+  };
+
+  const getGroupAssignments = (groupId: PeopleDevelopmentGroupId): PeopleDevelopmentEntry[] => {
+    return peopleDevelopmentEntries.filter(entry => entry.group === groupId);
+  };
+
+  const searchedPeople = participants.filter(person => {
+    const search = peopleSearchTerm.trim().toLowerCase();
+    if (!search) return true;
+
+    return person.firstName.toLowerCase().includes(search) ||
+      person.name.toLowerCase().includes(search) ||
+      person.identifier.toLowerCase().includes(search);
+  });
+
+  const handleAssignPersonToGroup = async (person: Participant, group: PeopleDevelopmentGroupId | '') => {
+    const currentGroup = getPersonGroup(person);
+    if (currentGroup === group) return;
+
+    setPeopleDevelopmentSavingKey(person.memberKey);
+
+    try {
+      const updatedAt = Date.now();
+      const updatedAtISO = new Date().toISOString();
+      const groupLabel = group ? getPeopleDevelopmentGroupLabel(group) : '';
+
+      const updates: Record<string, any> = {
+        [`${PEOPLE_DEVELOPMENT_ROOT}/members/${person.memberKey}`]: {
+          memberKey: person.memberKey,
+          identifier: person.identifier,
+          fullName: person.name,
+          email: person.email,
+          group,
+          groupLabel,
+          primaryGift: person.primaryGift || '',
+          sourcePath: person.sourcePath || 'form',
+          sourceKeys: person.sourceKeys || [],
+          updatedAt,
+          updatedAtISO,
+        },
+      };
+
+      (person.sourceKeys || []).forEach(sourceKey => {
+        const sourcePath = person.sourcePath || 'form';
+        updates[`${sourcePath}/${sourceKey}/peopleDevelopmentGroup`] = group;
+        updates[`${sourcePath}/${sourceKey}/peopleDevelopment`] = {
+          group,
+          groupLabel,
+          memberKey: person.memberKey,
+          identifier: person.identifier,
+          updatedAt,
+          updatedAtISO,
+        };
+        updates[`${sourcePath}/${sourceKey}/fields/peopleDevelopment/group`] = {
+          fieldEnglish: 'People Development Group',
+          fieldArabic: 'مجموعة نمو الأشخاص',
+          value: group,
+          label: groupLabel,
+          updatedAt,
+          updatedAtISO,
+        };
+      });
+
+      await update(ref(database), updates);
+    } catch (err) {
+      console.error('Failed to update people development group:', err);
+      alert(displayLocale === 'ar' ? 'فشل تحديث مجموعة الشخص.' : 'Failed to update the person group.');
+    } finally {
+      setPeopleDevelopmentSavingKey(null);
+      setDraggedPeopleMemberKey(null);
+    }
+  };
+
+  const handleDropPersonOnGroup = async (event: React.DragEvent<HTMLElement>, groupId: PeopleDevelopmentGroupId) => {
+    event.preventDefault();
+    const memberKey = event.dataTransfer.getData('text/plain') || draggedPeopleMemberKey;
+    const person = participants.find(item => item.memberKey === memberKey);
+
+    if (person) {
+      await handleAssignPersonToGroup(person, groupId);
+    }
+  };
+
+  const handlePostPeopleDevelopmentAssignment = async (groupId: PeopleDevelopmentGroupId) => {
+    const text = (peopleAssignmentDrafts[groupId] || '').trim();
+
+    if (!text) {
+      alert(displayLocale === 'ar' ? 'اكتب نص الملاحظة أو التكليف أولاً.' : 'Write the note or assignment text first.');
+      return;
+    }
+
+    setPeopleDevelopmentPostingGroup(groupId);
+
+    try {
+      const createdAt = Date.now();
+      const createdAtISO = new Date().toISOString();
+      const date = format(new Date(), 'yyyy-MM-dd');
+      const groupLabel = getPeopleDevelopmentGroupLabel(groupId);
+
+      await push(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/`), {
+        group: groupId,
+        groupLabel,
+        text,
+        date,
+        createdAt,
+        createdAtISO,
+        source: 'pastorCalendar',
+      });
+
+      setPeopleAssignmentDrafts(previous => ({
+        ...previous,
+        [groupId]: '',
+      }));
+    } catch (err) {
+      console.error('Failed to post people development assignment:', err);
+      alert(displayLocale === 'ar' ? 'فشل حفظ الملاحظة أو التكليف.' : 'Failed to save the note or assignment.');
+    } finally {
+      setPeopleDevelopmentPostingGroup(null);
+    }
+  };
+
+  const handleAddSelectedPersonToGroup = async (groupId: PeopleDevelopmentGroupId) => {
+    const selectedMemberKey = peopleGroupSelectDrafts[groupId];
+    const person = participants.find(item => item.memberKey === selectedMemberKey);
+
+    if (!person) {
+      alert(displayLocale === 'ar' ? 'اختر شخصاً أولاً.' : 'Select a person first.');
+      return;
+    }
+
+    await handleAssignPersonToGroup(person, groupId);
+
+    setPeopleGroupSelectDrafts(previous => ({
+      ...previous,
+      [groupId]: '',
+    }));
+  };
+
   const selectedCount = selectedParticipants.length;
   const selectedNames = participants
     .filter(p => selectedParticipants.includes(p.id))
@@ -1620,10 +2073,10 @@ Otherwise, provide a helpful response about their calendar.`;
     question.status !== 'selectedForNextGenSession' && !Boolean((question as any).selectedForNextGenSession)
   );
 
-  const peopleNotesTitle = displayLocale === 'ar' ? 'ملاحظات نمو الأشخاص' : 'People Development Notes';
+  const peopleNotesTitle = displayLocale === 'ar' ? 'نمو الأشخاص' : 'People Development';
   const peopleNotesSubtitle = displayLocale === 'ar'
-    ? 'تسجيل نقاط القوة، مجالات النمو، المتابعات، والملاحظات الرعوية'
-    : 'Record strengths, growth areas, follow-ups, and pastoral notes';
+    ? 'مجموعات الخدمة، التكليفات، وتوزيع الأشخاص'
+    : 'Service groups, assignments, and people placement';
 
   const selectedSlotDateStr = selectedSlotDay ? getDateString(selectedSlotDay) : '';
   const selectedDayAvailabilityBlocks = selectedSlotDateStr ? getAvailabilityBlocksForDate(selectedSlotDateStr) : [];
@@ -1830,14 +2283,26 @@ Otherwise, provide a helpful response about their calendar.`;
               {t('calendar.connectGoogle')}
             </button>
           )}
-          <Link
-            to="/pastor/people-notes"
-            className="pastor-main-button flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
+          <button
+            type="button"
+            onClick={() => setShowPeopleDevelopment(!showPeopleDevelopment)}
+            className={`pastor-main-button flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors border ${
+              showPeopleDevelopment
+                ? 'bg-[#7a1717] text-white border-[#7a1717]'
+                : 'bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] border-[#d8aaaa]'
+            }`}
             title={peopleNotesSubtitle}
           >
             <Users size={16} />
             <span>{peopleNotesTitle}</span>
-          </Link>
+            {participants.length > 0 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                showPeopleDevelopment ? 'bg-white/20 text-white' : 'bg-white text-[#7a1717]'
+              }`}>
+                {participants.length}
+              </span>
+            )}
+          </button>
           <button
             type="button"
             onClick={() => setShowNextGenQuestions(!showNextGenQuestions)}
@@ -1901,6 +2366,277 @@ Otherwise, provide a helpful response about their calendar.`;
           </button>
         </div>
       </div>
+
+      {showPeopleDevelopment && (
+        <section className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-[#ead9d0] space-y-5">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-black text-[#7a1717] flex items-center gap-2">
+                <Users size={20} />
+                {displayLocale === 'ar' ? 'مجموعات نمو الأشخاص' : 'People Development Groups'}
+              </h3>
+              <p className="text-gray-500 mt-1">
+                {displayLocale === 'ar'
+                  ? 'اسحب الأشخاص إلى مجموعة، أو استخدم أزرار الإضافة والتغيير. يتم حفظ المجموعة والتكليفات في Firebase.'
+                  : 'Drag people into a group, or use the compact add/change controls. Group placement and assignments are saved to Firebase.'}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8eeee] text-[#7a1717] border border-[#d8aaaa] px-4 py-3 font-black">
+              {participants.length} {displayLocale === 'ar' ? 'شخص' : 'people'}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {PEOPLE_DEVELOPMENT_GROUPS.map(group => {
+              const groupPeople = getGroupPeople(group.id);
+
+              return (
+                <button
+                  key={group.id}
+                  type="button"
+                  onDragOver={event => event.preventDefault()}
+                  onDrop={event => handleDropPersonOnGroup(event, group.id)}
+                  className={`aspect-square min-h-[138px] sm:min-h-[170px] rounded-3xl border-2 p-4 text-start shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${group.cardClass}`}
+                >
+                  <div className="flex h-full flex-col justify-between gap-3">
+                    <div>
+                      <div className="text-2xl sm:text-3xl font-black leading-none">
+                        {displayLocale === 'ar' ? group.labelAr : group.labelEn}
+                      </div>
+                      <div className="mt-2 text-sm leading-snug opacity-80">
+                        {displayLocale === 'ar' ? group.descriptionAr : group.descriptionEn}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-3 py-1 text-sm font-black ${group.badgeClass}`}>
+                        {groupPeople.length} {displayLocale === 'ar' ? 'أشخاص' : 'people'}
+                      </span>
+                      {draggedPeopleMemberKey && (
+                        <span className="rounded-full bg-white/70 px-3 py-1 text-sm font-black">
+                          {displayLocale === 'ar' ? 'أفلت هنا' : 'Drop here'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {PEOPLE_DEVELOPMENT_GROUPS.map(group => {
+                const groupPeople = getGroupPeople(group.id);
+                const groupAssignments = getGroupAssignments(group.id).slice(0, 4);
+                const selectedMemberKey = peopleGroupSelectDrafts[group.id];
+
+                return (
+                  <div
+                    key={`panel-${group.id}`}
+                    onDragOver={event => event.preventDefault()}
+                    onDrop={event => handleDropPersonOnGroup(event, group.id)}
+                    className={`rounded-3xl border-2 p-4 space-y-4 ${group.softClass}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-xl font-black">
+                          {displayLocale === 'ar' ? group.labelAr : group.labelEn}
+                        </h4>
+                        <p className="mt-1 text-sm opacity-80">
+                          {displayLocale === 'ar' ? 'ملاحظات وتكليفات هذه المجموعة' : 'Notes & Assignments for this group'}
+                        </p>
+                      </div>
+                      <span className={`rounded-full border px-3 py-1 text-sm font-black ${group.badgeClass}`}>
+                        {groupPeople.length}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <textarea
+                        value={peopleAssignmentDrafts[group.id]}
+                        onChange={event => setPeopleAssignmentDrafts(previous => ({ ...previous, [group.id]: event.target.value }))}
+                        placeholder={displayLocale === 'ar' ? 'اكتب ملاحظة أو تكليف لهذه المجموعة...' : 'Write a note or assignment for this group...'}
+                        className="w-full min-h-[96px] rounded-2xl border border-white/70 bg-white px-4 py-3 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handlePostPeopleDevelopmentAssignment(group.id)}
+                        disabled={peopleDevelopmentPostingGroup === group.id}
+                        className={`w-full rounded-2xl px-4 py-3 font-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${group.buttonClass}`}
+                      >
+                        {peopleDevelopmentPostingGroup === group.id
+                          ? (displayLocale === 'ar' ? 'جار الحفظ...' : 'Posting...')
+                          : (displayLocale === 'ar' ? 'نشر الملاحظة / التكليف' : 'Post Note / Assignment')}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                      <select
+                        value={selectedMemberKey}
+                        onChange={event => setPeopleGroupSelectDrafts(previous => ({ ...previous, [group.id]: event.target.value }))}
+                        className="min-w-0 rounded-2xl border border-white/70 bg-white px-3 py-3 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20"
+                      >
+                        <option value="">{displayLocale === 'ar' ? 'اختر شخصاً' : 'Select person'}</option>
+                        {participants.map(person => (
+                          <option key={`${group.id}-${person.memberKey}`} value={person.memberKey}>
+                            {person.name} {getPersonGroup(person) ? `(${getPeopleDevelopmentGroupLabel(getPersonGroup(person) as PeopleDevelopmentGroupId)})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleAddSelectedPersonToGroup(group.id)}
+                        className={`rounded-2xl px-4 py-3 font-black ${group.buttonClass}`}
+                        title={displayLocale === 'ar' ? 'إضافة للمجموعة' : 'Add to group'}
+                      >
+                        <UserPlus size={18} />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-sm font-black uppercase tracking-widest opacity-70">
+                        {displayLocale === 'ar' ? 'الأشخاص' : 'People'}
+                      </div>
+                      {groupPeople.length === 0 ? (
+                        <div className="rounded-2xl bg-white/70 p-3 text-sm font-black opacity-70">
+                          {displayLocale === 'ar' ? 'لا يوجد أشخاص في هذه المجموعة.' : 'No people assigned to this group.'}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {groupPeople.map(person => (
+                            <button
+                              key={`chip-${group.id}-${person.memberKey}`}
+                              type="button"
+                              draggable
+                              onDragStart={event => {
+                                setDraggedPeopleMemberKey(person.memberKey);
+                                event.dataTransfer.setData('text/plain', person.memberKey);
+                              }}
+                              onDragEnd={() => setDraggedPeopleMemberKey(null)}
+                              className="rounded-full bg-white px-3 py-2 text-sm font-black shadow-sm border border-white/80"
+                              title={person.identifier || person.email}
+                            >
+                              {person.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-sm font-black uppercase tracking-widest opacity-70">
+                        {displayLocale === 'ar' ? 'آخر الملاحظات والتكليفات' : 'Latest Notes & Assignments'}
+                      </div>
+                      {groupAssignments.length === 0 ? (
+                        <div className="rounded-2xl bg-white/70 p-3 text-sm font-black opacity-70">
+                          {displayLocale === 'ar' ? 'لا توجد ملاحظات أو تكليفات بعد.' : 'No notes or assignments yet.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {groupAssignments.map(entry => (
+                            <div key={entry.id} className="rounded-2xl bg-white p-3 border border-white/80">
+                              <div className="text-xs font-black opacity-60">{entry.date}</div>
+                              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[#242424]">{entry.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <aside className="rounded-3xl border-2 border-[#ead9d0] bg-[#fffdf9] p-4 space-y-4">
+              <div>
+                <h4 className="text-xl font-black text-[#7a1717] flex items-center gap-2">
+                  <Users size={19} />
+                  {displayLocale === 'ar' ? 'قائمة الأشخاص' : 'People List'}
+                </h4>
+                <p className="text-sm text-gray-500 mt-1">
+                  {displayLocale === 'ar'
+                    ? 'ابحث بالاسم الأول، ثم اسحب أو غيّر المجموعة من القائمة.'
+                    : 'Search by first name, then drag or change the group from the list.'}
+                </p>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute start-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  value={peopleSearchTerm}
+                  onChange={event => setPeopleSearchTerm(event.target.value)}
+                  placeholder={displayLocale === 'ar' ? 'بحث بالاسم الأول...' : 'Search first name...'}
+                  className="w-full rounded-2xl border border-[#ead9d0] bg-white py-3 ps-11 pe-4 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20"
+                />
+              </div>
+
+              <div className="space-y-2 max-h-[620px] overflow-y-auto pe-1">
+                {searchedPeople.length === 0 ? (
+                  <div className="rounded-2xl bg-stone-50 p-4 text-gray-500 font-black">
+                    {displayLocale === 'ar' ? 'لا توجد نتائج.' : 'No people found.'}
+                  </div>
+                ) : searchedPeople.map(person => {
+                  const assignedGroup = getPersonGroup(person);
+                  const savingThisPerson = peopleDevelopmentSavingKey === person.memberKey;
+
+                  return (
+                    <div
+                      key={`person-${person.memberKey}`}
+                      draggable
+                      onDragStart={event => {
+                        setDraggedPeopleMemberKey(person.memberKey);
+                        event.dataTransfer.setData('text/plain', person.memberKey);
+                      }}
+                      onDragEnd={() => setDraggedPeopleMemberKey(null)}
+                      className="rounded-2xl border border-[#ead9d0] bg-white p-3 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-[#242424] font-black">{person.name}</div>
+                          <div className="truncate text-sm text-gray-500">{person.identifier || person.email}</div>
+                          {person.primaryGift && (
+                            <div className="mt-1 text-xs text-gray-400">
+                              {person.primaryGift}
+                            </div>
+                          )}
+                        </div>
+                        <span className="shrink-0 rounded-full bg-[#f8eeee] px-2 py-1 text-xs text-[#7a1717] font-black border border-[#d8aaaa]">
+                          {assignedGroup ? getPeopleDevelopmentGroupLabel(assignedGroup) : (displayLocale === 'ar' ? 'غير محدد' : 'Unassigned')}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                        <select
+                          value={assignedGroup}
+                          onChange={event => handleAssignPersonToGroup(person, event.target.value as PeopleDevelopmentGroupId | '')}
+                          disabled={savingThisPerson}
+                          className="min-w-0 rounded-xl border border-[#ead9d0] bg-stone-50 px-3 py-2 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20 disabled:opacity-60"
+                        >
+                          <option value="">{displayLocale === 'ar' ? 'بدون مجموعة' : 'Unassigned'}</option>
+                          {PEOPLE_DEVELOPMENT_GROUPS.map(group => (
+                            <option key={`person-select-${person.memberKey}-${group.id}`} value={group.id}>
+                              {displayLocale === 'ar' ? group.labelAr : group.labelEn}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={savingThisPerson}
+                          onClick={() => assignedGroup ? handleAssignPersonToGroup(person, '') : handleAssignPersonToGroup(person, 'helpers')}
+                          className="rounded-xl bg-[#7a1717] px-3 py-2 text-white font-black disabled:opacity-60"
+                        >
+                          {savingThisPerson ? '...' : assignedGroup ? <X size={16} /> : <Plus size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </aside>
+          </div>
+        </section>
+      )}
 
       {meetingRequests.filter(r => r.status === 'pending').length > 0 && (
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-amber-200">
