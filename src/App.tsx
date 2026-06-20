@@ -12,7 +12,7 @@ import BookingCalendar from './pages/BookingCalendar';
 import NextGenActivities from './pages/NextGenActivities';
 import PeopleNotesPage from './pages/PeopleNotesPage';
 import AttendancePage from './pages/AttendancePage';
-import CongregationGroupNotes from './components/CongregationGroupNotes';
+import CongregationGroupNotes from './pages/CongregationGroupNotes';
 import { auth, signInWithGoogle, signInWithEmail, signUpWithEmail } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { database } from './firebase';
