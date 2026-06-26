@@ -30,6 +30,8 @@ const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
+const MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES = 1024 * 1024;
+
 type PeopleDevelopmentGroupId =
   | 'pastors'
   | 'prophets'
@@ -342,6 +344,34 @@ function normalizeNumber(value: unknown): number {
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 }
 
+function formatFileSize(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 KB';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes >= 10 * 1024 ? 0 : 1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const [, base64 = ''] = result.split(',');
+
+      if (!base64) {
+        reject(new Error('Could not read the selected file.'));
+        return;
+      }
+
+      resolve(base64);
+    };
+
+    reader.onerror = () => reject(reader.error || new Error('Could not read the selected file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function normalizeNextGenQuestion(id: string, value: any): NextGenQuestion {
   const totalUpvotes = normalizeNumber(value?.totalUpvotes);
   const totalDownvotes = normalizeNumber(value?.totalDownvotes);
@@ -400,6 +430,17 @@ interface PeopleDevelopmentMember {
   updatedAtISO?: string;
 }
 
+interface PeopleDevelopmentAttachment {
+  name: string;
+  type: string;
+  size: number;
+  encoding: 'base64';
+  storage: 'realtimeDatabase';
+  base64: string;
+  uploadedAt: number;
+  uploadedAtISO: string;
+}
+
 interface PeopleDevelopmentEntry {
   id: string;
   group: PeopleDevelopmentGroupId;
@@ -407,6 +448,7 @@ interface PeopleDevelopmentEntry {
   date: string;
   createdAt: number;
   createdAtISO: string;
+  attachments: PeopleDevelopmentAttachment[];
 }
 
 interface PeoplePersonalNote {
@@ -521,6 +563,30 @@ export default function Calendar() {
     facilitators: '',
     services: '',
     giving: '',
+  });
+  const [peopleAssignmentFiles, setPeopleAssignmentFiles] = useState<Record<PeopleDevelopmentGroupId, File | null>>({
+    pastors: null,
+    prophets: null,
+    evangelists: null,
+    teachers: null,
+    apostles: null,
+    helpers: null,
+    mercy: null,
+    facilitators: null,
+    services: null,
+    giving: null,
+  });
+  const [peopleAssignmentFileInputResetKeys, setPeopleAssignmentFileInputResetKeys] = useState<Record<PeopleDevelopmentGroupId, number>>({
+    pastors: 0,
+    prophets: 0,
+    evangelists: 0,
+    teachers: 0,
+    apostles: 0,
+    helpers: 0,
+    mercy: 0,
+    facilitators: 0,
+    services: 0,
+    giving: 0,
   });
   const [peopleGroupSelectDrafts, setPeopleGroupSelectDrafts] = useState<Record<PeopleDevelopmentGroupId, string>>({
     pastors: '',
@@ -760,15 +826,33 @@ export default function Calendar() {
       }
 
       const parsed = Object.entries(data)
-        .map(([id, value]: [string, any]) => ({
-          id,
-          group: normalizePeopleDevelopmentGroup(value?.group),
-          text: String(value?.text || '').trim(),
-          date: String(value?.date || ''),
-          createdAt: normalizeNumber(value?.createdAt),
-          createdAtISO: String(value?.createdAtISO || ''),
-        }))
-        .filter((entry): entry is PeopleDevelopmentEntry => Boolean(entry.group && entry.text))
+        .map(([id, value]: [string, any]) => {
+          const attachments: PeopleDevelopmentAttachment[] = Array.isArray(value?.attachments)
+            ? value.attachments
+                .map((attachment: any) => ({
+                  name: String(attachment?.name || '').trim(),
+                  type: String(attachment?.type || 'application/pdf').trim() || 'application/pdf',
+                  size: normalizeNumber(attachment?.size),
+                  encoding: 'base64' as const,
+                  storage: 'realtimeDatabase' as const,
+                  base64: String(attachment?.base64 || '').trim(),
+                  uploadedAt: normalizeNumber(attachment?.uploadedAt),
+                  uploadedAtISO: String(attachment?.uploadedAtISO || '').trim(),
+                }))
+                .filter((attachment: PeopleDevelopmentAttachment) => Boolean(attachment.name && attachment.base64))
+            : [];
+
+          return {
+            id,
+            group: normalizePeopleDevelopmentGroup(value?.group),
+            text: String(value?.text || '').trim(),
+            date: String(value?.date || ''),
+            createdAt: normalizeNumber(value?.createdAt),
+            createdAtISO: String(value?.createdAtISO || ''),
+            attachments,
+          };
+        })
+        .filter((entry): entry is PeopleDevelopmentEntry => Boolean(entry.group && (entry.text || entry.attachments.length > 0)))
         .sort((a, b) => b.createdAt - a.createdAt);
 
       setPeopleDevelopmentEntries(parsed);
@@ -2238,11 +2322,70 @@ Otherwise, provide a helpful response about their calendar.`;
     }
   };
 
+  const handlePeopleAssignmentFileChange = (groupId: PeopleDevelopmentGroupId, file: File | null) => {
+    if (!file) {
+      setPeopleAssignmentFiles(previous => ({
+        ...previous,
+        [groupId]: null,
+      }));
+      return;
+    }
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    if (!isPdf) {
+      alert(displayLocale === 'ar' ? 'يمكن رفع ملفات PDF فقط حالياً.' : 'Only PDF files can be attached for now.');
+      setPeopleAssignmentFiles(previous => ({
+        ...previous,
+        [groupId]: null,
+      }));
+      setPeopleAssignmentFileInputResetKeys(previous => ({
+        ...previous,
+        [groupId]: (previous[groupId] || 0) + 1,
+      }));
+      return;
+    }
+
+    if (file.size > MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES) {
+      alert(
+        displayLocale === 'ar'
+          ? `حجم ملف PDF يجب ألا يتجاوز ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)}.`
+          : `PDF file size must be ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)} or less.`,
+      );
+      setPeopleAssignmentFiles(previous => ({
+        ...previous,
+        [groupId]: null,
+      }));
+      setPeopleAssignmentFileInputResetKeys(previous => ({
+        ...previous,
+        [groupId]: (previous[groupId] || 0) + 1,
+      }));
+      return;
+    }
+
+    setPeopleAssignmentFiles(previous => ({
+      ...previous,
+      [groupId]: file,
+    }));
+  };
+
+  const clearPeopleAssignmentFile = (groupId: PeopleDevelopmentGroupId) => {
+    setPeopleAssignmentFiles(previous => ({
+      ...previous,
+      [groupId]: null,
+    }));
+    setPeopleAssignmentFileInputResetKeys(previous => ({
+      ...previous,
+      [groupId]: (previous[groupId] || 0) + 1,
+    }));
+  };
+
   const handlePostPeopleDevelopmentAssignment = async (groupId: PeopleDevelopmentGroupId) => {
     const text = (peopleAssignmentDrafts[groupId] || '').trim();
+    const selectedFile = peopleAssignmentFiles[groupId];
 
-    if (!text) {
-      alert(displayLocale === 'ar' ? 'اكتب نص الملاحظة أو التكليف أولاً.' : 'Write the note or assignment text first.');
+    if (!text && !selectedFile) {
+      alert(displayLocale === 'ar' ? 'اكتب نص الملاحظة أو أرفق ملف PDF أولاً.' : 'Write a note or attach a PDF first.');
       return;
     }
 
@@ -2253,6 +2396,24 @@ Otherwise, provide a helpful response about their calendar.`;
       const createdAtISO = new Date().toISOString();
       const date = format(new Date(), 'yyyy-MM-dd');
       const groupLabel = getPeopleDevelopmentGroupLabel(groupId);
+      const attachments: PeopleDevelopmentAttachment[] = [];
+
+      if (selectedFile) {
+        const uploadedAt = Date.now();
+        const uploadedAtISO = new Date(uploadedAt).toISOString();
+        const base64 = await readFileAsBase64(selectedFile);
+
+        attachments.push({
+          name: selectedFile.name,
+          type: selectedFile.type || 'application/pdf',
+          size: selectedFile.size,
+          encoding: 'base64',
+          storage: 'realtimeDatabase',
+          base64,
+          uploadedAt,
+          uploadedAtISO,
+        });
+      }
 
       await push(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/`), {
         group: groupId,
@@ -2261,6 +2422,8 @@ Otherwise, provide a helpful response about their calendar.`;
         date,
         createdAt,
         createdAtISO,
+        attachments,
+        hasAttachments: attachments.length > 0,
         source: 'pastorCalendar',
       });
 
@@ -2268,6 +2431,7 @@ Otherwise, provide a helpful response about their calendar.`;
         ...previous,
         [groupId]: '',
       }));
+      clearPeopleAssignmentFile(groupId);
     } catch (err) {
       console.error('Failed to post people development assignment:', err);
       alert(displayLocale === 'ar' ? 'فشل حفظ الملاحظة أو التكليف.' : 'Failed to save the note or assignment.');
@@ -2693,6 +2857,45 @@ Otherwise, provide a helpful response about their calendar.`;
                         placeholder={displayLocale === 'ar' ? 'اكتب ملاحظة أو تكليف لهذه المجموعة...' : 'Write a note or assignment for this group...'}
                         className="w-full min-h-[96px] rounded-2xl border border-white/70 bg-white px-4 py-3 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20"
                       />
+
+                      <label className="block rounded-2xl border border-dashed border-white/80 bg-white/70 p-3 text-sm font-black text-[#242424]">
+                        <span className="block opacity-75">
+                          {displayLocale === 'ar' ? 'إرفاق ملف PDF صغير اختياري' : 'Optional small PDF attachment'}
+                        </span>
+                        <span className="mt-1 block text-xs font-bold opacity-60">
+                          {displayLocale === 'ar'
+                            ? `الحد الأقصى ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)} — سيتم حفظه كـ Base64 في Realtime Database.`
+                            : `Max ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)} — saved as Base64 in Realtime Database.`}
+                        </span>
+                        <input
+                          key={`${group.id}-assignment-file-${peopleAssignmentFileInputResetKeys[group.id]}`}
+                          type="file"
+                          accept="application/pdf,.pdf"
+                          disabled={peopleDevelopmentPostingGroup === group.id}
+                          onChange={event => handlePeopleAssignmentFileChange(group.id, event.target.files?.[0] || null)}
+                          className="mt-3 block w-full text-sm font-bold text-[#242424] file:me-3 file:rounded-xl file:border-0 file:bg-[#f8eeee] file:px-3 file:py-2 file:font-black file:text-[#7a1717] hover:file:bg-[#efd8d8]"
+                        />
+                      </label>
+
+                      {peopleAssignmentFiles[group.id] && (
+                        <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-sm font-black text-[#242424] border border-white/80">
+                          <div className="min-w-0">
+                            <div className="truncate">{peopleAssignmentFiles[group.id]?.name}</div>
+                            <div className="text-xs opacity-60">
+                              {formatFileSize(peopleAssignmentFiles[group.id]?.size || 0)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => clearPeopleAssignmentFile(group.id)}
+                            className="shrink-0 rounded-full bg-[#f8eeee] p-1.5 text-[#7a1717] hover:bg-[#efd8d8] transition-colors"
+                            title={displayLocale === 'ar' ? 'إزالة الملف' : 'Remove file'}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => handlePostPeopleDevelopmentAssignment(group.id)}
@@ -2778,7 +2981,24 @@ Otherwise, provide a helpful response about their calendar.`;
                           {groupAssignments.map(entry => (
                             <div key={entry.id} className="rounded-2xl bg-white p-3 border border-white/80">
                               <div className="text-xs font-black opacity-60">{entry.date}</div>
-                              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[#242424]">{entry.text}</p>
+                              {entry.text && (
+                                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[#242424]">{entry.text}</p>
+                              )}
+                              {entry.attachments.length > 0 && (
+                                <div className="mt-2 space-y-2">
+                                  {entry.attachments.map((attachment, attachmentIndex) => (
+                                    <div
+                                      key={`${entry.id}-attachment-${attachmentIndex}`}
+                                      className="rounded-xl border border-[#ead9d0] bg-[#fff9f4] px-3 py-2 text-xs font-black text-[#7a1717]"
+                                    >
+                                      <div className="truncate">{attachment.name}</div>
+                                      <div className="mt-1 opacity-65">
+                                        {formatFileSize(attachment.size)} · Base64 PDF in Realtime Database
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
