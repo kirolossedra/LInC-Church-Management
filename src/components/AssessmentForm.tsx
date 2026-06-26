@@ -16,6 +16,8 @@ const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 const USER_LINKAGE_PASSCODE = '9910';
 const SUPPORTED_LINKAGE_FORM_IDS = ['0', '1'];
 const IDENTIFIER_EMAIL_SUBJECT = 'LinC Mentorship Identifier';
+const DIRECT_SIGNUP_FORM_ID = 'directSignup';
+const DIRECT_SIGNUP_DATABASE_PATH = 'directSignups';
 
 type Lang = 'en' | 'ar';
 type InterfaceLang = 'English' | 'Arabic';
@@ -143,6 +145,28 @@ interface LinkageRow {
 const FORMS = [fiveServicePathwaysYaml, spiritualGiftsDiscoveryYaml]
   .map(raw => YAML.parse(raw) as FormDef)
   .filter(form => form.status !== 'disabled');
+
+const DIRECT_SIGNUP_FORM: FormDef = {
+  id: DIRECT_SIGNUP_FORM_ID,
+  firebase: { path: DIRECT_SIGNUP_DATABASE_PATH, tableNameEquivalent: 'direct_signups' },
+  card: {
+    title: { en: 'Direct Sign-Ups', ar: 'التسجيل المباشر' },
+    description: {
+      en: 'People added to the system without completing an assessment form.',
+      ar: 'أشخاص تمت إضافتهم إلى النظام بدون تعبئة نموذج تقييم.',
+    },
+  },
+  page: {
+    title: { en: 'Direct Sign-Up', ar: 'التسجيل المباشر' },
+    subtitle: {
+      en: 'Sign up with name and email only. A row will be created in User Linkage.',
+      ar: 'التسجيل بالاسم والبريد الإلكتروني فقط. سيتم إنشاء صف في صفحة ربط المستخدمين.',
+    },
+  },
+  sections: [],
+};
+
+const LINKAGE_SOURCES: FormDef[] = [...FORMS, DIRECT_SIGNUP_FORM];
 
 function firebaseResponsePath(form: FormDef): string {
   return form.firebase?.path || 'form';
@@ -816,13 +840,14 @@ function buildIdentifierSharingEmailHtml(params: {
   lang: InterfaceLang;
 }): string {
   const isArabic = params.lang === 'Arabic';
+  const isDirectSignup = params.row.formId === DIRECT_SIGNUP_FORM_ID || params.row.raw.signupType === 'directWithoutAssessmentForm';
   const name = params.row.fullName && params.row.fullName !== 'N/A' ? params.row.fullName : '';
 
   const labels = isArabic
     ? {
         title: 'برنامج ارشاد وتلمذة الخدام',
         greeting: name ? `مرحباً ${name}،` : 'مرحباً،',
-        thankYou: 'شكراً لتعبئة النموذج.',
+        thankYou: isDirectSignup ? 'شكراً للتسجيل في برنامج ارشاد وتلمذة الخدام.' : 'شكراً لتعبئة النموذج.',
         intro: 'هذا هو رمز العبور الشخصي الخاص في برنامج ارشاد وتلمذة الخدام',
         identifierLabel: 'رمز العبور الشخصي',
         saveNote: 'يرجى حفظ رمز العبور الشخصي في مكان آمن، لأنه سيتم استخدامه في جميع الأنشطة اللاحقة في برنامج ارشاد وتلمذة الخدام.',
@@ -831,7 +856,7 @@ function buildIdentifierSharingEmailHtml(params: {
     : {
         title: 'LinC Mentorship Identifier',
         greeting: name ? `Hello ${name},` : 'Hello,',
-        thankYou: 'Thank you for filling out the LinC Spiritual Mentorship form.',
+        thankYou: isDirectSignup ? 'Thank you for signing up for the LinC Spiritual Mentorship program.' : 'Thank you for filling out the LinC Spiritual Mentorship form.',
         intro: 'This is your LinC Mentorship identifier:',
         identifierLabel: 'Your Identifier',
         saveNote: 'Please save this identifier somewhere safe because it will be used in all subsequent spiritual mentorship program activities.',
@@ -913,6 +938,11 @@ export default function AssessmentForm() {
   const [expandedPreviewKeys, setExpandedPreviewKeys] = useState<Record<string, boolean>>({});
   const [linkageError, setLinkageError] = useState<string | null>(null);
   const [linkageMessage, setLinkageMessage] = useState<string | null>(null);
+  const [directSignupName, setDirectSignupName] = useState('');
+  const [directSignupEmail, setDirectSignupEmail] = useState('');
+  const [directSignupLoading, setDirectSignupLoading] = useState(false);
+  const [directSignupError, setDirectSignupError] = useState<string | null>(null);
+  const [directSignupMessage, setDirectSignupMessage] = useState<string | null>(null);
 
   const answers = selectedForm ? answersByForm[selectedForm.id] || initialAnswers(selectedForm) : {};
   const result = useMemo(
@@ -962,6 +992,78 @@ export default function AssessmentForm() {
     setLinkageError(null);
     setLinkageMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDirectSignup = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const fullName = directSignupName.trim();
+    const email = directSignupEmail.trim();
+
+    setDirectSignupError(null);
+    setDirectSignupMessage(null);
+
+    if (!fullName) {
+      setDirectSignupError(isArabicUI ? 'أدخل الاسم الكامل أولاً.' : 'Enter the full name first.');
+      return;
+    }
+
+    if (!isUsableEmail(email)) {
+      setDirectSignupError(isArabicUI ? 'أدخل بريد إلكتروني صالح.' : 'Enter a valid email address.');
+      return;
+    }
+
+    setDirectSignupLoading(true);
+
+    try {
+      const createdAt = Date.now();
+      const createdAtISO = new Date().toISOString();
+      const createdAtEasternTime = getEasternTime(DIRECT_SIGNUP_FORM);
+
+      await push(ref(database, `${DIRECT_SIGNUP_DATABASE_PATH}/`), {
+        tableNameEquivalent: DIRECT_SIGNUP_FORM.firebase?.tableNameEquivalent || DIRECT_SIGNUP_FORM_ID,
+        signupType: 'directWithoutAssessmentForm',
+        createdAt,
+        createdAtISO,
+        createdAtEasternTime,
+        interfaceLanguageUsed: interfaceLanguage,
+        formId: DIRECT_SIGNUP_FORM_ID,
+        fullName,
+        email,
+        fields: {
+          directSignup: {
+            fullName: {
+              fieldEnglish: 'Full Name',
+              fieldArabic: 'الاسم الكامل',
+              value: fullName,
+            },
+            email: {
+              fieldEnglish: 'Email',
+              fieldArabic: 'البريد الإلكتروني',
+              value: email,
+            },
+            requestType: {
+              fieldEnglish: 'Request Type',
+              fieldArabic: 'نوع الطلب',
+              value: 'Direct sign-up without assessment form',
+            },
+          },
+        },
+        results: {
+          English: { summary: 'Direct sign-up request only. No assessment form was submitted.' },
+          Arabic: { summary: 'طلب تسجيل مباشر فقط. لم يتم إرسال نموذج تقييم.' },
+        },
+      });
+
+      setDirectSignupName('');
+      setDirectSignupEmail('');
+      setDirectSignupMessage(isArabicUI ? 'تم إرسال طلب التسجيل. سيظهر كصف في صفحة ربط المستخدمين.' : 'Sign-up request submitted. It will appear as a row in User Linkage.');
+    } catch (err) {
+      console.error(err);
+      setDirectSignupError(isArabicUI ? 'تعذر إرسال طلب التسجيل.' : 'Unable to submit the sign-up request.');
+    } finally {
+      setDirectSignupLoading(false);
+    }
   };
 
   const handleUserLinkagePasscode = (event: React.FormEvent) => {
@@ -1503,7 +1605,7 @@ export default function AssessmentForm() {
   };
 
   if (!selectedForm && activePage === 'userLinkage') {
-    const selectedLinkageForm = FORMS.find(item => item.id === selectedLinkageFormId) || null;
+    const selectedLinkageForm = LINKAGE_SOURCES.find(item => item.id === selectedLinkageFormId) || null;
     const linkageRows = selectedLinkageFormId ? linkageRowsByForm[selectedLinkageFormId] || [] : [];
 
     return (
@@ -1555,8 +1657,8 @@ export default function AssessmentForm() {
             </form>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px] mb-6">
-                {FORMS.map((item, index) => (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-[18px] mb-6">
+                {LINKAGE_SOURCES.map((item, index) => (
                   <button
                     key={item.id}
                     type="button"
@@ -1797,6 +1899,69 @@ export default function AssessmentForm() {
             </h2>
             <p className="mt-3 mb-0 text-[#666] text-[1rem] leading-relaxed">
               {isArabicUI ? 'اختر نموذج التقييم الذي تريد تعبئته.' : 'Choose the assessment form you want to complete.'}
+            </p>
+          </div>
+
+          <form onSubmit={handleDirectSignup} className="mb-8 bg-[#fffafa] border-2 border-[rgba(139,30,30,0.16)] rounded-[22px] p-[22px] shadow-[0_8px_18px_rgba(0,0,0,0.05)]">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-5">
+              <div>
+                <h3 className="m-0 text-[#8b1e1e] text-[1.28rem] font-bold">
+                  {isArabicUI ? 'التسجيل بدون تعبئة نموذج' : 'Sign up without filling a form'}
+                </h3>
+                <p className="m-0 mt-2 text-[#666] text-sm leading-relaxed">
+                  {isArabicUI
+                    ? 'أرسل الاسم والبريد الإلكتروني فقط. سيتم إنشاء صف في صفحة ربط المستخدمين حتى يمكن إضافة الشخص للنظام وربطه لاحقاً.'
+                    : 'Submit only name and email. This creates a row in User Linkage so the person can be added to the system and linked later.'}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center shrink-0 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
+                <ClipboardList size={22} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-bold mb-[7px] text-[#333]">
+                  {isArabicUI ? 'الاسم الكامل' : 'Full Name'} <span className="text-[#8b1e1e]">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={directSignupName}
+                  onChange={event => setDirectSignupName(event.target.value)}
+                  className="w-full px-[14px] py-[13px] border border-[#ddd] rounded-[14px] text-[1rem] bg-white text-[#242424] outline-none transition-[border-color,box-shadow,transform] duration-200 focus:border-[#8b1e1e] focus:shadow-[0_0_0_4px_rgba(139,30,30,0.12)]"
+                />
+              </div>
+              <div>
+                <label className="block font-bold mb-[7px] text-[#333]">
+                  {isArabicUI ? 'البريد الإلكتروني' : 'Email'} <span className="text-[#8b1e1e]">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={directSignupEmail}
+                  onChange={event => setDirectSignupEmail(event.target.value)}
+                  className="w-full px-[14px] py-[13px] border border-[#ddd] rounded-[14px] text-[1rem] bg-white text-[#242424] outline-none transition-[border-color,box-shadow,transform] duration-200 focus:border-[#8b1e1e] focus:shadow-[0_0_0_4px_rgba(139,30,30,0.12)]"
+                />
+              </div>
+            </div>
+
+            {directSignupError && <div className="bg-red-50 text-red-600 px-4 py-3 rounded-[14px] font-bold mt-4">{directSignupError}</div>}
+            {directSignupMessage && <div className="bg-green-50 text-green-700 px-4 py-3 rounded-[14px] font-bold mt-4">{directSignupMessage}</div>}
+
+            <button
+              type="submit"
+              disabled={directSignupLoading}
+              className="w-full min-h-[52px] mt-5 border-none bg-[#8b1e1e] text-white py-3 rounded-[18px] font-bold cursor-pointer shadow-[0_8px_18px_rgba(139,30,30,0.24)] transition-transform hover:-translate-y-[1px] text-[1.02rem] disabled:cursor-not-allowed disabled:opacity-70 disabled:translate-y-0"
+            >
+              {directSignupLoading ? (isArabicUI ? 'جارٍ الإرسال...' : 'Submitting...') : (isArabicUI ? 'إرسال طلب التسجيل' : 'Submit Sign-Up Request')}
+            </button>
+          </form>
+
+          <div className="mb-4">
+            <h3 className="m-0 text-[#641414] text-[1.1rem] font-bold">
+              {isArabicUI ? 'نماذج التقييم' : 'Assessment Forms'}
+            </h3>
+            <p className="m-0 mt-1 text-[#666] text-sm">
+              {isArabicUI ? 'هذه هي النماذج الكاملة فقط.' : 'These are the full forms only.'}
             </p>
           </div>
 
