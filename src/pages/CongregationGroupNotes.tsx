@@ -381,21 +381,14 @@ function createDecodedAttachmentUrl(attachment: GroupAssignmentAttachment): stri
   }
 
   const binaryString = window.atob(payload);
-  const byteArrays: Uint8Array[] = [];
-  const sliceSize = 1024;
+  const arrayBuffer = new ArrayBuffer(binaryString.length);
+  const bytes = new Uint8Array(arrayBuffer);
 
-  for (let offset = 0; offset < binaryString.length; offset += sliceSize) {
-    const slice = binaryString.slice(offset, offset + sliceSize);
-    const byteNumbers = new Array(slice.length);
-
-    for (let index = 0; index < slice.length; index += 1) {
-      byteNumbers[index] = slice.charCodeAt(index);
-    }
-
-    byteArrays.push(new Uint8Array(byteNumbers));
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index);
   }
 
-  const blob = new Blob(byteArrays, { type: attachment.type || 'application/pdf' });
+  const blob = new Blob([arrayBuffer], { type: attachment.type || 'application/pdf' });
   return window.URL.createObjectURL(blob);
 }
 
