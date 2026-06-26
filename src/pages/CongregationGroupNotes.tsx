@@ -9,6 +9,9 @@ import {
   BookOpen,
   CheckCircle,
   Clock,
+  Download,
+  ExternalLink,
+  FileText,
   Hash,
   LockKeyhole,
   LogOut,
@@ -61,6 +64,17 @@ interface MemberProfile {
   sourceKeys?: string[];
 }
 
+interface GroupAssignmentAttachment {
+  name: string;
+  type: string;
+  size: number;
+  encoding: string;
+  storage: string;
+  base64: string;
+  uploadedAt: number;
+  uploadedAtISO: string;
+}
+
 interface GroupAssignment {
   id: string;
   group: PeopleDevelopmentGroupId;
@@ -70,6 +84,7 @@ interface GroupAssignment {
   createdAt: number;
   createdAtISO: string;
   source?: string;
+  attachments: GroupAssignmentAttachment[];
 }
 
 const PEOPLE_DEVELOPMENT_GROUPS: PeopleDevelopmentGroupConfig[] = [
@@ -319,6 +334,71 @@ function formatDateLabel(dateValue: string, fallbackTimestamp: number, displayLo
   }
 }
 
+function normalizeAssignmentAttachments(value: any): GroupAssignmentAttachment[] {
+  const rawAttachments = value?.attachments;
+  if (!rawAttachments) return [];
+
+  const attachmentList = Array.isArray(rawAttachments)
+    ? rawAttachments
+    : Object.values(rawAttachments as Record<string, unknown>);
+
+  return attachmentList
+    .map((attachment: any) => ({
+      name: String(attachment?.name || attachment?.fileName || 'PDF attachment').trim(),
+      type: String(attachment?.type || attachment?.mimeType || 'application/pdf').trim(),
+      size: normalizeNumber(attachment?.size || attachment?.sizeBytes),
+      encoding: String(attachment?.encoding || 'base64').trim(),
+      storage: String(attachment?.storage || 'realtimeDatabase').trim(),
+      base64: String(attachment?.base64 || attachment?.data || attachment?.content || '').trim(),
+      uploadedAt: normalizeNumber(attachment?.uploadedAt),
+      uploadedAtISO: String(attachment?.uploadedAtISO || '').trim(),
+    }))
+    .filter(attachment => attachment.base64 && attachment.encoding.toLowerCase() === 'base64');
+}
+
+function formatAttachmentSize(size: number): string {
+  if (!size) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function cleanBase64Payload(value: string): string {
+  const trimmed = String(value || '').trim();
+  const commaIndex = trimmed.indexOf(',');
+  const payload = commaIndex >= 0 ? trimmed.slice(commaIndex + 1) : trimmed;
+  return payload.replace(/\s/g, '');
+}
+
+function createDecodedAttachmentUrl(attachment: GroupAssignmentAttachment): string {
+  if (typeof window === 'undefined') {
+    throw new Error('Browser APIs are required to open this attachment.');
+  }
+
+  const payload = cleanBase64Payload(attachment.base64);
+  if (!payload) {
+    throw new Error('Attachment data is missing.');
+  }
+
+  const binaryString = window.atob(payload);
+  const byteArrays: Uint8Array[] = [];
+  const sliceSize = 1024;
+
+  for (let offset = 0; offset < binaryString.length; offset += sliceSize) {
+    const slice = binaryString.slice(offset, offset + sliceSize);
+    const byteNumbers = new Array(slice.length);
+
+    for (let index = 0; index < slice.length; index += 1) {
+      byteNumbers[index] = slice.charCodeAt(index);
+    }
+
+    byteArrays.push(new Uint8Array(byteNumbers));
+  }
+
+  const blob = new Blob(byteArrays, { type: attachment.type || 'application/pdf' });
+  return window.URL.createObjectURL(blob);
+}
+
 function buildProfileFromMemberRecord(memberKey: string, value: any, fallbackIdentifier: string, displayLocale: 'en' | 'ar'): MemberProfile {
   const group = normalizePeopleDevelopmentGroup(value?.group);
 
@@ -370,6 +450,7 @@ function normalizeAssignment(id: string, value: any, displayLocale: 'en' | 'ar')
     createdAt: normalizeNumber(value?.createdAt),
     createdAtISO: String(value?.createdAtISO || '').trim(),
     source: String(value?.source || '').trim(),
+    attachments: normalizeAssignmentAttachments(value),
   };
 }
 
@@ -487,11 +568,44 @@ export default function CongregationGroupNotes() {
     return assignments.filter(assignment =>
       assignment.text.toLowerCase().includes(search) ||
       assignment.date.toLowerCase().includes(search) ||
-      assignment.createdAtISO.toLowerCase().includes(search),
+      assignment.createdAtISO.toLowerCase().includes(search) ||
+      assignment.attachments.some(attachment => attachment.name.toLowerCase().includes(search)),
     );
   }, [assignments, searchTerm]);
 
   const latestAssignment = assignments[0] || null;
+
+  const openAttachment = (attachment: GroupAssignmentAttachment) => {
+    try {
+      const attachmentUrl = createDecodedAttachmentUrl(attachment);
+      const openedWindow = window.open(attachmentUrl, '_blank', 'noopener,noreferrer');
+
+      if (!openedWindow) {
+        window.alert(isAr ? 'تم منع فتح الملف من المتصفح. جرّب زر التحميل.' : 'The browser blocked opening the file. Try the download button.');
+      }
+
+      window.setTimeout(() => window.URL.revokeObjectURL(attachmentUrl), 60_000);
+    } catch (error) {
+      console.error('Failed to open assignment attachment:', error);
+      window.alert(isAr ? 'تعذر فتح ملف PDF.' : 'Could not open the PDF file.');
+    }
+  };
+
+  const downloadAttachment = (attachment: GroupAssignmentAttachment) => {
+    try {
+      const attachmentUrl = createDecodedAttachmentUrl(attachment);
+      const link = document.createElement('a');
+      link.href = attachmentUrl;
+      link.download = attachment.name || 'assignment.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => window.URL.revokeObjectURL(attachmentUrl), 10_000);
+    } catch (error) {
+      console.error('Failed to download assignment attachment:', error);
+      window.alert(isAr ? 'تعذر تحميل ملف PDF.' : 'Could not download the PDF file.');
+    }
+  };
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -749,6 +863,19 @@ export default function CongregationGroupNotes() {
                         <p className="line-clamp-4 whitespace-pre-wrap text-[#2b1717]">
                           {latestAssignment.text}
                         </p>
+                        {latestAssignment.attachments.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {latestAssignment.attachments.map((attachment, index) => (
+                              <span
+                                key={`${latestAssignment.id}-latest-attachment-${index}`}
+                                className="inline-flex items-center gap-1 rounded-full border border-[#d8aaaa] bg-[#f8eeee] px-3 py-1 text-sm font-black text-[#7a1717]"
+                              >
+                                <FileText size={14} />
+                                {attachment.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </button>
                     </section>
                   )}
@@ -815,6 +942,19 @@ export default function CongregationGroupNotes() {
                             <p className="line-clamp-5 whitespace-pre-wrap leading-relaxed text-[#2b1717]">
                               {assignment.text}
                             </p>
+                            {assignment.attachments.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {assignment.attachments.map((attachment, index) => (
+                                  <span
+                                    key={`${assignment.id}-attachment-chip-${index}`}
+                                    className="inline-flex items-center gap-1 rounded-full border border-[#d8aaaa] bg-[#f8eeee] px-3 py-1 text-xs font-black text-[#7a1717]"
+                                  >
+                                    <FileText size={13} />
+                                    {attachment.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </button>
                         ))}
                       </div>
@@ -889,6 +1029,59 @@ export default function CongregationGroupNotes() {
                     {selectedAssignment.text}
                   </p>
                 </div>
+
+                {selectedAssignment.attachments.length > 0 && (
+                  <div className="mt-5 rounded-2xl border border-[#ead9d0] bg-white p-5">
+                    <div className="mb-3 flex items-center gap-2 text-[#7a1717]">
+                      <FileText size={20} />
+                      <h4 className="text-lg font-black">
+                        {isAr ? 'ملفات مرفقة' : 'Attached Files'}
+                      </h4>
+                    </div>
+
+                    <div className="space-y-3">
+                      {selectedAssignment.attachments.map((attachment, index) => (
+                        <div
+                          key={`${selectedAssignment.id}-popup-attachment-${index}`}
+                          className="rounded-2xl border border-[#ead9d0] bg-[#fffdf9] p-4"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 text-[#2b1717]">
+                                <FileText size={18} className="shrink-0 text-[#7a1717]" />
+                                <span className="truncate font-black">{attachment.name}</span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-2 text-sm text-[#6b4b4b]">
+                                <span>{attachment.type || 'application/pdf'}</span>
+                                {attachment.size > 0 && <span>{formatAttachmentSize(attachment.size)}</span>}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => openAttachment(attachment)}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#7a1717] px-4 py-2 text-sm font-black text-white transition-colors hover:bg-[#5e1010]"
+                              >
+                                <ExternalLink size={16} />
+                                {isAr ? 'فتح PDF' : 'Open PDF'}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => downloadAttachment(attachment)}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#d8aaaa] bg-[#f8eeee] px-4 py-2 text-sm font-black text-[#7a1717] transition-colors hover:bg-[#efd8d8]"
+                              >
+                                <Download size={16} />
+                                {isAr ? 'تحميل' : 'Download'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <button
                   type="button"
