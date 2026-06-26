@@ -372,6 +372,150 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
+function isUsableEmail(value: string): boolean {
+  const trimmed = String(value || '').trim();
+
+  return trimmed.length > 3 &&
+    trimmed !== 'N/A' &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+}
+
+function truncateEmailText(value: string, maxLength = 700): string {
+  const normalized = String(value || '').trim();
+
+  if (normalized.length <= maxLength) return normalized;
+
+  return `${normalized.slice(0, maxLength).trim()}...`;
+}
+
+function getPeopleDevelopmentStaticGroupLabel(groupId: PeopleDevelopmentGroupId, targetLocale: 'en' | 'ar'): string {
+  const group = PEOPLE_DEVELOPMENT_GROUPS.find(item => item.id === groupId);
+  if (!group) return groupId;
+
+  return targetLocale === 'ar' ? group.labelAr : group.labelEn;
+}
+
+function buildPeopleDevelopmentAssignmentNotificationEmailHtml(params: {
+  recipientName: string;
+  groupLabelEn: string;
+  groupLabelAr: string;
+  noteText: string;
+  attachments: PeopleDevelopmentAttachment[];
+  postedAtLabel: string;
+  appUrl: string;
+}): string {
+  const displayName = params.recipientName || 'Friend';
+  const hasNote = Boolean(params.noteText.trim());
+  const hasAttachments = params.attachments.length > 0;
+  const notePreview = hasNote
+    ? truncateEmailText(params.noteText)
+    : 'Pastor uploaded a resource for your group.';
+  const arabicNotePreview = hasNote
+    ? truncateEmailText(params.noteText)
+    : 'قام Pastor برفع ملف أو مورد جديد لمجموعتك.';
+
+  const attachmentRowsEn = hasAttachments
+    ? params.attachments.map(attachment => `
+      <li style="margin: 4px 0;">
+        ${escapeHtml(attachment.name)} <span style="color: #777777;">(${escapeHtml(formatFileSize(attachment.size))})</span>
+      </li>
+    `).join('')
+    : '<li style="margin: 4px 0; color: #777777;">No PDF attachment included.</li>';
+
+  const attachmentRowsAr = hasAttachments
+    ? params.attachments.map(attachment => `
+      <li style="margin: 4px 0;">
+        ${escapeHtml(attachment.name)} <span style="color: #777777;">(${escapeHtml(formatFileSize(attachment.size))})</span>
+      </li>
+    `).join('')
+    : '<li style="margin: 4px 0; color: #777777;">لا يوجد ملف PDF مرفق.</li>';
+
+  const appLinkEn = params.appUrl
+    ? `<p style="margin: 12px 0 0;">Open the LinC app and log in with your personal identifier to view the full note/resource.</p>
+       <p style="margin: 8px 0 0;"><a href="${escapeHtml(params.appUrl)}" style="color: #8b1e1e; font-weight: 800; word-break: break-all;">${escapeHtml(params.appUrl)}</a></p>`
+    : '<p style="margin: 12px 0 0;">Open the LinC app and log in with your personal identifier to view the full note/resource.</p>';
+
+  const appLinkAr = params.appUrl
+    ? `<p style="margin: 12px 0 0;">افتح تطبيق LinC وسجل الدخول باستخدام رمز العبور الشخصي الخاص بك لعرض الملاحظة أو الملف كاملاً.</p>
+       <p style="margin: 8px 0 0;"><a href="${escapeHtml(params.appUrl)}" style="color: #8b1e1e; font-weight: 800; word-break: break-all;">${escapeHtml(params.appUrl)}</a></p>`
+    : '<p style="margin: 12px 0 0;">افتح تطبيق LinC وسجل الدخول باستخدام رمز العبور الشخصي الخاص بك لعرض الملاحظة أو الملف كاملاً.</p>';
+
+  return `
+<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 720px; margin: 0 auto;">
+  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
+    <h2 style="margin: 0; font-size: 20px;">LinC People Development Update</h2>
+    <div style="margin-top: 6px; font-size: 13px;">تحديث جديد في برنامج نمو الأشخاص</div>
+  </div>
+
+  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
+    <div dir="ltr" style="text-align: left;">
+      <p style="margin: 0 0 12px; font-weight: 800;">Hi ${escapeHtml(displayName)},</p>
+      <p style="margin: 0 0 12px;">Pastor has posted a new note or assignment for your group.</p>
+
+      <table role="presentation" style="width: 100%; border-collapse: collapse; margin: 12px 0 16px;">
+        <tr>
+          <td style="padding: 8px 0; width: 150px; color: #666666; font-weight: 800;">Group</td>
+          <td style="padding: 8px 0;">${escapeHtml(params.groupLabelEn)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #666666; font-weight: 800;">Posted</td>
+          <td style="padding: 8px 0;">${escapeHtml(params.postedAtLabel)}</td>
+        </tr>
+      </table>
+
+      <div style="margin: 14px 0; padding: 14px; background-color: #fffafa; border-left: 5px solid #8b1e1e; border-radius: 10px;">
+        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">Preview</div>
+        <div style="white-space: pre-wrap;">${escapeHtml(notePreview)}</div>
+      </div>
+
+      <div style="margin-top: 12px;">
+        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">Files</div>
+        <ul style="margin-top: 0; padding-left: 22px;">${attachmentRowsEn}</ul>
+      </div>
+
+      ${appLinkEn}
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #ead1d1; margin: 24px 0;" />
+
+    <div dir="rtl" style="text-align: right;">
+      <p style="margin: 0 0 12px; font-weight: 800;">مرحباً ${escapeHtml(displayName)}،</p>
+      <p style="margin: 0 0 12px;">قام Pastor بنشر ملاحظة أو تكليف جديد لمجموعتك.</p>
+
+      <table role="presentation" style="width: 100%; border-collapse: collapse; margin: 12px 0 16px;">
+        <tr>
+          <td style="padding: 8px 0; width: 150px; color: #666666; font-weight: 800;">المجموعة</td>
+          <td style="padding: 8px 0;">${escapeHtml(params.groupLabelAr)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #666666; font-weight: 800;">وقت النشر</td>
+          <td style="padding: 8px 0;">${escapeHtml(params.postedAtLabel)}</td>
+        </tr>
+      </table>
+
+      <div style="margin: 14px 0; padding: 14px; background-color: #fffafa; border-right: 5px solid #8b1e1e; border-radius: 10px;">
+        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">معاينة</div>
+        <div style="white-space: pre-wrap;">${escapeHtml(arabicNotePreview)}</div>
+      </div>
+
+      <div style="margin-top: 12px;">
+        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">الملفات</div>
+        <ul style="margin-top: 0; padding-right: 22px;">${attachmentRowsAr}</ul>
+      </div>
+
+      ${appLinkAr}
+    </div>
+
+    <div style="margin-top: 22px; color: #777777; font-size: 12px; text-align: center;">
+      This email was sent automatically by the LinC People Development system.
+      <br />
+      تم إرسال هذا البريد تلقائياً من نظام نمو الأشخاص في LinC.
+    </div>
+  </div>
+</div>
+  `.trim();
+}
+
 function normalizeNextGenQuestion(id: string, value: any): NextGenQuestion {
   const totalUpvotes = normalizeNumber(value?.totalUpvotes);
   const totalDownvotes = normalizeNumber(value?.totalDownvotes);
@@ -2380,6 +2524,142 @@ Otherwise, provide a helpful response about their calendar.`;
     }));
   };
 
+  const getPeopleDevelopmentNotificationRecipients = (groupId: PeopleDevelopmentGroupId): Participant[] => {
+    const peopleInGroup = getGroupPeople(groupId);
+    const peopleByEmail = new Map<string, Participant>();
+
+    peopleInGroup.forEach(person => {
+      const email = String(person.email || '').trim();
+
+      if (!isUsableEmail(email)) return;
+
+      peopleByEmail.set(email.toLowerCase(), {
+        ...person,
+        email,
+      });
+    });
+
+    return Array.from(peopleByEmail.values()).sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  const sendPeopleDevelopmentAssignmentNotificationEmails = async (params: {
+    assignmentId: string;
+    groupId: PeopleDevelopmentGroupId;
+    text: string;
+    date: string;
+    createdAt: number;
+    createdAtISO: string;
+    attachments: PeopleDevelopmentAttachment[];
+  }): Promise<{ totalCount: number; sentCount: number; failedCount: number }> => {
+    const recipients = getPeopleDevelopmentNotificationRecipients(params.groupId);
+    const groupLabelEn = getPeopleDevelopmentStaticGroupLabel(params.groupId, 'en');
+    const groupLabelAr = getPeopleDevelopmentStaticGroupLabel(params.groupId, 'ar');
+    const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const postedAtLabel = params.createdAt
+      ? new Date(params.createdAt).toLocaleString('en-CA', {
+          timeZone: 'America/Toronto',
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : params.createdAtISO || params.date;
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (const recipient of recipients) {
+      const recipientEmail = String(recipient.email || '').trim();
+      const recipientName = recipient.name && recipient.name !== 'N/A'
+        ? recipient.name
+        : recipient.firstName || 'Friend';
+      const subject = `LinC People Development Update - ${groupLabelEn} / تحديث نمو الأشخاص - ${groupLabelAr}`;
+      const htmlBody = buildPeopleDevelopmentAssignmentNotificationEmailHtml({
+        recipientName,
+        groupLabelEn,
+        groupLabelAr,
+        noteText: params.text,
+        attachments: params.attachments,
+        postedAtLabel,
+        appUrl,
+      });
+
+      try {
+        const response = await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          {
+            to_email: recipientEmail,
+            subject,
+            fullName: recipientName,
+            message_html: htmlBody,
+            reply_to: '',
+          },
+          EMAILJS_PUBLIC_KEY,
+        );
+
+        sentCount += 1;
+
+        try {
+          await push(ref(database, 'emailJsSendLogs/'), {
+            recipientEmail,
+            subject,
+            fullName: recipientName,
+            sentUsing: 'EmailJS',
+            serviceId: EMAILJS_SERVICE_ID,
+            templateId: EMAILJS_TEMPLATE_ID,
+            source: 'peopleDevelopmentAssignmentNotification',
+            assignmentId: params.assignmentId,
+            group: params.groupId,
+            groupLabelEn,
+            groupLabelAr,
+            attachmentNames: params.attachments.map(attachment => attachment.name),
+            sentAt: Date.now(),
+            sentAtISO: new Date().toISOString(),
+            emailJsResponse: {
+              status: response.status,
+              text: response.text,
+            },
+          });
+        } catch (logError) {
+          console.error('Failed to log People Development notification success:', logError);
+        }
+      } catch (error) {
+        failedCount += 1;
+        console.error(`Failed to send People Development assignment notification to ${recipientEmail}:`, error);
+
+        try {
+          await push(ref(database, 'emailJsSendLogs/'), {
+            recipientEmail,
+            subject,
+            fullName: recipientName,
+            sentUsing: 'EmailJS',
+            serviceId: EMAILJS_SERVICE_ID,
+            templateId: EMAILJS_TEMPLATE_ID,
+            source: 'peopleDevelopmentAssignmentNotification',
+            assignmentId: params.assignmentId,
+            group: params.groupId,
+            groupLabelEn,
+            groupLabelAr,
+            failed: true,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            attemptedAt: Date.now(),
+            attemptedAtISO: new Date().toISOString(),
+          });
+        } catch (logError) {
+          console.error('Failed to log People Development notification failure:', logError);
+        }
+      }
+    }
+
+    return {
+      totalCount: recipients.length,
+      sentCount,
+      failedCount,
+    };
+  };
+
   const handlePostPeopleDevelopmentAssignment = async (groupId: PeopleDevelopmentGroupId) => {
     const text = (peopleAssignmentDrafts[groupId] || '').trim();
     const selectedFile = peopleAssignmentFiles[groupId];
@@ -2415,7 +2695,7 @@ Otherwise, provide a helpful response about their calendar.`;
         });
       }
 
-      await push(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/`), {
+      const assignmentReference = await push(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/`), {
         group: groupId,
         groupLabel,
         text,
@@ -2426,6 +2706,36 @@ Otherwise, provide a helpful response about their calendar.`;
         hasAttachments: attachments.length > 0,
         source: 'pastorCalendar',
       });
+
+      const notificationResult = await sendPeopleDevelopmentAssignmentNotificationEmails({
+        assignmentId: assignmentReference.key || '',
+        groupId,
+        text,
+        date,
+        createdAt,
+        createdAtISO,
+        attachments,
+      });
+
+      if (notificationResult.totalCount === 0) {
+        alert(
+          displayLocale === 'ar'
+            ? 'تم حفظ الملاحظة / التكليف، لكن لا يوجد أعضاء في هذه المجموعة لديهم بريد إلكتروني صالح.'
+            : 'Note / assignment saved, but no group members with valid email addresses were found.',
+        );
+      } else if (notificationResult.failedCount > 0) {
+        alert(
+          displayLocale === 'ar'
+            ? `تم حفظ الملاحظة / التكليف. تم إرسال ${notificationResult.sentCount} بريد، وفشل إرسال ${notificationResult.failedCount}.`
+            : `Note / assignment saved. ${notificationResult.sentCount} email(s) sent, ${notificationResult.failedCount} failed.`,
+        );
+      } else {
+        alert(
+          displayLocale === 'ar'
+            ? `تم حفظ الملاحظة / التكليف وإرسال بريد إلى ${notificationResult.sentCount} عضو/أعضاء في المجموعة.`
+            : `Note / assignment saved and email notifications sent to ${notificationResult.sentCount} group member(s).`,
+        );
+      }
 
       setPeopleAssignmentDrafts(previous => ({
         ...previous,
@@ -2903,8 +3213,8 @@ Otherwise, provide a helpful response about their calendar.`;
                         className={`w-full rounded-2xl px-4 py-3 font-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${group.buttonClass}`}
                       >
                         {peopleDevelopmentPostingGroup === group.id
-                          ? (displayLocale === 'ar' ? 'جار الحفظ...' : 'Posting...')
-                          : (displayLocale === 'ar' ? 'نشر الملاحظة / التكليف' : 'Post Note / Assignment')}
+                          ? (displayLocale === 'ar' ? 'جار الحفظ والإرسال...' : 'Posting & emailing...')
+                          : (displayLocale === 'ar' ? 'نشر وإرسال للمجموعة' : 'Post & Email Group')}
                       </button>
                     </div>
 
