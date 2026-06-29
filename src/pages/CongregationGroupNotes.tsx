@@ -431,8 +431,9 @@ function buildProfileFromFormRecord(formId: string, raw: any, userIdentifier: st
 function normalizeAssignment(id: string, value: any, displayLocale: 'en' | 'ar'): GroupAssignment | null {
   const group = normalizePeopleDevelopmentGroup(value?.group);
   const text = String(value?.text || '').trim();
+  const attachments = normalizeAssignmentAttachments(value);
 
-  if (!group || !text) return null;
+  if (!group || (!text && attachments.length === 0)) return null;
 
   return {
     id,
@@ -443,7 +444,7 @@ function normalizeAssignment(id: string, value: any, displayLocale: 'en' | 'ar')
     createdAt: normalizeNumber(value?.createdAt),
     createdAtISO: String(value?.createdAtISO || '').trim(),
     source: String(value?.source || '').trim(),
-    attachments: normalizeAssignmentAttachments(value),
+    attachments,
   };
 }
 
@@ -567,6 +568,7 @@ export default function CongregationGroupNotes() {
   }, [assignments, searchTerm]);
 
   const latestAssignment = assignments[0] || null;
+  const emptyAssignmentText = isAr ? 'تم إرفاق ملف بدون ملاحظة نصية.' : 'A PDF/resource was attached without additional text.';
 
   const openAttachment = (attachment: GroupAssignmentAttachment) => {
     try {
@@ -854,7 +856,7 @@ export default function CongregationGroupNotes() {
                           <span>{formatDateLabel(latestAssignment.date || latestAssignment.createdAtISO, latestAssignment.createdAt, displayLocale)}</span>
                         </div>
                         <p className="line-clamp-4 whitespace-pre-wrap text-[#2b1717]">
-                          {latestAssignment.text}
+                          {latestAssignment.text || emptyAssignmentText}
                         </p>
                         {latestAssignment.attachments.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -933,7 +935,7 @@ export default function CongregationGroupNotes() {
                               </span>
                             </div>
                             <p className="line-clamp-5 whitespace-pre-wrap leading-relaxed text-[#2b1717]">
-                              {assignment.text}
+                              {assignment.text || emptyAssignmentText}
                             </p>
                             {assignment.attachments.length > 0 && (
                               <div className="mt-3 flex flex-wrap gap-2">
@@ -1019,7 +1021,7 @@ export default function CongregationGroupNotes() {
 
                 <div className="rounded-2xl border border-[#ead9d0] bg-white p-5">
                   <p className="whitespace-pre-wrap text-lg leading-relaxed text-[#2b1717]">
-                    {selectedAssignment.text}
+                    {selectedAssignment.text || emptyAssignmentText}
                   </p>
                 </div>
 
