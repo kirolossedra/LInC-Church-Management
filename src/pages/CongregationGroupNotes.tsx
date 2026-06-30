@@ -569,11 +569,6 @@ export default function CongregationGroupNotes() {
   }, [assignments, searchTerm]);
 
   const latestAssignment = assignments[0] || null;
-  const assignmentFallbackTextByLocale: Record<'en' | 'ar', string> = {
-    en: 'A PDF/resource was attached without additional text.',
-    ar: 'تم إرفاق ملف أو مورد بدون نص إضافي.',
-  };
-  const emptyAssignmentText = assignmentFallbackTextByLocale[displayLocale];
 
   const openAttachment = (attachment: GroupAssignmentAttachment) => {
     try {
@@ -860,9 +855,11 @@ export default function CongregationGroupNotes() {
                           <Clock size={15} />
                           <span>{formatDateLabel(latestAssignment.date || latestAssignment.createdAtISO, latestAssignment.createdAt, displayLocale)}</span>
                         </div>
-                        <p className="line-clamp-4 whitespace-pre-wrap text-[#2b1717]">
-                          {latestAssignment.text || emptyAssignmentText}
-                        </p>
+                        {latestAssignment.text && (
+                          <p className="line-clamp-4 whitespace-pre-wrap text-[#2b1717]">
+                            {latestAssignment.text}
+                          </p>
+                        )}
                         {latestAssignment.attachments.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {latestAssignment.attachments.map((attachment, index) => (
@@ -939,9 +936,11 @@ export default function CongregationGroupNotes() {
                                 {formatDateLabel(assignment.date || assignment.createdAtISO, assignment.createdAt, displayLocale)}
                               </span>
                             </div>
-                            <p className="line-clamp-5 whitespace-pre-wrap leading-relaxed text-[#2b1717]">
-                              {assignment.text || emptyAssignmentText}
-                            </p>
+                            {assignment.text && (
+                              <p className="line-clamp-5 whitespace-pre-wrap leading-relaxed text-[#2b1717]">
+                                {assignment.text}
+                              </p>
+                            )}
                             {assignment.attachments.length > 0 && (
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {assignment.attachments.map((attachment, index) => (
@@ -1024,11 +1023,13 @@ export default function CongregationGroupNotes() {
                   </span>
                 </div>
 
-                <div className="rounded-2xl border border-[#ead9d0] bg-white p-5">
-                  <p className="whitespace-pre-wrap text-lg leading-relaxed text-[#2b1717]">
-                    {selectedAssignment.text || emptyAssignmentText}
-                  </p>
-                </div>
+                {selectedAssignment.text && (
+                  <div className="rounded-2xl border border-[#ead9d0] bg-white p-5">
+                    <p className="whitespace-pre-wrap text-lg leading-relaxed text-[#2b1717]">
+                      {selectedAssignment.text}
+                    </p>
+                  </div>
+                )}
 
                 {selectedAssignment.attachments.length > 0 && (
                   <div className="mt-5 rounded-2xl border border-[#ead9d0] bg-white p-5">
