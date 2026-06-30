@@ -492,8 +492,9 @@ async function findProfileByIdentifier(identifier: string, displayLocale: 'en' |
 
 export default function CongregationGroupNotes() {
   const { dir, locale } = useI18n();
-  const displayLocale: 'en' | 'ar' = locale === 'ar' ? 'ar' : 'en';
-  const isAr = displayLocale === 'ar';
+  const rawLocale = String(locale || '').toLowerCase();
+  const isAr = rawLocale === 'ar' || rawLocale.startsWith('ar-') || rawLocale.startsWith('arabic') || dir === 'rtl';
+  const displayLocale: 'en' | 'ar' = isAr ? 'ar' : 'en';
   const [identifierInput, setIdentifierInput] = useState('');
   const [loginStatus, setLoginStatus] = useState<LoginStatus>('idle');
   const [loginMessage, setLoginMessage] = useState('');
@@ -568,7 +569,11 @@ export default function CongregationGroupNotes() {
   }, [assignments, searchTerm]);
 
   const latestAssignment = assignments[0] || null;
-  const emptyAssignmentText = isAr ? 'تم إرفاق ملف بدون ملاحظة نصية.' : 'A PDF/resource was attached without additional text.';
+  const assignmentFallbackTextByLocale: Record<'en' | 'ar', string> = {
+    en: 'A PDF/resource was attached without additional text.',
+    ar: 'تم إرفاق ملف أو مورد بدون نص إضافي.',
+  };
+  const emptyAssignmentText = assignmentFallbackTextByLocale[displayLocale];
 
   const openAttachment = (attachment: GroupAssignmentAttachment) => {
     try {
