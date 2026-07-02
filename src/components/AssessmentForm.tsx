@@ -17,7 +17,6 @@ const USER_LINKAGE_PASSCODE = '9910';
 const SUPPORTED_LINKAGE_FORM_IDS = ['0', '1'];
 const IDENTIFIER_EMAIL_SUBJECT = 'LinC Mentorship Identifier';
 const DIRECT_SIGNUP_FORM_ID = 'directSignup';
-const DIRECT_SIGNUP_DATABASE_PATH = 'directSignups';
 
 type Lang = 'en' | 'ar';
 type InterfaceLang = 'English' | 'Arabic';
@@ -146,30 +145,44 @@ const FORMS = [fiveServicePathwaysYaml, spiritualGiftsDiscoveryYaml]
   .map(raw => YAML.parse(raw) as FormDef)
   .filter(form => form.status !== 'disabled');
 
+const DIRECT_SIGNUP_TARGET_FORM = FORMS[0];
+
 const DIRECT_SIGNUP_FORM: FormDef = {
   id: DIRECT_SIGNUP_FORM_ID,
-  firebase: { path: DIRECT_SIGNUP_DATABASE_PATH, tableNameEquivalent: 'direct_signups' },
+  firebase: {
+    path: DIRECT_SIGNUP_TARGET_FORM?.firebase?.path || 'form',
+    tableNameEquivalent: DIRECT_SIGNUP_TARGET_FORM?.firebase?.tableNameEquivalent || DIRECT_SIGNUP_TARGET_FORM?.id || 'form',
+  },
+  defaults: DIRECT_SIGNUP_TARGET_FORM?.defaults,
   card: {
-    title: { en: 'Direct Sign-Ups', ar: 'التسجيل المباشر' },
+    title: { en: 'Direct Sign-Up', ar: 'التسجيل المباشر' },
     description: {
-      en: 'People added to the system without completing an assessment form.',
-      ar: 'أشخاص تمت إضافتهم إلى النظام بدون تعبئة نموذج تقييم.',
+      en: 'People added through the direct sign-up shortcut are stored in the same backend path as normal form responses.',
+      ar: 'الأشخاص الذين تتم إضافتهم من التسجيل المباشر يتم حفظهم في نفس مسار قاعدة البيانات الخاص بردود النماذج العادية.',
     },
   },
   page: {
     title: { en: 'Direct Sign-Up', ar: 'التسجيل المباشر' },
     subtitle: {
-      en: 'Sign up with name and email only. A row will be created in User Linkage.',
-      ar: 'التسجيل بالاسم والبريد الإلكتروني فقط. سيتم إنشاء صف في صفحة ربط المستخدمين.',
+      en: 'Sign up with name and email only. The row is saved in the main form-response path so other services can use it.',
+      ar: 'التسجيل بالاسم والبريد الإلكتروني فقط. يتم حفظ الصف في مسار ردود النماذج الأساسي حتى تستخدمه باقي الخدمات.',
     },
   },
   sections: [],
 };
 
-const LINKAGE_SOURCES: FormDef[] = [...FORMS, DIRECT_SIGNUP_FORM];
+const LINKAGE_SOURCES: FormDef[] = FORMS;
 
 function firebaseResponsePath(form: FormDef): string {
   return form.firebase?.path || 'form';
+}
+
+function directSignupTargetForm(): FormDef {
+  return DIRECT_SIGNUP_TARGET_FORM || DIRECT_SIGNUP_FORM;
+}
+
+function directSignupTargetFormId(): string {
+  return DIRECT_SIGNUP_TARGET_FORM?.id || DIRECT_SIGNUP_FORM_ID;
 }
 
 function linkageDraftKey(formId: string, responseKey: string): string {
@@ -1016,22 +1029,27 @@ export default function AssessmentForm() {
     setDirectSignupLoading(true);
 
     try {
+      const targetForm = directSignupTargetForm();
+      const targetFormId = directSignupTargetFormId();
+      const targetPath = firebaseResponsePath(targetForm);
       const createdAt = Date.now();
       const createdAtISO = new Date().toISOString();
-      const createdAtEasternTime = getEasternTime(DIRECT_SIGNUP_FORM);
+      const createdAtEasternTime = getEasternTime(targetForm);
 
-      await push(ref(database, `${DIRECT_SIGNUP_DATABASE_PATH}/`), {
-        tableNameEquivalent: DIRECT_SIGNUP_FORM.firebase?.tableNameEquivalent || DIRECT_SIGNUP_FORM_ID,
+      await push(ref(database, `${targetPath}/`), {
+        tableNameEquivalent: targetForm.firebase?.tableNameEquivalent || targetFormId,
         signupType: 'directWithoutAssessmentForm',
+        submissionMode: 'directSignupStoredAsFormResponse',
         createdAt,
         createdAtISO,
         createdAtEasternTime,
         interfaceLanguageUsed: interfaceLanguage,
-        formId: DIRECT_SIGNUP_FORM_ID,
+        formId: targetFormId,
+        sourceFormId: DIRECT_SIGNUP_FORM_ID,
         fullName,
         email,
         fields: {
-          directSignup: {
+          trainee: {
             fullName: {
               fieldEnglish: 'Full Name',
               fieldArabic: 'الاسم الكامل',
@@ -1048,16 +1066,43 @@ export default function AssessmentForm() {
               value: 'Direct sign-up without assessment form',
             },
           },
+          directSignup: {
+            fullName: {
+              fieldEnglish: 'Full Name',
+              fieldArabic: 'الاسم الكامل',
+              value: fullName,
+            },
+            email: {
+              fieldEnglish: 'Email',
+              fieldArabic: 'البريد الإلكتروني',
+              value: email,
+            },
+            requestType: {
+              fieldEnglish: 'Request Type',
+              fieldArabic: 'نوع الطلب',
+              value: 'Direct sign-up without assessment form',
+            },
+            storedBackendPath: {
+              fieldEnglish: 'Stored Backend Path',
+              fieldArabic: 'مسار الحفظ في قاعدة البيانات',
+              value: targetPath,
+            },
+          },
         },
+        scores: {},
         results: {
-          English: { summary: 'Direct sign-up request only. No assessment form was submitted.' },
-          Arabic: { summary: 'طلب تسجيل مباشر فقط. لم يتم إرسال نموذج تقييم.' },
+          English: { summary: 'Direct sign-up saved as a form-response row. No assessment answers were submitted.' },
+          Arabic: { summary: 'تم حفظ التسجيل المباشر كصف ضمن ردود النماذج. لم يتم إرسال إجابات تقييم.' },
         },
       });
 
       setDirectSignupName('');
       setDirectSignupEmail('');
-      setDirectSignupMessage(isArabicUI ? 'تم إرسال طلب التسجيل. سيظهر كصف في صفحة ربط المستخدمين.' : 'Sign-up request submitted. It will appear as a row in User Linkage.');
+      setDirectSignupMessage(
+        isArabicUI
+          ? `تم إرسال التسجيل وحفظه في نفس مسار ردود النماذج: ${targetPath}`
+          : `Sign-up submitted and saved in the same form-response path: ${targetPath}`,
+      );
     } catch (err) {
       console.error(err);
       setDirectSignupError(isArabicUI ? 'تعذر إرسال طلب التسجيل.' : 'Unable to submit the sign-up request.');
@@ -1657,7 +1702,7 @@ export default function AssessmentForm() {
             </form>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-[18px] mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px] mb-6">
                 {LINKAGE_SOURCES.map((item, index) => (
                   <button
                     key={item.id}
@@ -1910,8 +1955,8 @@ export default function AssessmentForm() {
                 </h3>
                 <p className="m-0 mt-2 text-[#666] text-sm leading-relaxed">
                   {isArabicUI
-                    ? 'أرسل الاسم والبريد الإلكتروني فقط. سيتم إنشاء صف في صفحة ربط المستخدمين حتى يمكن إضافة الشخص للنظام وربطه لاحقاً.'
-                    : 'Submit only name and email. This creates a row in User Linkage so the person can be added to the system and linked later.'}
+                    ? 'أرسل الاسم والبريد الإلكتروني فقط. سيتم حفظه في نفس مسار ردود النماذج حتى تستخدمه باقي الخدمات، وسيظهر أيضاً في صفحة ربط المستخدمين.'
+                    : 'Submit only name and email. This saves the row in the same form-response backend path used by the other services, and it will also appear in User Linkage.'}
                 </p>
               </div>
               <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center shrink-0 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
@@ -1952,7 +1997,7 @@ export default function AssessmentForm() {
               disabled={directSignupLoading}
               className="w-full min-h-[52px] mt-5 border-none bg-[#8b1e1e] text-white py-3 rounded-[18px] font-bold cursor-pointer shadow-[0_8px_18px_rgba(139,30,30,0.24)] transition-transform hover:-translate-y-[1px] text-[1.02rem] disabled:cursor-not-allowed disabled:opacity-70 disabled:translate-y-0"
             >
-              {directSignupLoading ? (isArabicUI ? 'جارٍ الإرسال...' : 'Submitting...') : (isArabicUI ? 'إرسال طلب التسجيل' : 'Submit Sign-Up Request')}
+              {directSignupLoading ? (isArabicUI ? 'جارٍ الإرسال...' : 'Submitting...') : (isArabicUI ? 'إرسال التسجيل' : 'Submit Sign-Up')}
             </button>
           </form>
 
