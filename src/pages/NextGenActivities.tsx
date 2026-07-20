@@ -231,7 +231,11 @@ function createImagePdf(jpegBytes: Uint8Array, imageWidth: number, imageHeight: 
 
   appendText(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
 
-  return new Blob([mergeByteArrays(parts)], { type: 'application/pdf' });
+  const mergedBytes = mergeByteArrays(parts);
+  const pdfBuffer: ArrayBuffer = new ArrayBuffer(mergedBytes.byteLength);
+  new Uint8Array(pdfBuffer).set(mergedBytes);
+
+  return new Blob([pdfBuffer], { type: 'application/pdf' });
 }
 
 async function canvasToJpegBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
