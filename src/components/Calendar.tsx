@@ -5,7 +5,7 @@ import { ref, onValue, update, push } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, IdCard, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   createCalendarMeetLink,
@@ -516,6 +516,56 @@ function buildPeopleDevelopmentAssignmentNotificationEmailHtml(params: {
   `.trim();
 }
 
+type NextGenRegistrationStatus = 'pending' | 'approved' | 'rejected';
+type NextGenRegistrationStatusFilter = 'all' | NextGenRegistrationStatus;
+
+interface NextGenRegistration {
+  userId: string;
+  fullName: string;
+  email: string;
+  status: NextGenRegistrationStatus;
+  source: string;
+  createdAt: number;
+  createdAtISO: string;
+  createdAtEasternTime: string;
+  updatedAt: number;
+  updatedAtISO: string;
+  reviewedAt?: number;
+  reviewedAtISO?: string;
+  reviewedBy?: string;
+}
+
+function normalizeNextGenRegistrationStatus(value: unknown): NextGenRegistrationStatus {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'approved' || normalized === 'rejected') return normalized;
+  return 'pending';
+}
+
+function normalizeNextGenRegistration(userId: string, value: any): NextGenRegistration {
+  return {
+    userId: String(value?.userId || value?.normalizedUserId || userId).trim().toUpperCase(),
+    fullName: String(value?.fullName || value?.name || '').trim(),
+    email: String(value?.email || '').trim(),
+    status: normalizeNextGenRegistrationStatus(value?.status),
+    source: String(value?.source || 'nextGenActivities').trim(),
+    createdAt: normalizeNumber(value?.createdAt),
+    createdAtISO: String(value?.createdAtISO || '').trim(),
+    createdAtEasternTime: String(value?.createdAtEasternTime || '').trim(),
+    updatedAt: normalizeNumber(value?.updatedAt),
+    updatedAtISO: String(value?.updatedAtISO || '').trim(),
+    reviewedAt: normalizeNumber(value?.reviewedAt) || undefined,
+    reviewedAtISO: String(value?.reviewedAtISO || '').trim() || undefined,
+    reviewedBy: String(value?.reviewedBy || '').trim() || undefined,
+  };
+}
+
+function normalizeDuplicateIdentityValue(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0600-\u06ff]/g, '');
+}
+
 function normalizeNextGenQuestion(id: string, value: any): NextGenQuestion {
   const totalUpvotes = normalizeNumber(value?.totalUpvotes);
   const totalDownvotes = normalizeNumber(value?.totalDownvotes);
@@ -688,6 +738,11 @@ export default function Calendar() {
   const [showRequests, setShowRequests] = useState(false);
   const [nextGenQuestions, setNextGenQuestions] = useState<NextGenQuestion[]>([]);
   const [showNextGenQuestions, setShowNextGenQuestions] = useState(false);
+  const [nextGenRegistrations, setNextGenRegistrations] = useState<NextGenRegistration[]>([]);
+  const [showNextGenRegistrations, setShowNextGenRegistrations] = useState(false);
+  const [nextGenRegistrationSearchTerm, setNextGenRegistrationSearchTerm] = useState('');
+  const [nextGenRegistrationStatusFilter, setNextGenRegistrationStatusFilter] = useState<NextGenRegistrationStatusFilter>('all');
+  const [nextGenRegistrationUpdatingId, setNextGenRegistrationUpdatingId] = useState<string | null>(null);
   const [showPeopleDevelopment, setShowPeopleDevelopment] = useState(false);
   const [peopleDevelopmentMembers, setPeopleDevelopmentMembers] = useState<Record<string, PeopleDevelopmentMember>>({});
   const [peopleDevelopmentEntries, setPeopleDevelopmentEntries] = useState<PeopleDevelopmentEntry[]>([]);
@@ -924,6 +979,30 @@ export default function Calendar() {
       } else {
         setNextGenQuestions([]);
       }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const registrationsRef = ref(database, 'nextGenUsers/');
+    const unsubscribe = onValue(registrationsRef, snapshot => {
+      const data = snapshot.val();
+
+      if (!data) {
+        setNextGenRegistrations([]);
+        return;
+      }
+
+      const parsed = Object.entries(data)
+        .map(([userId, value]: [string, any]) => normalizeNextGenRegistration(userId, value))
+        .filter(registration => registration.userId)
+        .sort((a, b) => {
+          if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
+          return a.userId.localeCompare(b.userId);
+        });
+
+      setNextGenRegistrations(parsed);
     });
 
     return () => unsubscribe();
@@ -1914,6 +1993,59 @@ ${safeFullReport}
     }
   };
 
+  const handleNextGenRegistrationStatus = async (
+    registration: NextGenRegistration,
+    nextStatus: NextGenRegistrationStatus,
+  ) => {
+    if (nextGenRegistrationUpdatingId) return;
+
+    const confirmationMessage = nextStatus === 'approved'
+      ? (displayLocale === 'ar'
+          ? `هل تريد الموافقة على تسجيل ${registration.fullName || registration.userId}؟`
+          : `Approve the NextGen registration for ${registration.fullName || registration.userId}?`)
+      : (displayLocale === 'ar'
+          ? `هل تريد رفض تسجيل ${registration.fullName || registration.userId}؟`
+          : `Reject the NextGen registration for ${registration.fullName || registration.userId}?`);
+
+    if (!window.confirm(confirmationMessage)) return;
+
+    setNextGenRegistrationUpdatingId(registration.userId);
+
+    try {
+      const reviewedAt = Date.now();
+      const reviewedAtISO = new Date(reviewedAt).toISOString();
+
+      await update(ref(database, `nextGenUsers/${registration.userId}`), {
+        status: nextStatus,
+        reviewedAt,
+        reviewedAtISO,
+        reviewedBy: 'pastorCalendar',
+        updatedAt: reviewedAt,
+        updatedAtISO: reviewedAtISO,
+      });
+
+      await push(ref(database, 'nextGenActivities/registrationReviewLogs/'), {
+        userId: registration.userId,
+        fullName: registration.fullName,
+        email: registration.email,
+        previousStatus: registration.status,
+        status: nextStatus,
+        reviewedBy: 'pastorCalendar',
+        reviewedAt,
+        reviewedAtISO,
+      });
+    } catch (err) {
+      console.error('Failed to update NextGen registration status:', err);
+      alert(
+        displayLocale === 'ar'
+          ? 'فشل تحديث حالة تسجيل NextGen.'
+          : 'Failed to update the NextGen registration status.',
+      );
+    } finally {
+      setNextGenRegistrationUpdatingId(null);
+    }
+  };
+
   const handleNextGenQuestionSelection = async (question: NextGenQuestion, selected: boolean) => {
     setNextGenSelectionLoadingId(question.id);
 
@@ -2851,6 +2983,61 @@ Otherwise, provide a helpful response about their calendar.`;
 
   const availabilityDateCount = buildAvailabilityDates().length;
 
+  const nextGenRegistrationEmailCounts = nextGenRegistrations.reduce<Record<string, number>>((counts, registration) => {
+    const normalizedEmail = registration.email.trim().toLowerCase();
+    if (normalizedEmail) counts[normalizedEmail] = (counts[normalizedEmail] || 0) + 1;
+    return counts;
+  }, {});
+
+  const nextGenRegistrationNameCounts = nextGenRegistrations.reduce<Record<string, number>>((counts, registration) => {
+    const normalizedName = normalizeDuplicateIdentityValue(registration.fullName);
+    if (normalizedName) counts[normalizedName] = (counts[normalizedName] || 0) + 1;
+    return counts;
+  }, {});
+
+  const nextGenRegistrationHasDuplicate = (registration: NextGenRegistration): boolean => {
+    const normalizedEmail = registration.email.trim().toLowerCase();
+    const normalizedName = normalizeDuplicateIdentityValue(registration.fullName);
+
+    return Boolean(
+      (normalizedEmail && nextGenRegistrationEmailCounts[normalizedEmail] > 1) ||
+      (normalizedName && nextGenRegistrationNameCounts[normalizedName] > 1)
+    );
+  };
+
+  const pendingNextGenRegistrations = nextGenRegistrations.filter(registration => registration.status === 'pending');
+  const approvedNextGenRegistrations = nextGenRegistrations.filter(registration => registration.status === 'approved');
+  const rejectedNextGenRegistrations = nextGenRegistrations.filter(registration => registration.status === 'rejected');
+  const duplicateNextGenRegistrations = nextGenRegistrations.filter(nextGenRegistrationHasDuplicate);
+  const normalizedNextGenRegistrationSearch = nextGenRegistrationSearchTerm.trim().toLowerCase();
+
+  const visibleNextGenRegistrations = nextGenRegistrations
+    .filter(registration => {
+      if (nextGenRegistrationStatusFilter !== 'all' && registration.status !== nextGenRegistrationStatusFilter) {
+        return false;
+      }
+
+      if (!normalizedNextGenRegistrationSearch) return true;
+
+      return [registration.userId, registration.fullName, registration.email, registration.status]
+        .some(value => String(value || '').toLowerCase().includes(normalizedNextGenRegistrationSearch));
+    })
+    .sort((a, b) => {
+      const duplicateDifference = Number(nextGenRegistrationHasDuplicate(b)) - Number(nextGenRegistrationHasDuplicate(a));
+      if (duplicateDifference !== 0) return duplicateDifference;
+
+      const statusOrder: Record<NextGenRegistrationStatus, number> = {
+        pending: 0,
+        approved: 1,
+        rejected: 2,
+      };
+      const statusDifference = statusOrder[a.status] - statusOrder[b.status];
+      if (statusDifference !== 0) return statusDifference;
+
+      if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
+      return a.userId.localeCompare(b.userId);
+    });
+
   const rankedNextGenQuestions = nextGenQuestions;
   const selectedNextGenQuestions = nextGenQuestions.filter(question =>
     question.status === 'selectedForNextGenSession' || Boolean((question as any).selectedForNextGenSession)
@@ -3088,6 +3275,29 @@ Otherwise, provide a helpful response about their calendar.`;
                 {participants.length}
               </span>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowNextGenRegistrations(!showNextGenRegistrations)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
+              showNextGenRegistrations
+                ? 'bg-indigo-700 text-white border-indigo-700'
+                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+            }`}
+          >
+            <UserPlus size={16} />
+            <span>{displayLocale === 'ar' ? 'تسجيلات NextGen' : 'NextGen Registrations'}</span>
+            {pendingNextGenRegistrations.length > 0 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                showNextGenRegistrations ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'
+              }`}>
+                {pendingNextGenRegistrations.length}
+              </span>
+            )}
+            <ChevronDown
+              size={16}
+              className={`transition-transform ${showNextGenRegistrations ? 'rotate-180' : ''}`}
+            />
           </button>
           <button
             type="button"
@@ -3593,6 +3803,243 @@ Otherwise, provide a helpful response about their calendar.`;
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {showNextGenRegistrations && (
+        <section className="bg-white p-6 rounded-3xl shadow-sm border border-indigo-200">
+          <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5 mb-5">
+            <div>
+              <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-700">
+                <UserPlus size={18} />
+                {displayLocale === 'ar' ? 'تسجيلات NextGen' : 'NextGen Registrations'}
+                <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full font-bold">
+                  {nextGenRegistrations.length}
+                </span>
+              </h3>
+              <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+                {displayLocale === 'ar'
+                  ? 'جميع التسجيلات ظاهرة هنا، بما في ذلك الموافق عليها والمرفوضة، للمساعدة في اكتشاف التسجيل المتكرر.'
+                  : 'Every registration remains visible here, including approved and rejected accounts, to help detect repeat registrations.'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full border border-amber-100 font-bold">
+                {displayLocale === 'ar'
+                  ? `قيد الانتظار: ${pendingNextGenRegistrations.length}`
+                  : `Pending: ${pendingNextGenRegistrations.length}`}
+              </span>
+              <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full border border-green-100 font-bold">
+                {displayLocale === 'ar'
+                  ? `موافق عليها: ${approvedNextGenRegistrations.length}`
+                  : `Approved: ${approvedNextGenRegistrations.length}`}
+              </span>
+              <span className="px-3 py-1 bg-red-50 text-red-700 rounded-full border border-red-100 font-bold">
+                {displayLocale === 'ar'
+                  ? `مرفوضة: ${rejectedNextGenRegistrations.length}`
+                  : `Rejected: ${rejectedNextGenRegistrations.length}`}
+              </span>
+              {duplicateNextGenRegistrations.length > 0 && (
+                <span className="px-3 py-1 bg-orange-50 text-orange-700 rounded-full border border-orange-200 font-bold">
+                  {displayLocale === 'ar'
+                    ? `تسجيلات متشابهة: ${duplicateNextGenRegistrations.length}`
+                    : `Possible duplicates: ${duplicateNextGenRegistrations.length}`}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_220px] gap-3 mb-5">
+            <label className="relative block">
+              <Search
+                size={17}
+                className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${displayLocale === 'ar' ? 'right-4' : 'left-4'}`}
+              />
+              <input
+                type="search"
+                value={nextGenRegistrationSearchTerm}
+                onChange={event => setNextGenRegistrationSearchTerm(event.target.value)}
+                placeholder={displayLocale === 'ar' ? 'ابحث بالاسم أو البريد أو المعرّف...' : 'Search by name, email, or ID...'}
+                className={`w-full py-3 bg-stone-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 ${
+                  displayLocale === 'ar' ? 'pr-11 pl-4' : 'pl-11 pr-4'
+                }`}
+              />
+            </label>
+
+            <select
+              value={nextGenRegistrationStatusFilter}
+              onChange={event => setNextGenRegistrationStatusFilter(event.target.value as NextGenRegistrationStatusFilter)}
+              className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="all">{displayLocale === 'ar' ? 'كل الحالات' : 'All statuses'}</option>
+              <option value="pending">{displayLocale === 'ar' ? 'قيد الانتظار' : 'Pending'}</option>
+              <option value="approved">{displayLocale === 'ar' ? 'موافق عليها' : 'Approved'}</option>
+              <option value="rejected">{displayLocale === 'ar' ? 'مرفوضة' : 'Rejected'}</option>
+            </select>
+          </div>
+
+          {duplicateNextGenRegistrations.length > 0 && (
+            <div className="mb-5 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
+              <div className="flex items-start gap-3">
+                <Search size={18} className="mt-0.5 shrink-0" />
+                <div>
+                  <h4 className="font-bold">
+                    {displayLocale === 'ar' ? 'تم اكتشاف تسجيلات متشابهة' : 'Possible repeat registrations detected'}
+                  </h4>
+                  <p className="text-xs leading-relaxed mt-1">
+                    {displayLocale === 'ar'
+                      ? 'يتم وضع علامة عندما يظهر نفس البريد الإلكتروني أو نفس الاسم في أكثر من معرّف. راجع جميع الصفوف المتشابهة قبل الموافقة.'
+                      : 'A warning appears when the same email or normalized name is associated with multiple IDs. Review every matching row before approving.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {nextGenRegistrations.length === 0 ? (
+            <div className="p-6 bg-stone-50 rounded-2xl border border-gray-100 text-sm text-gray-500">
+              {displayLocale === 'ar'
+                ? 'لا توجد تسجيلات NextGen حتى الآن.'
+                : 'No NextGen registrations have been submitted yet.'}
+            </div>
+          ) : visibleNextGenRegistrations.length === 0 ? (
+            <div className="p-6 bg-stone-50 rounded-2xl border border-gray-100 text-sm text-gray-500">
+              {displayLocale === 'ar'
+                ? 'لا توجد تسجيلات تطابق البحث أو حالة التصفية.'
+                : 'No registrations match the current search or status filter.'}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {visibleNextGenRegistrations.map(registration => {
+                const normalizedEmail = registration.email.trim().toLowerCase();
+                const normalizedName = normalizeDuplicateIdentityValue(registration.fullName);
+                const sameEmailCount = normalizedEmail ? nextGenRegistrationEmailCounts[normalizedEmail] || 0 : 0;
+                const sameNameCount = normalizedName ? nextGenRegistrationNameCounts[normalizedName] || 0 : 0;
+                const hasDuplicateEmail = sameEmailCount > 1;
+                const hasDuplicateName = sameNameCount > 1;
+                const isUpdating = nextGenRegistrationUpdatingId === registration.userId;
+                const createdLabel = registration.createdAtEasternTime || registration.createdAtISO || (
+                  registration.createdAt ? new Date(registration.createdAt).toLocaleString() : ''
+                );
+
+                const statusClasses: Record<NextGenRegistrationStatus, string> = {
+                  pending: 'bg-amber-50 text-amber-700 border-amber-200',
+                  approved: 'bg-green-50 text-green-700 border-green-200',
+                  rejected: 'bg-red-50 text-red-700 border-red-200',
+                };
+
+                const statusLabel: Record<NextGenRegistrationStatus, string> = {
+                  pending: displayLocale === 'ar' ? 'قيد الانتظار' : 'Pending',
+                  approved: displayLocale === 'ar' ? 'موافق عليها' : 'Approved',
+                  rejected: displayLocale === 'ar' ? 'مرفوضة' : 'Rejected',
+                };
+
+                return (
+                  <div
+                    key={registration.userId}
+                    className={`rounded-2xl border p-5 transition-all ${
+                      hasDuplicateEmail || hasDuplicateName
+                        ? 'bg-orange-50/60 border-orange-200'
+                        : 'bg-stone-50 border-gray-100'
+                    }`}
+                  >
+                    <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5">
+                      <div className="flex items-start gap-4 min-w-0">
+                        <div className="w-14 h-14 shrink-0 rounded-2xl bg-white border border-indigo-100 text-indigo-700 grid place-items-center font-black tracking-widest">
+                          {registration.userId}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-base font-bold text-gray-900 break-words">
+                              {registration.fullName || (displayLocale === 'ar' ? 'اسم غير متوفر' : 'Name unavailable')}
+                            </h4>
+                            <span className={`px-3 py-1 rounded-full border text-xs font-bold ${statusClasses[registration.status]}`}>
+                              {statusLabel[registration.status]}
+                            </span>
+                            {(hasDuplicateEmail || hasDuplicateName) && (
+                              <span className="px-3 py-1 rounded-full border border-orange-200 bg-orange-100 text-orange-800 text-xs font-bold">
+                                {displayLocale === 'ar' ? 'احتمال تسجيل متكرر' : 'Possible duplicate'}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 mt-3">
+                            <span className="flex items-center gap-1 min-w-0 break-all">
+                              <Mail size={13} />
+                              {registration.email || (displayLocale === 'ar' ? 'لا يوجد بريد' : 'No email')}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <IdCard size={13} />
+                              {displayLocale === 'ar' ? 'المعرّف' : 'ID'}: {registration.userId}
+                            </span>
+                            {createdLabel && (
+                              <span className="flex items-center gap-1">
+                                <Clock size={13} />
+                                {createdLabel}
+                              </span>
+                            )}
+                          </div>
+
+                          {(hasDuplicateEmail || hasDuplicateName) && (
+                            <div className="flex flex-wrap gap-2 mt-3 text-xs">
+                              {hasDuplicateEmail && (
+                                <span className="px-3 py-1 rounded-lg bg-white border border-orange-200 text-orange-800 font-bold">
+                                  {displayLocale === 'ar'
+                                    ? `نفس البريد مستخدم في ${sameEmailCount} تسجيلات`
+                                    : `Same email appears in ${sameEmailCount} registrations`}
+                                </span>
+                              )}
+                              {hasDuplicateName && (
+                                <span className="px-3 py-1 rounded-lg bg-white border border-orange-200 text-orange-800 font-bold">
+                                  {displayLocale === 'ar'
+                                    ? `نفس الاسم ظاهر في ${sameNameCount} تسجيلات`
+                                    : `Same name appears in ${sameNameCount} registrations`}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {registration.reviewedAtISO && (
+                            <p className="text-[11px] text-gray-400 mt-3">
+                              {displayLocale === 'ar' ? 'آخر مراجعة:' : 'Last reviewed:'} {registration.reviewedAtISO}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 xl:min-w-[250px]">
+                        <button
+                          type="button"
+                          disabled={isUpdating || registration.status === 'approved'}
+                          onClick={() => handleNextGenRegistrationStatus(registration, 'approved')}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-green-700 text-white text-xs font-bold hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {isUpdating ? <Hourglass size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                          {registration.status === 'approved'
+                            ? (displayLocale === 'ar' ? 'تمت الموافقة' : 'Approved')
+                            : (displayLocale === 'ar' ? 'موافقة' : 'Approve')}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isUpdating || registration.status === 'rejected'}
+                          onClick={() => handleNextGenRegistrationStatus(registration, 'rejected')}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-700 text-white text-xs font-bold hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {isUpdating ? <Hourglass size={14} className="animate-spin" /> : <XCircle size={14} />}
+                          {registration.status === 'rejected'
+                            ? (displayLocale === 'ar' ? 'تم الرفض' : 'Rejected')
+                            : (displayLocale === 'ar' ? 'رفض' : 'Reject')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
