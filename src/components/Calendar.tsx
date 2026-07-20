@@ -5,7 +5,7 @@ import { ref, onValue, update, push } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, IdCard, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, IdCard, MessageSquare, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   createCalendarMeetLink,
@@ -599,6 +599,245 @@ function normalizeNextGenQuestion(id: string, value: any): NextGenQuestion {
   };
 }
 
+type NextGenSurveyBinaryQuestionId =
+  | 'questionAnnouncement'
+  | 'postSessionMaterials'
+  | 'categoryStructure'
+  | 'subtopicStructure'
+  | 'sessionBalance'
+  | 'answerDepth'
+  | 'questionSelection'
+  | 'summaryLength';
+
+type NextGenSurveyRatingQuestionId = 'pastorClarity' | 'pastorDepth' | 'pastorEngagement';
+
+interface NextGenSurveyBinaryQuestionDefinition {
+  id: NextGenSurveyBinaryQuestionId;
+  questionEn: string;
+  questionAr: string;
+  optionAEn: string;
+  optionAAr: string;
+  optionBEn: string;
+  optionBAr: string;
+}
+
+interface NextGenSurveyRatingQuestionDefinition {
+  id: NextGenSurveyRatingQuestionId;
+  questionEn: string;
+  questionAr: string;
+}
+
+interface NextGenSurveyBinaryAggregate {
+  totalResponses: number;
+  counts: {
+    A: number;
+    B: number;
+  };
+}
+
+interface NextGenSurveyRatingAggregate {
+  totalResponses: number;
+  counts: Record<1 | 2 | 3 | 4 | 5, number>;
+  average: number;
+}
+
+interface NextGenSurveyAggregateResults {
+  totalResponses: number;
+  binaryQuestions: Record<NextGenSurveyBinaryQuestionId, NextGenSurveyBinaryAggregate>;
+  pastorQualityRatings: Record<NextGenSurveyRatingQuestionId, NextGenSurveyRatingAggregate>;
+}
+
+const NEXTGEN_SURVEY_ID = 'qaSessionFeedbackFirstTwoSessionsV1';
+
+const NEXTGEN_SURVEY_BINARY_QUESTIONS: NextGenSurveyBinaryQuestionDefinition[] = [
+  {
+    id: 'questionAnnouncement',
+    questionEn: 'For future Q&A sessions, should the questions be announced before the session or revealed during the session?',
+    questionAr: 'في جلسات الأسئلة والأجوبة القادمة، هل تفضّل إعلان الأسئلة قبل الجلسة أم عرضها أثناء الجلسة؟',
+    optionAEn: 'Announce the questions before the session',
+    optionAAr: 'إعلان الأسئلة قبل الجلسة',
+    optionBEn: 'Reveal the questions during the session',
+    optionBAr: 'عرض الأسئلة أثناء الجلسة',
+  },
+  {
+    id: 'postSessionMaterials',
+    questionEn: 'After each Q&A session, what would you prefer receiving?',
+    questionAr: 'بعد كل جلسة أسئلة وأجوبة، ماذا تفضّل أن يصلك؟',
+    optionAEn: 'The recording only',
+    optionAAr: 'التسجيل فقط',
+    optionBEn: 'Both the recording and a written summary',
+    optionBAr: 'التسجيل وملخص مكتوب معاً',
+  },
+  {
+    id: 'categoryStructure',
+    questionEn: 'How should future Q&A sessions be organized by category?',
+    questionAr: 'كيف تفضّل تنظيم جلسات الأسئلة والأجوبة القادمة من حيث التصنيفات؟',
+    optionAEn: 'Each session focuses on one main category',
+    optionAAr: 'تركّز كل جلسة على تصنيف رئيسي واحد',
+    optionBEn: 'Each session mixes categories such as Christian Living, Theology, and Apologetics',
+    optionBAr: 'تجمع كل جلسة بين تصنيفات مثل الحياة المسيحية واللاهوت والدفاعيات',
+  },
+  {
+    id: 'subtopicStructure',
+    questionEn: 'When a session focuses on one main category, how should its subtopics be handled?',
+    questionAr: 'عندما تركز الجلسة على تصنيف رئيسي واحد، كيف تفضّل تناول الموضوعات الفرعية؟',
+    optionAEn: 'Explore one specific subtopic in depth',
+    optionAAr: 'التعمق في موضوع فرعي واحد محدد',
+    optionBEn: 'Discuss several subtopics from that category',
+    optionBAr: 'مناقشة عدة موضوعات فرعية من التصنيف نفسه',
+  },
+  {
+    id: 'sessionBalance',
+    questionEn: 'During the session, where should more time be given?',
+    questionAr: 'أثناء الجلسة، لأي جانب تفضّل تخصيص وقت أكبر؟',
+    optionAEn: "More time for Pastor Ibrahim's explanations",
+    optionAAr: 'وقت أكبر لشرح القس إبراهيم',
+    optionBEn: 'More time for open discussion and participant follow-up questions',
+    optionBAr: 'وقت أكبر للنقاش المفتوح وأسئلة المتابعة من المشاركين',
+  },
+  {
+    id: 'answerDepth',
+    questionEn: 'How should the number and depth of answered questions be balanced?',
+    questionAr: 'كيف تفضّل الموازنة بين عدد الأسئلة وعمق الإجابات؟',
+    optionAEn: 'Answer fewer questions in greater depth',
+    optionAAr: 'الإجابة عن أسئلة أقل بعمق أكبر',
+    optionBEn: 'Answer more questions with shorter responses',
+    optionBAr: 'الإجابة عن أسئلة أكثر بإجابات أقصر',
+  },
+  {
+    id: 'questionSelection',
+    questionEn: 'How should questions be selected for each session?',
+    questionAr: 'كيف تفضّل اختيار أسئلة كل جلسة؟',
+    optionAEn: 'Pastor Ibrahim curates the final selection from the highest-voted questions',
+    optionAAr: 'يختار القس إبراهيم التشكيلة النهائية من بين الأسئلة الأعلى تصويتاً',
+    optionBEn: 'Questions are selected strictly according to the voting results',
+    optionBAr: 'يتم اختيار الأسئلة حصراً وفق نتائج التصويت',
+  },
+  {
+    id: 'summaryLength',
+    questionEn: 'If a written summary is shared after the session, which format would you prefer?',
+    questionAr: 'إذا تمت مشاركة ملخص مكتوب بعد الجلسة، فما الصيغة التي تفضّلها؟',
+    optionAEn: 'A short, concise summary of the main answers',
+    optionAAr: 'ملخص قصير ومختصر لأهم الإجابات',
+    optionBEn: 'A detailed Bible-study document with explanations, verses, and discussion points',
+    optionBAr: 'دراسة كتابية مفصلة تشمل الشرح والآيات ونقاط النقاش',
+  },
+];
+
+const NEXTGEN_SURVEY_RATING_QUESTIONS: NextGenSurveyRatingQuestionDefinition[] = [
+  {
+    id: 'pastorClarity',
+    questionEn: "How clear and easy to understand were Pastor Ibrahim's explanations?",
+    questionAr: 'ما مدى وضوح وسهولة فهم شرح القس إبراهيم؟',
+  },
+  {
+    id: 'pastorDepth',
+    questionEn: 'How well did Pastor Ibrahim explore the questions in depth and support his answers with Scripture?',
+    questionAr: 'ما مدى تعمق القس إبراهيم في الأسئلة ودعمه للإجابات بالكتاب المقدس؟',
+  },
+  {
+    id: 'pastorEngagement',
+    questionEn: 'How well did Pastor Ibrahim listen to participants, address their concerns, and respond to follow-up questions?',
+    questionAr: 'ما مدى استماع القس إبراهيم للمشاركين ومعالجته لمخاوفهم وإجابته عن أسئلة المتابعة؟',
+  },
+];
+
+const NEXTGEN_SURVEY_RATING_VALUES = [1, 2, 3, 4, 5] as const;
+
+function createEmptyNextGenSurveyResults(): NextGenSurveyAggregateResults {
+  return {
+    totalResponses: 0,
+    binaryQuestions: {
+      questionAnnouncement: { totalResponses: 0, counts: { A: 0, B: 0 } },
+      postSessionMaterials: { totalResponses: 0, counts: { A: 0, B: 0 } },
+      categoryStructure: { totalResponses: 0, counts: { A: 0, B: 0 } },
+      subtopicStructure: { totalResponses: 0, counts: { A: 0, B: 0 } },
+      sessionBalance: { totalResponses: 0, counts: { A: 0, B: 0 } },
+      answerDepth: { totalResponses: 0, counts: { A: 0, B: 0 } },
+      questionSelection: { totalResponses: 0, counts: { A: 0, B: 0 } },
+      summaryLength: { totalResponses: 0, counts: { A: 0, B: 0 } },
+    },
+    pastorQualityRatings: {
+      pastorClarity: { totalResponses: 0, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, average: 0 },
+      pastorDepth: { totalResponses: 0, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, average: 0 },
+      pastorEngagement: { totalResponses: 0, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, average: 0 },
+    },
+  };
+}
+
+function normalizeSurveyBinaryAnswer(value: unknown): 'A' | 'B' | '' {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'A' || normalized === 'B' ? normalized : '';
+}
+
+function normalizeSurveyRating(value: unknown): 1 | 2 | 3 | 4 | 5 | 0 {
+  const parsed = Number(value);
+  if (parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5) return parsed;
+  return 0;
+}
+
+function buildNextGenSurveyAggregateResults(rawResponses: unknown): NextGenSurveyAggregateResults {
+  const results = createEmptyNextGenSurveyResults();
+
+  if (!rawResponses || typeof rawResponses !== 'object' || Array.isArray(rawResponses)) {
+    return results;
+  }
+
+  Object.values(rawResponses as Record<string, any>).forEach(response => {
+    if (!response || typeof response !== 'object' || Array.isArray(response)) return;
+
+    const completionStatus = String(response?.completionStatus || '').trim().toLowerCase();
+    if (completionStatus && completionStatus !== 'completed') return;
+
+    results.totalResponses += 1;
+
+    NEXTGEN_SURVEY_BINARY_QUESTIONS.forEach(question => {
+      const detailedAnswer = response?.answerDetails?.binaryQuestions?.[question.id]?.answer;
+      const fallbackAnswer = response?.answers?.[question.id];
+      const answer = normalizeSurveyBinaryAnswer(detailedAnswer || fallbackAnswer);
+
+      if (!answer) return;
+      results.binaryQuestions[question.id].counts[answer] += 1;
+      results.binaryQuestions[question.id].totalResponses += 1;
+    });
+
+    NEXTGEN_SURVEY_RATING_QUESTIONS.forEach(question => {
+      const detailedRating = response?.answerDetails?.pastorQualityRatings?.[question.id]?.rating;
+      const fallbackRating = response?.answers?.[question.id];
+      const rating = normalizeSurveyRating(detailedRating || fallbackRating);
+
+      if (!rating) return;
+      results.pastorQualityRatings[question.id].counts[rating] += 1;
+      results.pastorQualityRatings[question.id].totalResponses += 1;
+    });
+  });
+
+  NEXTGEN_SURVEY_RATING_QUESTIONS.forEach(question => {
+    const aggregate = results.pastorQualityRatings[question.id];
+    const weightedTotal = NEXTGEN_SURVEY_RATING_VALUES.reduce(
+      (sum, rating) => sum + rating * aggregate.counts[rating],
+      0,
+    );
+
+    aggregate.average = aggregate.totalResponses > 0
+      ? weightedTotal / aggregate.totalResponses
+      : 0;
+  });
+
+  return results;
+}
+
+function getSurveyPercentage(count: number, total: number): number {
+  if (total <= 0) return 0;
+  return (count / total) * 100;
+}
+
+function formatSurveyPercentage(value: number): string {
+  if (!Number.isFinite(value)) return '0%';
+  const rounded = Math.round(value * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%`;
+}
+
 interface Participant {
   id: string;
   name: string;
@@ -738,6 +977,10 @@ export default function Calendar() {
   const [showRequests, setShowRequests] = useState(false);
   const [nextGenQuestions, setNextGenQuestions] = useState<NextGenQuestion[]>([]);
   const [showNextGenQuestions, setShowNextGenQuestions] = useState(false);
+  const [showNextGenSurveyResults, setShowNextGenSurveyResults] = useState(false);
+  const [nextGenSurveyResults, setNextGenSurveyResults] = useState<NextGenSurveyAggregateResults>(() => createEmptyNextGenSurveyResults());
+  const [nextGenSurveyResultsLoading, setNextGenSurveyResultsLoading] = useState(true);
+  const [nextGenSurveyResultsError, setNextGenSurveyResultsError] = useState('');
   const [nextGenRegistrations, setNextGenRegistrations] = useState<NextGenRegistration[]>([]);
   const [showNextGenRegistrations, setShowNextGenRegistrations] = useState(false);
   const [nextGenRegistrationSearchTerm, setNextGenRegistrationSearchTerm] = useState('');
@@ -983,6 +1226,38 @@ export default function Calendar() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const surveyResponsesRef = ref(
+      database,
+      `nextGenActivities/surveys/${NEXTGEN_SURVEY_ID}/responsesByIdentifier/`,
+    );
+
+    setNextGenSurveyResultsLoading(true);
+    setNextGenSurveyResultsError('');
+
+    const unsubscribe = onValue(
+      surveyResponsesRef,
+      snapshot => {
+        // Only anonymous aggregate counts are kept in component state. Participant
+        // identifiers and individual answer combinations are never displayed.
+        setNextGenSurveyResults(buildNextGenSurveyAggregateResults(snapshot.val()));
+        setNextGenSurveyResultsLoading(false);
+      },
+      error => {
+        console.error('Failed to load NextGen survey results:', error);
+        setNextGenSurveyResults(createEmptyNextGenSurveyResults());
+        setNextGenSurveyResultsError(
+          displayLocale === 'ar'
+            ? 'تعذر تحميل نتائج الاستبيان.'
+            : 'Unable to load the survey results.',
+        );
+        setNextGenSurveyResultsLoading(false);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [displayLocale]);
 
   useEffect(() => {
     const registrationsRef = ref(database, 'nextGenUsers/');
@@ -3301,6 +3576,29 @@ Otherwise, provide a helpful response about their calendar.`;
           </button>
           <button
             type="button"
+            onClick={() => setShowNextGenSurveyResults(!showNextGenSurveyResults)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
+              showNextGenSurveyResults
+                ? 'bg-emerald-700 text-white border-emerald-700'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+            }`}
+          >
+            <BarChart3 size={16} />
+            <span>{displayLocale === 'ar' ? 'نتائج استبيان NextGen' : 'NextGen Survey Results'}</span>
+            {nextGenSurveyResults.totalResponses > 0 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                showNextGenSurveyResults ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {nextGenSurveyResults.totalResponses}
+              </span>
+            )}
+            <ChevronDown
+              size={16}
+              className={`transition-transform ${showNextGenSurveyResults ? 'rotate-180' : ''}`}
+            />
+          </button>
+          <button
+            type="button"
             onClick={() => setShowNextGenQuestions(!showNextGenQuestions)}
             className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-amber-200"
           >
@@ -4040,6 +4338,228 @@ Otherwise, provide a helpful response about their calendar.`;
                   </div>
                 );
               })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {showNextGenSurveyResults && (
+        <section className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-emerald-200 space-y-6">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-black flex items-center gap-2 text-emerald-800">
+                <BarChart3 size={21} />
+                {displayLocale === 'ar' ? 'النتائج الإجمالية لاستبيان NextGen' : 'Overall NextGen Survey Results'}
+                <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-black">
+                  {nextGenSurveyResults.totalResponses}
+                </span>
+              </h3>
+              <p className="text-sm text-gray-500 mt-2 leading-relaxed">
+                {displayLocale === 'ar'
+                  ? 'تعرض هذه الصفحة النسب المجمعة فقط. لا يتم عرض هوية المشاركين أو إجابات أي شخص بصورة منفردة.'
+                  : 'Only combined percentages are shown. Participant identities and individual response combinations are not displayed.'}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-emerald-900 min-w-[190px]">
+              <div className="text-xs font-black uppercase tracking-widest text-emerald-700">
+                {displayLocale === 'ar' ? 'الاستجابات المكتملة' : 'Completed Responses'}
+              </div>
+              <div className="text-3xl font-black mt-1">
+                {nextGenSurveyResults.totalResponses}
+              </div>
+            </div>
+          </div>
+
+          {nextGenSurveyResultsError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700 font-bold">
+              {nextGenSurveyResultsError}
+            </div>
+          )}
+
+          {nextGenSurveyResultsLoading && (
+            <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-stone-50 px-5 py-5 text-gray-500">
+              <Hourglass size={18} className="animate-spin" />
+              {displayLocale === 'ar' ? 'جار تحميل النتائج المجمعة...' : 'Loading anonymous aggregate results...'}
+            </div>
+          )}
+
+          {!nextGenSurveyResultsLoading && !nextGenSurveyResultsError && nextGenSurveyResults.totalResponses === 0 && (
+            <div className="rounded-2xl border border-gray-100 bg-stone-50 p-8 text-center">
+              <div className="w-14 h-14 mx-auto grid place-items-center rounded-full bg-emerald-100 text-emerald-700 mb-4">
+                <BarChart3 size={24} />
+              </div>
+              <h4 className="text-lg font-black text-gray-800">
+                {displayLocale === 'ar' ? 'لا توجد نتائج بعد' : 'No Survey Results Yet'}
+              </h4>
+              <p className="text-sm text-gray-500 mt-2">
+                {displayLocale === 'ar'
+                  ? 'ستظهر النسب هنا بعد إرسال أول استجابة مكتملة.'
+                  : 'Percentages will appear here after the first completed response is submitted.'}
+              </p>
+            </div>
+          )}
+
+          {!nextGenSurveyResultsLoading && !nextGenSurveyResultsError && nextGenSurveyResults.totalResponses > 0 && (
+            <div className="space-y-8">
+              <div>
+                <div className="mb-4">
+                  <h4 className="text-lg font-black text-[#7a1717]">
+                    {displayLocale === 'ar' ? 'تفضيلات تنظيم الجلسات' : 'Session Format Preferences'}
+                  </h4>
+                  <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+                    {displayLocale === 'ar' ? 'النسبة المئوية لكل اختيار' : 'Percentage selecting each option'}
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {NEXTGEN_SURVEY_BINARY_QUESTIONS.map((question, questionIndex) => {
+                    const aggregate = nextGenSurveyResults.binaryQuestions[question.id];
+                    const optionAPercentage = getSurveyPercentage(aggregate.counts.A, aggregate.totalResponses);
+                    const optionBPercentage = getSurveyPercentage(aggregate.counts.B, aggregate.totalResponses);
+
+                    return (
+                      <div key={question.id} className="rounded-3xl border border-gray-100 bg-stone-50 p-5 sm:p-6">
+                        <div className="flex items-start gap-3 mb-5">
+                          <div className="w-9 h-9 shrink-0 rounded-xl bg-[#7a1717] text-white grid place-items-center text-sm font-black">
+                            {questionIndex + 1}
+                          </div>
+                          <div>
+                            <h5 className="font-black text-gray-900 leading-relaxed">
+                              {displayLocale === 'ar' ? question.questionAr : question.questionEn}
+                            </h5>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {displayLocale === 'ar'
+                                ? `${aggregate.totalResponses} إجابة صالحة لهذا السؤال`
+                                : `${aggregate.totalResponses} valid responses for this question`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          {([
+                            {
+                              key: 'A' as const,
+                              label: displayLocale === 'ar' ? question.optionAAr : question.optionAEn,
+                              percentage: optionAPercentage,
+                              barClass: 'bg-emerald-600',
+                              badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                            },
+                            {
+                              key: 'B' as const,
+                              label: displayLocale === 'ar' ? question.optionBAr : question.optionBEn,
+                              percentage: optionBPercentage,
+                              barClass: 'bg-indigo-600',
+                              badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+                            },
+                          ]).map(option => (
+                            <div key={`${question.id}-${option.key}`}>
+                              <div className="flex items-start justify-between gap-4 mb-2">
+                                <div className="flex items-start gap-2 min-w-0">
+                                  <span className={`shrink-0 px-2 py-0.5 rounded-lg border text-xs font-black ${option.badgeClass}`}>
+                                    {option.key}
+                                  </span>
+                                  <span className="text-sm font-bold text-gray-700 leading-relaxed">
+                                    {option.label}
+                                  </span>
+                                </div>
+                                <span className="shrink-0 text-base font-black text-gray-900">
+                                  {formatSurveyPercentage(option.percentage)}
+                                </span>
+                              </div>
+                              <div className="h-3 rounded-full bg-white border border-gray-100 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${option.barClass}`}
+                                  style={{ width: `${Math.min(100, Math.max(0, option.percentage))}%` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-4">
+                  <h4 className="text-lg font-black text-[#7a1717]">
+                    {displayLocale === 'ar' ? 'جودة تقديم Pastor Ibrahim' : "Pastor Ibrahim's Session Quality"}
+                  </h4>
+                  <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
+                    {displayLocale === 'ar' ? 'توزيع التقييمات من 1 إلى 5' : 'Percentage distribution across ratings 1–5'}
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {NEXTGEN_SURVEY_RATING_QUESTIONS.map((question, questionIndex) => {
+                    const aggregate = nextGenSurveyResults.pastorQualityRatings[question.id];
+
+                    return (
+                      <div key={question.id} className="rounded-3xl border border-gray-100 bg-stone-50 p-5 sm:p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
+                          <div className="flex items-start gap-3">
+                            <div className="w-9 h-9 shrink-0 rounded-xl bg-[#7a1717] text-white grid place-items-center text-sm font-black">
+                              {NEXTGEN_SURVEY_BINARY_QUESTIONS.length + questionIndex + 1}
+                            </div>
+                            <div>
+                              <h5 className="font-black text-gray-900 leading-relaxed">
+                                {displayLocale === 'ar' ? question.questionAr : question.questionEn}
+                              </h5>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {displayLocale === 'ar'
+                                  ? `${aggregate.totalResponses} تقييم صالح لهذا السؤال`
+                                  : `${aggregate.totalResponses} valid ratings for this question`}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 rounded-2xl bg-white border border-emerald-200 px-4 py-3 text-center">
+                            <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-black">
+                              {displayLocale === 'ar' ? 'المتوسط' : 'Average'}
+                            </div>
+                            <div className="text-2xl font-black text-emerald-800 mt-1">
+                              {aggregate.average.toFixed(2)} / 5
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          {NEXTGEN_SURVEY_RATING_VALUES.map(rating => {
+                            const percentage = getSurveyPercentage(
+                              aggregate.counts[rating],
+                              aggregate.totalResponses,
+                            );
+                            const ratingLabel = displayLocale === 'ar'
+                              ? ({ 1: 'ضعيف جداً', 2: 'ضعيف', 3: 'متوسط', 4: 'جيد', 5: 'ممتاز' } as const)[rating]
+                              : ({ 1: 'Very poor', 2: 'Poor', 3: 'Average', 4: 'Good', 5: 'Excellent' } as const)[rating];
+
+                            return (
+                              <div key={`${question.id}-${rating}`} className="grid grid-cols-[minmax(105px,auto)_1fr_auto] items-center gap-3">
+                                <div className="text-xs sm:text-sm font-bold text-gray-700">
+                                  <span className="font-black text-[#7a1717]">{rating}</span>
+                                  <span className="text-gray-400 mx-1">—</span>
+                                  {ratingLabel}
+                                </div>
+                                <div className="h-3 rounded-full bg-white border border-gray-100 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-emerald-600 transition-all duration-500"
+                                    style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
+                                  />
+                                </div>
+                                <div className="w-14 text-end text-sm font-black text-gray-900">
+                                  {formatSurveyPercentage(percentage)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </section>
