@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
+  ClipboardList,
   Download,
   HelpCircle,
   IdCard,
@@ -27,6 +28,18 @@ import { useI18n } from '../i18n';
 type EntryMode = 'signup' | 'existing' | null;
 type NextGenUserStatus = 'pending' | 'approved' | 'rejected';
 type VoteType = 'upvote' | 'downvote';
+type SurveyBinaryAnswer = '' | 'A' | 'B';
+type SurveyRatingAnswer = '' | 1 | 2 | 3 | 4 | 5;
+type BinarySurveyQuestionId =
+  | 'questionAnnouncement'
+  | 'postSessionMaterials'
+  | 'categoryStructure'
+  | 'subtopicStructure'
+  | 'sessionBalance'
+  | 'answerDepth'
+  | 'questionSelection'
+  | 'summaryLength';
+type RatingSurveyQuestionId = 'pastorClarity' | 'pastorDepth' | 'pastorEngagement';
 
 interface QASessionForm {
   question: string;
@@ -38,6 +51,38 @@ interface SignupForm {
   fullName: string;
   email: string;
   userId: string;
+}
+
+interface SurveyAnswers {
+  questionAnnouncement: SurveyBinaryAnswer;
+  postSessionMaterials: SurveyBinaryAnswer;
+  categoryStructure: SurveyBinaryAnswer;
+  subtopicStructure: SurveyBinaryAnswer;
+  sessionBalance: SurveyBinaryAnswer;
+  answerDepth: SurveyBinaryAnswer;
+  questionSelection: SurveyBinaryAnswer;
+  summaryLength: SurveyBinaryAnswer;
+  pastorClarity: SurveyRatingAnswer;
+  pastorDepth: SurveyRatingAnswer;
+  pastorEngagement: SurveyRatingAnswer;
+}
+
+interface BinarySurveyQuestion {
+  id: BinarySurveyQuestionId;
+  questionEn: string;
+  questionAr: string;
+  optionAEn: string;
+  optionAAr: string;
+  optionBEn: string;
+  optionBAr: string;
+  noteEn?: string;
+  noteAr?: string;
+}
+
+interface RatingSurveyQuestion {
+  id: RatingSurveyQuestionId;
+  questionEn: string;
+  questionAr: string;
 }
 
 interface NextGenUserRecord {
@@ -89,7 +134,121 @@ const CATEGORY_OPTIONS = [
 
 const NEXTGEN_USERS_PATH = 'nextGenUsers';
 const NEXTGEN_ACTIVITIES_PATH = 'nextGenActivities';
+const NEXTGEN_SURVEY_ID = 'qaSessionFeedbackFirstTwoSessionsV1';
 const NEXTGEN_ID_PATTERN = /^[A-Z0-9]{4}$/;
+
+const BINARY_SURVEY_QUESTIONS: BinarySurveyQuestion[] = [
+  {
+    id: 'questionAnnouncement',
+    questionEn: 'For future Q&A sessions, should the questions be announced before the session or revealed during the session?',
+    questionAr: 'في جلسات الأسئلة والأجوبة القادمة، هل تفضّل إعلان الأسئلة قبل الجلسة أم عرضها أثناء الجلسة؟',
+    optionAEn: 'Announce the questions before the session',
+    optionAAr: 'إعلان الأسئلة قبل الجلسة',
+    optionBEn: 'Reveal the questions during the session',
+    optionBAr: 'عرض الأسئلة أثناء الجلسة',
+  },
+  {
+    id: 'postSessionMaterials',
+    questionEn: 'After each Q&A session, what would you prefer receiving?',
+    questionAr: 'بعد كل جلسة أسئلة وأجوبة، ماذا تفضّل أن يصلك؟',
+    optionAEn: 'The recording only',
+    optionAAr: 'التسجيل فقط',
+    optionBEn: 'Both the recording and a written summary',
+    optionBAr: 'التسجيل وملخص مكتوب معاً',
+  },
+  {
+    id: 'categoryStructure',
+    questionEn: 'How should future Q&A sessions be organized by category?',
+    questionAr: 'كيف تفضّل تنظيم جلسات الأسئلة والأجوبة القادمة من حيث التصنيفات؟',
+    optionAEn: 'Each session focuses on one main category',
+    optionAAr: 'تركّز كل جلسة على تصنيف رئيسي واحد',
+    optionBEn: 'Each session mixes categories such as Christian Living, Theology, and Apologetics',
+    optionBAr: 'تجمع كل جلسة بين تصنيفات مثل الحياة المسيحية واللاهوت والدفاعيات',
+  },
+  {
+    id: 'subtopicStructure',
+    questionEn: 'When a session focuses on one main category, how should its subtopics be handled?',
+    questionAr: 'عندما تركز الجلسة على تصنيف رئيسي واحد، كيف تفضّل تناول الموضوعات الفرعية؟',
+    optionAEn: 'Explore one specific subtopic in depth',
+    optionAAr: 'التعمق في موضوع فرعي واحد محدد',
+    optionBEn: 'Discuss several subtopics from that category',
+    optionBAr: 'مناقشة عدة موضوعات فرعية من التصنيف نفسه',
+  },
+  {
+    id: 'sessionBalance',
+    questionEn: 'During the session, where should more time be given?',
+    questionAr: 'أثناء الجلسة، لأي جانب تفضّل تخصيص وقت أكبر؟',
+    optionAEn: "More time for Pastor Ibrahim's explanations",
+    optionAAr: 'وقت أكبر لشرح القس إبراهيم',
+    optionBEn: 'More time for open discussion and participant follow-up questions',
+    optionBAr: 'وقت أكبر للنقاش المفتوح وأسئلة المتابعة من المشاركين',
+  },
+  {
+    id: 'answerDepth',
+    questionEn: 'How should the number and depth of answered questions be balanced?',
+    questionAr: 'كيف تفضّل الموازنة بين عدد الأسئلة وعمق الإجابات؟',
+    optionAEn: 'Answer fewer questions in greater depth',
+    optionAAr: 'الإجابة عن أسئلة أقل بعمق أكبر',
+    optionBEn: 'Answer more questions with shorter responses',
+    optionBAr: 'الإجابة عن أسئلة أكثر بإجابات أقصر',
+  },
+  {
+    id: 'questionSelection',
+    questionEn: 'How should questions be selected for each session?',
+    questionAr: 'كيف تفضّل اختيار أسئلة كل جلسة؟',
+    optionAEn: 'Pastor Ibrahim curates the final selection from the highest-voted questions',
+    optionAAr: 'يختار القس إبراهيم التشكيلة النهائية من بين الأسئلة الأعلى تصويتاً',
+    optionBEn: 'Questions are selected strictly according to the voting results',
+    optionBAr: 'يتم اختيار الأسئلة حصراً وفق نتائج التصويت',
+    noteEn: 'The earlier voting-integrity issue has been resolved. Each approved identifier can vote only once per question.',
+    noteAr: 'تم حل مشكلة نزاهة التصويت السابقة، ويمكن لكل معرّف معتمد التصويت مرة واحدة فقط على كل سؤال.',
+  },
+  {
+    id: 'summaryLength',
+    questionEn: 'If a written summary is shared after the session, which format would you prefer?',
+    questionAr: 'إذا تمت مشاركة ملخص مكتوب بعد الجلسة، فما الصيغة التي تفضّلها؟',
+    optionAEn: 'A short, concise summary of the main answers',
+    optionAAr: 'ملخص قصير ومختصر لأهم الإجابات',
+    optionBEn: 'A detailed Bible-study document with explanations, verses, and discussion points',
+    optionBAr: 'دراسة كتابية مفصلة تشمل الشرح والآيات ونقاط النقاش',
+  },
+];
+
+const RATING_SURVEY_QUESTIONS: RatingSurveyQuestion[] = [
+  {
+    id: 'pastorClarity',
+    questionEn: "How clear and easy to understand were Pastor Ibrahim's explanations?",
+    questionAr: 'ما مدى وضوح وسهولة فهم شرح القس إبراهيم؟',
+  },
+  {
+    id: 'pastorDepth',
+    questionEn: 'How well did Pastor Ibrahim explore the questions in depth and support his answers with Scripture?',
+    questionAr: 'ما مدى تعمق القس إبراهيم في الأسئلة ودعمه للإجابات بالكتاب المقدس؟',
+  },
+  {
+    id: 'pastorEngagement',
+    questionEn: 'How well did Pastor Ibrahim listen to participants, address their concerns, and respond to follow-up questions?',
+    questionAr: 'ما مدى استماع القس إبراهيم للمشاركين ومعالجته لمخاوفهم وإجابته عن أسئلة المتابعة؟',
+  },
+];
+
+const SURVEY_TOTAL_QUESTIONS = BINARY_SURVEY_QUESTIONS.length + RATING_SURVEY_QUESTIONS.length;
+
+function createInitialSurveyAnswers(): SurveyAnswers {
+  return {
+    questionAnnouncement: '',
+    postSessionMaterials: '',
+    categoryStructure: '',
+    subtopicStructure: '',
+    sessionBalance: '',
+    answerDepth: '',
+    questionSelection: '',
+    summaryLength: '',
+    pastorClarity: '',
+    pastorDepth: '',
+    pastorEngagement: '',
+  };
+}
 
 function normalizeNumber(value: unknown): number {
   const parsedValue = Number(value);
@@ -403,6 +562,13 @@ export default function NextGenActivities() {
 
   const [isQASessionOpen, setIsQASessionOpen] = useState(false);
   const [isPeerReviewOpen, setIsPeerReviewOpen] = useState(false);
+  const [isSurveyOpen, setIsSurveyOpen] = useState(false);
+  const [surveyAnswers, setSurveyAnswers] = useState<SurveyAnswers>(() => createInitialSurveyAnswers());
+  const [isSurveyCompleted, setIsSurveyCompleted] = useState(false);
+  const [isLoadingSurveyStatus, setIsLoadingSurveyStatus] = useState(false);
+  const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
+  const [surveyError, setSurveyError] = useState('');
+  const [surveyMessage, setSurveyMessage] = useState('');
 
   const [form, setForm] = useState<QASessionForm>({
     question: '',
@@ -428,6 +594,18 @@ export default function NextGenActivities() {
         return a.question.localeCompare(b.question);
       });
   }, [savedSessions, reviewedSessionIds]);
+
+  const surveyAnsweredCount = useMemo(() => {
+    const binaryAnswered = BINARY_SURVEY_QUESTIONS.filter(
+      question => surveyAnswers[question.id] === 'A' || surveyAnswers[question.id] === 'B',
+    ).length;
+    const ratingAnswered = RATING_SURVEY_QUESTIONS.filter(
+      question => typeof surveyAnswers[question.id] === 'number',
+    ).length;
+    return binaryAnswered + ratingAnswered;
+  }, [surveyAnswers]);
+
+  const isSurveyFormComplete = surveyAnsweredCount === SURVEY_TOTAL_QUESTIONS;
 
   useEffect(() => {
     if (!activeUser) {
@@ -468,6 +646,42 @@ export default function NextGenActivities() {
             : 'Failed to load questions for peer review.',
         );
         setIsLoadingPeerReview(false);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [activeUser, isArabic]);
+
+  useEffect(() => {
+    if (!activeUser) {
+      setIsSurveyCompleted(false);
+      setIsLoadingSurveyStatus(false);
+      setSurveyAnswers(createInitialSurveyAnswers());
+      return undefined;
+    }
+
+    setIsLoadingSurveyStatus(true);
+    setSurveyError('');
+
+    const surveyResponseRef = ref(
+      database,
+      `${NEXTGEN_ACTIVITIES_PATH}/surveys/${NEXTGEN_SURVEY_ID}/responsesByIdentifier/${activeUser.userId}`,
+    );
+
+    const unsubscribe = onValue(
+      surveyResponseRef,
+      snapshot => {
+        setIsSurveyCompleted(snapshot.exists());
+        setIsLoadingSurveyStatus(false);
+      },
+      error => {
+        console.error('Failed to load NextGen survey completion status:', error);
+        setSurveyError(
+          isArabic
+            ? 'تعذر التحقق من حالة الاستبيان.'
+            : 'Unable to verify the survey completion status.',
+        );
+        setIsLoadingSurveyStatus(false);
       },
     );
 
@@ -698,6 +912,7 @@ export default function NextGenActivities() {
       setAccessMessage('');
       setIsQASessionOpen(false);
       setIsPeerReviewOpen(false);
+      setIsSurveyOpen(false);
     } catch (error) {
       console.error('Failed to verify NextGen user:', error);
       setAccessError(
@@ -716,6 +931,11 @@ export default function NextGenActivities() {
     setSavedSessions([]);
     setIsQASessionOpen(false);
     setIsPeerReviewOpen(false);
+    setIsSurveyOpen(false);
+    setSurveyAnswers(createInitialSurveyAnswers());
+    setIsSurveyCompleted(false);
+    setSurveyError('');
+    setSurveyMessage('');
     setEntryMode(null);
     setAccessError('');
     setAccessMessage('');
@@ -995,6 +1215,156 @@ export default function NextGenActivities() {
     }
   };
 
+
+  const setBinarySurveyAnswer = (questionId: BinarySurveyQuestionId, answer: 'A' | 'B') => {
+    if (isSurveyCompleted) return;
+    setSurveyAnswers(previous => ({ ...previous, [questionId]: answer }));
+    setSurveyError('');
+    setSurveyMessage('');
+  };
+
+  const setRatingSurveyAnswer = (questionId: RatingSurveyQuestionId, answer: 1 | 2 | 3 | 4 | 5) => {
+    if (isSurveyCompleted) return;
+    setSurveyAnswers(previous => ({ ...previous, [questionId]: answer }));
+    setSurveyError('');
+    setSurveyMessage('');
+  };
+
+  const handleSurveySubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!activeUser || isSubmittingSurvey || isSurveyCompleted) return;
+
+    setSurveyError('');
+    setSurveyMessage('');
+
+    if (!isSurveyFormComplete) {
+      setSurveyError(
+        isArabic
+          ? `يجب الإجابة عن جميع الأسئلة. تمت الإجابة عن ${surveyAnsweredCount} من ${SURVEY_TOTAL_QUESTIONS}.`
+          : `All questions are required. You answered ${surveyAnsweredCount} of ${SURVEY_TOTAL_QUESTIONS}.`,
+      );
+      return;
+    }
+
+    const userId = normalizeUserId(activeUser.userId);
+    if (!NEXTGEN_ID_PATTERN.test(userId)) return;
+
+    setIsSubmittingSurvey(true);
+
+    try {
+      const now = Date.now();
+      const nowISO = new Date(now).toISOString();
+      const responseRef = ref(
+        database,
+        `${NEXTGEN_ACTIVITIES_PATH}/surveys/${NEXTGEN_SURVEY_ID}/responsesByIdentifier/${userId}`,
+      );
+
+      const binaryAnswerDetails = Object.fromEntries(
+        BINARY_SURVEY_QUESTIONS.map(question => {
+          const selectedAnswer = surveyAnswers[question.id] as 'A' | 'B';
+          return [
+            question.id,
+            {
+              questionEnglish: question.questionEn,
+              questionArabic: question.questionAr,
+              answer: selectedAnswer,
+              selectedOptionEnglish: selectedAnswer === 'A' ? question.optionAEn : question.optionBEn,
+              selectedOptionArabic: selectedAnswer === 'A' ? question.optionAAr : question.optionBAr,
+            },
+          ];
+        }),
+      );
+
+      const ratingAnswerDetails = Object.fromEntries(
+        RATING_SURVEY_QUESTIONS.map(question => [
+          question.id,
+          {
+            questionEnglish: question.questionEn,
+            questionArabic: question.questionAr,
+            rating: surveyAnswers[question.id],
+            minimumRating: 1,
+            maximumRating: 5,
+          },
+        ]),
+      );
+
+      const responsePayload = {
+        surveyId: NEXTGEN_SURVEY_ID,
+        surveyVersion: 1,
+        surveyTitle: 'NextGen Q&A Session Feedback — First Two Sessions',
+        identifier: userId,
+        participantName: activeUser.fullName,
+        participantEmail: activeUser.email,
+        interfaceLanguageUsed: isArabic ? 'Arabic' : 'English',
+        completionStatus: 'completed',
+        allQuestionsRequired: true,
+        totalQuestions: SURVEY_TOTAL_QUESTIONS,
+        answeredQuestions: SURVEY_TOTAL_QUESTIONS,
+        answers: surveyAnswers,
+        answerDetails: {
+          binaryQuestions: binaryAnswerDetails,
+          pastorQualityRatings: ratingAnswerDetails,
+        },
+        completedAt: now,
+        completedAtISO: nowISO,
+        completedAtEasternTime: getEasternTime(now),
+        source: 'nextGenActivities',
+      };
+
+      const transactionResult = await runTransaction(
+        responseRef,
+        currentValue => {
+          if (currentValue !== null) return undefined;
+          return responsePayload;
+        },
+        { applyLocally: false },
+      );
+
+      if (!transactionResult.committed) {
+        setIsSurveyCompleted(true);
+        setSurveyError(
+          isArabic
+            ? 'هذا المعرّف أكمل الاستبيان بالفعل، ولا يمكن إرساله مرة أخرى.'
+            : 'This identifier has already completed the survey and cannot submit it again.',
+        );
+        return;
+      }
+
+      setIsSurveyCompleted(true);
+      setSurveyMessage(
+        isArabic
+          ? 'تم إرسال الاستبيان بنجاح. شكراً لمشاركتك.'
+          : 'Survey submitted successfully. Thank you for your feedback.',
+      );
+
+      try {
+        await update(
+          ref(
+            database,
+            `${NEXTGEN_ACTIVITIES_PATH}/participationByIdentifier/${userId}/surveys/${NEXTGEN_SURVEY_ID}`,
+          ),
+          {
+            activityType: 'feedbackSurvey',
+            activityId: NEXTGEN_SURVEY_ID,
+            fillingStatus: 'completed',
+            completedAt: now,
+            completedAtISO: nowISO,
+          },
+        );
+      } catch (historyError) {
+        console.warn('Survey response was saved, but participation history could not be updated:', historyError);
+      }
+    } catch (error) {
+      console.error('Failed to submit NextGen survey:', error);
+      setSurveyError(
+        isArabic
+          ? 'تعذر إرسال الاستبيان. حاول مرة أخرى.'
+          : 'Unable to submit the survey. Try again.',
+      );
+    } finally {
+      setIsSubmittingSurvey(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#f5f4f0]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -1322,6 +1692,7 @@ export default function NextGenActivities() {
                   onClick={() => {
                     setIsQASessionOpen(true);
                     setIsPeerReviewOpen(false);
+                    setIsSurveyOpen(false);
                   }}
                   whileTap={{ scale: 0.98 }}
                   className={`text-left p-7 rounded-[28px] border-2 transition-all shadow-sm group ${
@@ -1353,6 +1724,7 @@ export default function NextGenActivities() {
                   onClick={() => {
                     setIsPeerReviewOpen(true);
                     setIsQASessionOpen(false);
+                    setIsSurveyOpen(false);
                   }}
                   whileTap={{ scale: 0.98 }}
                   className={`text-left p-7 rounded-[28px] border-2 transition-all shadow-sm group ${
@@ -1379,16 +1751,48 @@ export default function NextGenActivities() {
                   </div>
                 </motion.button>
 
-                <div className="p-7 rounded-[28px] bg-white border border-[rgba(139,30,30,0.08)] shadow-sm">
-                  <h3 className="text-xl font-bold text-[#8b1e1e] mb-3">
-                    {isArabic ? 'سجل المشاركة' : 'Participation Tracking'}
-                  </h3>
-                  <p className="text-[#666] leading-relaxed">
-                    {isArabic
-                      ? 'يُحفظ اكتمال كل تصويت أو نموذج ملاحظات حسب المعرّف ومعرّف النشاط لمنع الإرسال المكرر.'
-                      : 'Each vote or future feedback form is recorded by user ID and activity ID, preventing duplicate submissions.'}
-                  </p>
-                </div>
+                <motion.button
+                  type="button"
+                  onClick={() => {
+                    setIsSurveyOpen(true);
+                    setIsQASessionOpen(false);
+                    setIsPeerReviewOpen(false);
+                    setSurveyError('');
+                    setSurveyMessage('');
+                  }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`text-left p-7 rounded-[28px] border-2 transition-all shadow-sm group ${
+                    isSurveyOpen
+                      ? 'bg-[#8b1e1e] border-[#8b1e1e] text-white shadow-[0_14px_34px_rgba(139,30,30,0.22)]'
+                      : 'bg-white border-[rgba(139,30,30,0.12)] text-[#641414] hover:bg-[#f8eeee] hover:border-[#8b1e1e] hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(139,30,30,0.14)]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-14 h-14 grid place-items-center rounded-2xl transition-colors ${isSurveyOpen ? 'bg-white/15 text-white' : 'bg-[#f8eeee] text-[#8b1e1e] group-hover:bg-[#8b1e1e] group-hover:text-white'}`}>
+                        <ClipboardList size={26} />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-2xl font-bold">
+                            {isArabic ? 'استبيان الجلسات' : 'Session Feedback'}
+                          </h2>
+                          {isSurveyCompleted && (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${isSurveyOpen ? 'bg-white/15 text-white' : 'bg-green-100 text-green-800'}`}>
+                              {isArabic ? 'مكتمل' : 'Completed'}
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-sm mt-1 ${isSurveyOpen ? 'text-white/80' : 'text-[#777]'}`}>
+                          {isArabic
+                            ? 'استبيان مطلوب الإجابة عن جميع أسئلته، مرة واحدة لكل معرّف.'
+                            : 'All questions are required, with one submission per identifier.'}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronDown size={22} className={`transition-transform ${isSurveyOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                </motion.button>
               </div>
 
               {isQASessionOpen && (
@@ -1482,6 +1886,212 @@ export default function NextGenActivities() {
                           : (isArabic ? 'حفظ للمراجعة' : 'Save for Pastor Review')}
                       </button>
                     </div>
+                  </div>
+                </motion.section>
+              )}
+
+              {isSurveyOpen && (
+                <motion.section
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-8 bg-white rounded-[30px] border border-[rgba(139,30,30,0.10)] shadow-[0_18px_48px_rgba(0,0,0,0.08)] overflow-hidden"
+                >
+                  <div className="flex items-center justify-between gap-4 p-6 bg-[#8b1e1e] text-white">
+                    <div className="flex items-center gap-3">
+                      <ClipboardList size={24} />
+                      <div>
+                        <h2 className="text-2xl font-bold">
+                          {isArabic ? 'استبيان تقييم جلسات NextGen' : 'NextGen Q&A Session Feedback Survey'}
+                        </h2>
+                        <p className="text-white/75 text-sm mt-1">
+                          {isArabic
+                            ? 'تقييم أول جلستين. جميع الأسئلة مطلوبة، ويسمح بإرسال واحد فقط لكل معرّف.'
+                            : 'Feedback on the first two sessions. All questions are required, and each identifier may submit only once.'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsSurveyOpen(false)}
+                      className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                    >
+                      <X size={22} />
+                    </button>
+                  </div>
+
+                  <div className="p-6 md:p-8">
+                    {isLoadingSurveyStatus ? (
+                      <div className="flex items-center gap-2 text-gray-500 bg-stone-50 border border-gray-100 rounded-2xl p-5">
+                        <Loader2 size={18} className="animate-spin" />
+                        {isArabic ? 'جار التحقق من حالة الاستبيان...' : 'Checking survey completion status...'}
+                      </div>
+                    ) : isSurveyCompleted ? (
+                      <div className="text-center bg-green-50 border border-green-200 rounded-[26px] p-10">
+                        <div className="w-16 h-16 mx-auto grid place-items-center rounded-full bg-green-700 text-white mb-5">
+                          <CheckCircle2 size={30} />
+                        </div>
+                        <h3 className="text-2xl font-bold text-green-900 mb-2">
+                          {isArabic ? 'تم إكمال الاستبيان' : 'Survey Completed'}
+                        </h3>
+                        <p className="text-green-800 max-w-2xl mx-auto">
+                          {isArabic
+                            ? `أكمل المعرّف ${activeUser.userId} هذا الاستبيان بالفعل. لا يمكن إرسال إجابة ثانية.`
+                            : `Identifier ${activeUser.userId} has already completed this survey. A second response cannot be submitted.`}
+                        </p>
+                        {surveyMessage && (
+                          <div className="mt-5 rounded-xl border border-green-200 bg-white px-5 py-4 text-green-800 font-bold">
+                            {surveyMessage}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <form onSubmit={handleSurveySubmit} className="space-y-7">
+                        <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5 text-amber-900">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <h3 className="font-bold">
+                                {isArabic ? 'استبيان إلزامي بالكامل' : 'Completion-Based Survey'}
+                              </h3>
+                              <p className="text-sm mt-1 leading-relaxed">
+                                {isArabic
+                                  ? 'يجب الإجابة عن كل سؤال قبل الإرسال. يتم حفظ الإكمال على معرّفك لمنع تعبئة الاستبيان مرتين.'
+                                  : 'Every question must be answered before submission. Completion is stored against your identifier to prevent duplicate responses.'}
+                              </p>
+                            </div>
+                            <span className="shrink-0 px-4 py-2 rounded-full bg-white border border-amber-200 text-sm font-bold">
+                              {surveyAnsweredCount}/{SURVEY_TOTAL_QUESTIONS}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-5">
+                          {BINARY_SURVEY_QUESTIONS.map((question, index) => {
+                            const selectedAnswer = surveyAnswers[question.id];
+
+                            return (
+                              <div key={question.id} className="rounded-[24px] border border-gray-100 bg-stone-50 p-5 md:p-6">
+                                <div className="flex items-start gap-3 mb-4">
+                                  <span className="shrink-0 grid place-items-center w-8 h-8 rounded-full bg-[#8b1e1e] text-white text-sm font-bold">
+                                    {index + 1}
+                                  </span>
+                                  <div>
+                                    <h3 className="font-bold text-[#3f0f0f] text-lg leading-relaxed">
+                                      {isArabic ? question.questionAr : question.questionEn}
+                                      <span className="text-[#8b1e1e]"> *</span>
+                                    </h3>
+                                    {(question.noteEn || question.noteAr) && (
+                                      <p className="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+                                        {isArabic ? question.noteAr : question.noteEn}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {(['A', 'B'] as const).map(answer => {
+                                    const isSelected = selectedAnswer === answer;
+                                    const optionLabel = answer === 'A'
+                                      ? (isArabic ? question.optionAAr : question.optionAEn)
+                                      : (isArabic ? question.optionBAr : question.optionBEn);
+
+                                    return (
+                                      <button
+                                        key={answer}
+                                        type="button"
+                                        onClick={() => setBinarySurveyAnswer(question.id, answer)}
+                                        className={`text-start min-h-[76px] px-5 py-4 rounded-2xl border-2 font-bold transition-all ${
+                                          isSelected
+                                            ? 'bg-[#8b1e1e] border-[#8b1e1e] text-white shadow-[0_8px_20px_rgba(139,30,30,0.18)]'
+                                            : 'bg-white border-gray-200 text-[#641414] hover:border-[#8b1e1e] hover:bg-[#fffafa]'
+                                        }`}
+                                      >
+                                        <span className={`inline-grid place-items-center w-7 h-7 rounded-full me-2 text-sm ${isSelected ? 'bg-white/20' : 'bg-[#f8eeee]'}`}>
+                                          {answer}
+                                        </span>
+                                        {optionLabel}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="rounded-[24px] border border-[rgba(139,30,30,0.12)] bg-[#fffafa] p-5 md:p-6">
+                          <h3 className="text-xl font-bold text-[#8b1e1e] mb-2">
+                            {isArabic ? 'تقييم جودة القس إبراهيم' : "Pastor Ibrahim's Session Quality"}
+                          </h3>
+                          <p className="text-sm text-gray-600 mb-5">
+                            {isArabic ? 'قيّم كل بند من 1 (ضعيف جداً) إلى 5 (ممتاز).' : 'Rate each item from 1 (Very poor) to 5 (Excellent).'}
+                          </p>
+
+                          <div className="space-y-5">
+                            {RATING_SURVEY_QUESTIONS.map((question, index) => (
+                              <div key={question.id} className="rounded-2xl border border-gray-100 bg-white p-5">
+                                <div className="flex items-start gap-3 mb-4">
+                                  <span className="shrink-0 grid place-items-center w-8 h-8 rounded-full bg-[#8b1e1e] text-white text-sm font-bold">
+                                    {BINARY_SURVEY_QUESTIONS.length + index + 1}
+                                  </span>
+                                  <h4 className="font-bold text-[#3f0f0f] text-lg leading-relaxed">
+                                    {isArabic ? question.questionAr : question.questionEn}
+                                    <span className="text-[#8b1e1e]"> *</span>
+                                  </h4>
+                                </div>
+
+                                <div className="grid grid-cols-5 gap-2 sm:gap-3">
+                                  {([1, 2, 3, 4, 5] as const).map(rating => {
+                                    const isSelected = surveyAnswers[question.id] === rating;
+                                    return (
+                                      <button
+                                        key={rating}
+                                        type="button"
+                                        onClick={() => setRatingSurveyAnswer(question.id, rating)}
+                                        className={`min-h-[52px] rounded-xl border-2 font-black text-lg transition-all ${
+                                          isSelected
+                                            ? 'bg-[#8b1e1e] border-[#8b1e1e] text-white shadow-[0_6px_16px_rgba(139,30,30,0.18)]'
+                                            : 'bg-stone-50 border-gray-200 text-[#641414] hover:border-[#8b1e1e] hover:bg-[#fffafa]'
+                                        }`}
+                                      >
+                                        {rating}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="flex justify-between mt-2 text-xs text-gray-500 font-bold">
+                                  <span>{isArabic ? 'ضعيف جداً' : 'Very poor'}</span>
+                                  <span>{isArabic ? 'ممتاز' : 'Excellent'}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {surveyError && (
+                          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700 font-bold">
+                            {surveyError}
+                          </div>
+                        )}
+
+                        {surveyMessage && (
+                          <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 text-green-800 font-bold">
+                            {surveyMessage}
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={isSubmittingSurvey}
+                          className="w-full inline-flex items-center justify-center gap-2 px-7 py-4 bg-[#8b1e1e] text-white rounded-2xl font-bold shadow-[0_8px_22px_rgba(139,30,30,0.22)] hover:bg-[#641414] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {isSubmittingSurvey ? <Loader2 size={19} className="animate-spin" /> : <Send size={19} />}
+                          {isSubmittingSurvey
+                            ? (isArabic ? 'جار إرسال الاستبيان...' : 'Submitting Survey...')
+                            : (isArabic ? 'إرسال الاستبيان المكتمل' : 'Submit Completed Survey')}
+                        </button>
+                      </form>
+                    )}
                   </div>
                 </motion.section>
               )}
