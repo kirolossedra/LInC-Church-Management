@@ -70,6 +70,7 @@ interface SavedQASession {
   totalUpvotes: number;
   totalDownvotes: number;
   netVotes: number;
+  voterIdentifiers: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -137,6 +138,40 @@ function normalizeUserRecord(userId: string, value: any): NextGenUserRecord {
   };
 }
 
+function extractQuestionVoterIdentifiers(value: any): string[] {
+  const identifiers = new Set<string>();
+
+  const addIdentifier = (candidate: unknown) => {
+    const normalized = normalizeUserId(String(candidate || ''));
+    if (NEXTGEN_ID_PATTERN.test(normalized)) identifiers.add(normalized);
+  };
+
+  const addKeys = (candidate: unknown) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return;
+    Object.keys(candidate as Record<string, unknown>).forEach(addIdentifier);
+  };
+
+  addKeys(value?.votesByIdentifier);
+  addKeys(value?.voterIdentifiers);
+  addKeys(value?.votedIdentifiers);
+
+  if (Array.isArray(value?.voterIdentifiers)) {
+    value.voterIdentifiers.forEach(addIdentifier);
+  }
+
+  if (Array.isArray(value?.votedIdentifiers)) {
+    value.votedIdentifiers.forEach(addIdentifier);
+  }
+
+  return Array.from(identifiers);
+}
+
+function questionHasIdentifierVote(value: any, userId: string): boolean {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!NEXTGEN_ID_PATTERN.test(normalizedUserId)) return false;
+  return extractQuestionVoterIdentifiers(value).includes(normalizedUserId);
+}
+
 function normalizeSavedSession(firebaseId: string, value: any): SavedQASession {
   const totalUpvotes = normalizeNumber(value?.totalUpvotes);
   const totalDownvotes = normalizeNumber(value?.totalDownvotes);
@@ -154,6 +189,7 @@ function normalizeSavedSession(firebaseId: string, value: any): SavedQASession {
     totalUpvotes,
     totalDownvotes,
     netVotes,
+    voterIdentifiers: extractQuestionVoterIdentifiers(value),
     createdAt: normalizeNumber(value?.createdAt),
     updatedAt: normalizeNumber(value?.updatedAt),
   };
@@ -414,7 +450,14 @@ export default function NextGenActivities() {
           .map(([firebaseId, value]) => normalizeSavedSession(firebaseId, value))
           .filter(session => session.question);
 
+        const votedQuestionIds = new Set(
+          loadedSessions
+            .filter(session => session.voterIdentifiers.includes(activeUser.userId))
+            .map(session => session.firebaseId),
+        );
+
         setSavedSessions(loadedSessions);
+        setReviewedSessionIds(votedQuestionIds);
         setIsLoadingPeerReview(false);
       },
       error => {
@@ -596,12 +639,59 @@ export default function NextGenActivities() {
         return;
       }
 
-      const participationSnapshot = await get(
-        ref(database, `${NEXTGEN_ACTIVITIES_PATH}/participationByIdentifier/${userId}/peerReviewVotes`),
-      );
-      const existingVotes = participationSnapshot.val() as Record<string, unknown> | null;
+      const [questionsSnapshot, participationSnapshot] = await Promise.all([
+        get(ref(database, `${NEXTGEN_ACTIVITIES_PATH}/qaSessions`)),
+        get(ref(database, `${NEXTGEN_ACTIVITIES_PATH}/participationByIdentifier/${userId}/peerReviewVotes`)),
+      ]);
 
-      setReviewedSessionIds(new Set(Object.keys(existingVotes || {})));
+      const rawQuestions = questionsSnapshot.val() as Record<string, any> | null;
+      const legacyParticipationVotes = participationSnapshot.val() as Record<string, any> | null;
+      const votedQuestionIds = new Set<string>();
+      const legacyVoteMigrations: Promise<void>[] = [];
+
+      Object.entries(rawQuestions || {}).forEach(([questionId, questionValue]) => {
+        if (questionHasIdentifierVote(questionValue, userId)) {
+          votedQuestionIds.add(questionId);
+        }
+      });
+
+      Object.entries(legacyParticipationVotes || {}).forEach(([questionId, voteValue]) => {
+        votedQuestionIds.add(questionId);
+
+        const questionValue = rawQuestions?.[questionId];
+        if (!questionValue || questionHasIdentifierVote(questionValue, userId)) return;
+
+        const legacyVoteType: VoteType = voteValue?.voteType === 'downvote' ? 'downvote' : 'upvote';
+        const completedAt = normalizeNumber(voteValue?.completedAt) || Date.now();
+        const completedAtISO = String(voteValue?.completedAtISO || new Date(completedAt).toISOString());
+
+        legacyVoteMigrations.push(
+          update(
+            ref(database, `${NEXTGEN_ACTIVITIES_PATH}/qaSessions/${questionId}`),
+            {
+              [`votesByIdentifier/${userId}`]: {
+                identifier: userId,
+                voteType: legacyVoteType,
+                completedAt,
+                completedAtISO,
+                migratedFromParticipationHistory: true,
+              },
+              [`voterIdentifiers/${userId}`]: true,
+            },
+          ),
+        );
+      });
+
+      if (legacyVoteMigrations.length > 0) {
+        const migrationResults = await Promise.allSettled(legacyVoteMigrations);
+        migrationResults.forEach(result => {
+          if (result.status === 'rejected') {
+            console.warn('Could not migrate a legacy NextGen vote marker:', result.reason);
+          }
+        });
+      }
+
+      setReviewedSessionIds(votedQuestionIds);
       setActiveUser(user);
       setExistingUserId('');
       setEntryMode(null);
@@ -673,6 +763,7 @@ export default function NextGenActivities() {
         totalDownvotes: 0,
         netVotes: 0,
         votesByIdentifier: {},
+        voterIdentifiers: {},
         createdAt: now,
         createdAtISO: new Date(now).toISOString(),
         updatedAt: now,
@@ -702,89 +793,143 @@ export default function NextGenActivities() {
   };
 
   const handlePeerVote = async (sessionId: string, voteType: VoteType) => {
-    if (!activeUser || isSubmittingPeerVote || reviewedSessionIds.has(sessionId)) return;
+    if (!activeUser || isSubmittingPeerVote) return;
+
+    const userId = normalizeUserId(activeUser.userId);
+    if (!NEXTGEN_ID_PATTERN.test(userId)) return;
 
     setIsSubmittingPeerVote(true);
     setSubmittingVoteSessionId(sessionId);
     setPeerReviewError('');
 
     try {
+      const questionReference = ref(
+        database,
+        `${NEXTGEN_ACTIVITIES_PATH}/qaSessions/${sessionId}`,
+      );
+
+      // Always read the question itself before attempting the vote. The question's
+      // voter lists are the source of truth. The legacy participation record is
+      // checked only to protect votes created before question-level tracking existed.
+      const [currentQuestionSnapshot, legacyVoteSnapshot] = await Promise.all([
+        get(questionReference),
+        get(
+          ref(
+            database,
+            `${NEXTGEN_ACTIVITIES_PATH}/participationByIdentifier/${userId}/peerReviewVotes/${sessionId}`,
+          ),
+        ),
+      ]);
+
+      if (!currentQuestionSnapshot.exists()) {
+        setPeerReviewError(
+          isArabic
+            ? 'هذا السؤال لم يعد موجوداً.'
+            : 'This question no longer exists.',
+        );
+        return;
+      }
+
+      const questionAlreadyContainsVote = questionHasIdentifierVote(
+        currentQuestionSnapshot.val(),
+        userId,
+      );
+      const legacyVoteAlreadyExists = legacyVoteSnapshot.exists();
+
+      if (questionAlreadyContainsVote || legacyVoteAlreadyExists) {
+        if (!questionAlreadyContainsVote && legacyVoteAlreadyExists) {
+          const legacyValue = legacyVoteSnapshot.val() as Record<string, any> | null;
+          const legacyVoteType: VoteType = legacyValue?.voteType === 'downvote' ? 'downvote' : 'upvote';
+          const completedAt = normalizeNumber(legacyValue?.completedAt) || Date.now();
+          const completedAtISO = String(
+            legacyValue?.completedAtISO || new Date(completedAt).toISOString(),
+          );
+
+          try {
+            await update(questionReference, {
+              [`votesByIdentifier/${userId}`]: {
+                identifier: userId,
+                voteType: legacyVoteType,
+                completedAt,
+                completedAtISO,
+                migratedFromParticipationHistory: true,
+              },
+              [`voterIdentifiers/${userId}`]: true,
+            });
+          } catch (migrationError) {
+            console.warn('Could not migrate legacy vote marker to the question:', migrationError);
+          }
+        }
+
+        setReviewedSessionIds(previous => {
+          const next = new Set(previous);
+          next.add(sessionId);
+          return next;
+        });
+        setPeerReviewError(
+          isArabic
+            ? 'هذا المعرّف صوّت بالفعل على هذا السؤال.'
+            : 'This identifier has already voted on this question.',
+        );
+        return;
+      }
+
       const now = Date.now();
-      const activitiesReference = ref(database, NEXTGEN_ACTIVITIES_PATH);
+      const nowISO = new Date(now).toISOString();
 
+      // The transaction runs on the individual question. It checks the stored
+      // identifier list again and writes the identifier and totals atomically.
       const transactionResult = await runTransaction(
-        activitiesReference,
-        currentValue => {
-          const currentRoot = currentValue && typeof currentValue === 'object'
-            ? currentValue as Record<string, any>
-            : {};
-          const currentSessions = currentRoot.qaSessions && typeof currentRoot.qaSessions === 'object'
-            ? currentRoot.qaSessions as Record<string, any>
-            : {};
-          const currentSession = currentSessions[sessionId];
-
-          if (!currentSession) return;
-
-          const currentParticipation = currentRoot.participationByIdentifier && typeof currentRoot.participationByIdentifier === 'object'
-            ? currentRoot.participationByIdentifier as Record<string, any>
-            : {};
-          const currentUserParticipation = currentParticipation[activeUser.userId] && typeof currentParticipation[activeUser.userId] === 'object'
-            ? currentParticipation[activeUser.userId] as Record<string, any>
-            : {};
-          const currentPeerReviewVotes = currentUserParticipation.peerReviewVotes && typeof currentUserParticipation.peerReviewVotes === 'object'
-            ? currentUserParticipation.peerReviewVotes as Record<string, any>
-            : {};
-          const currentVotesByIdentifier = currentSession.votesByIdentifier && typeof currentSession.votesByIdentifier === 'object'
-            ? currentSession.votesByIdentifier as Record<string, any>
-            : {};
-
-          if (currentPeerReviewVotes[sessionId] || currentVotesByIdentifier[activeUser.userId]) {
-            return;
+        questionReference,
+        currentQuestion => {
+          if (!currentQuestion || typeof currentQuestion !== 'object') {
+            return undefined;
           }
 
-          const currentUpvotes = normalizeNumber(currentSession.totalUpvotes);
-          const currentDownvotes = normalizeNumber(currentSession.totalDownvotes);
+          if (questionHasIdentifierVote(currentQuestion, userId)) {
+            return undefined;
+          }
+
+          const currentUpvotes = normalizeNumber(currentQuestion.totalUpvotes);
+          const currentDownvotes = normalizeNumber(currentQuestion.totalDownvotes);
           const nextUpvotes = voteType === 'upvote' ? currentUpvotes + 1 : currentUpvotes;
           const nextDownvotes = voteType === 'downvote' ? currentDownvotes + 1 : currentDownvotes;
-          const voteRecord = {
-            activityType: 'peerReviewVote',
-            activityId: sessionId,
-            fillingStatus: 'completed',
-            voteType,
-            completedAt: now,
-            completedAtISO: new Date(now).toISOString(),
-          };
+
+          const currentVotesByIdentifier =
+            currentQuestion.votesByIdentifier &&
+            typeof currentQuestion.votesByIdentifier === 'object' &&
+            !Array.isArray(currentQuestion.votesByIdentifier)
+              ? currentQuestion.votesByIdentifier as Record<string, unknown>
+              : {};
+
+          const currentVoterIdentifiers =
+            currentQuestion.voterIdentifiers &&
+            typeof currentQuestion.voterIdentifiers === 'object' &&
+            !Array.isArray(currentQuestion.voterIdentifiers)
+              ? currentQuestion.voterIdentifiers as Record<string, unknown>
+              : Object.fromEntries(
+                  extractQuestionVoterIdentifiers(currentQuestion).map(identifier => [identifier, true]),
+                );
 
           return {
-            ...currentRoot,
-            qaSessions: {
-              ...currentSessions,
-              [sessionId]: {
-                ...currentSession,
-                totalUpvotes: nextUpvotes,
-                totalDownvotes: nextDownvotes,
-                netVotes: nextUpvotes - nextDownvotes,
-                updatedAt: now,
-                updatedAtISO: new Date(now).toISOString(),
-                votesByIdentifier: {
-                  ...currentVotesByIdentifier,
-                  [activeUser.userId]: {
-                    voteType,
-                    completedAt: now,
-                    completedAtISO: new Date(now).toISOString(),
-                  },
-                },
+            ...currentQuestion,
+            totalUpvotes: nextUpvotes,
+            totalDownvotes: nextDownvotes,
+            netVotes: nextUpvotes - nextDownvotes,
+            updatedAt: now,
+            updatedAtISO: nowISO,
+            votesByIdentifier: {
+              ...currentVotesByIdentifier,
+              [userId]: {
+                identifier: userId,
+                voteType,
+                completedAt: now,
+                completedAtISO: nowISO,
               },
             },
-            participationByIdentifier: {
-              ...currentParticipation,
-              [activeUser.userId]: {
-                ...currentUserParticipation,
-                peerReviewVotes: {
-                  ...currentPeerReviewVotes,
-                  [sessionId]: voteRecord,
-                },
-              },
+            voterIdentifiers: {
+              ...currentVoterIdentifiers,
+              [userId]: true,
             },
           };
         },
@@ -799,10 +944,15 @@ export default function NextGenActivities() {
         });
         setPeerReviewError(
           isArabic
-            ? 'تم تسجيل مشاركة هذا المعرّف في هذا السؤال من قبل.'
+            ? 'هذا المعرّف صوّت بالفعل على هذا السؤال.'
             : 'This identifier has already voted on this question.',
         );
         return;
+      }
+
+      const committedQuestion = transactionResult.snapshot.val();
+      if (!questionHasIdentifierVote(committedQuestion, userId)) {
+        throw new Error('The vote transaction committed without storing the identifier.');
       }
 
       setReviewedSessionIds(previous => {
@@ -810,6 +960,28 @@ export default function NextGenActivities() {
         next.add(sessionId);
         return next;
       });
+
+      // Keep the per-user activity history for reporting. A failure here does not
+      // undo or invalidate the authoritative vote already stored on the question.
+      try {
+        await update(
+          ref(
+            database,
+            `${NEXTGEN_ACTIVITIES_PATH}/participationByIdentifier/${userId}/peerReviewVotes/${sessionId}`,
+          ),
+          {
+            activityType: 'peerReviewVote',
+            activityId: sessionId,
+            fillingStatus: 'completed',
+            identifier: userId,
+            voteType,
+            completedAt: now,
+            completedAtISO: nowISO,
+          },
+        );
+      } catch (historyError) {
+        console.warn('Vote was saved, but the participation history could not be updated:', historyError);
+      }
     } catch (error) {
       console.error('Failed to submit peer review vote:', error);
       setPeerReviewError(
@@ -822,6 +994,7 @@ export default function NextGenActivities() {
       setSubmittingVoteSessionId(null);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-[#f5f4f0]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
