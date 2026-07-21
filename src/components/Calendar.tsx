@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import emailjs from '@emailjs/browser';
 import { database } from '../firebase';
-import { ref, onValue, update, push } from 'firebase/database';
+import { ref, onValue, update, push, remove } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
@@ -994,6 +994,7 @@ export default function Calendar() {
   const [draggedPeopleMemberKey, setDraggedPeopleMemberKey] = useState<string | null>(null);
   const [peopleDevelopmentSavingKey, setPeopleDevelopmentSavingKey] = useState<string | null>(null);
   const [peopleDevelopmentPostingGroup, setPeopleDevelopmentPostingGroup] = useState<PeopleDevelopmentGroupId | null>(null);
+  const [peopleDevelopmentDeletingKey, setPeopleDevelopmentDeletingKey] = useState<string | null>(null);
   const [peopleAssignmentsPopupGroup, setPeopleAssignmentsPopupGroup] = useState<PeopleDevelopmentGroupId | null>(null);
   const [peopleAssignmentsPopupMonth, setPeopleAssignmentsPopupMonth] = useState(new Date());
   const [peopleAssignmentsPopupSelectedDate, setPeopleAssignmentsPopupSelectedDate] = useState('');
@@ -3201,6 +3202,72 @@ Otherwise, provide a helpful response about their calendar.`;
       alert(displayLocale === 'ar' ? 'فشل حفظ الملاحظة أو التكليف.' : 'Failed to save the note or assignment.');
     } finally {
       setPeopleDevelopmentPostingGroup(null);
+    }
+  };
+
+  const handleDeletePeopleDevelopmentPost = async (entry: PeopleDevelopmentEntry) => {
+    const confirmed = window.confirm(
+      displayLocale === 'ar'
+        ? 'هل أنت متأكد أنك تريد حذف هذا المنشور بالكامل مع جميع ملفاته؟ لا يمكن التراجع عن هذا الإجراء.'
+        : 'Delete this entire post and all of its files? This action cannot be undone.',
+    );
+
+    if (!confirmed) return;
+
+    const deletingKey = `post:${entry.id}`;
+    setPeopleDevelopmentDeletingKey(deletingKey);
+
+    try {
+      await remove(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}`));
+      alert(displayLocale === 'ar' ? 'تم حذف المنشور.' : 'Post deleted.');
+    } catch (err) {
+      console.error('Failed to delete People Development post:', err);
+      alert(displayLocale === 'ar' ? 'فشل حذف المنشور.' : 'Failed to delete the post.');
+    } finally {
+      setPeopleDevelopmentDeletingKey(null);
+    }
+  };
+
+  const handleDeletePeopleDevelopmentAttachment = async (
+    entry: PeopleDevelopmentEntry,
+    attachmentIndex: number,
+  ) => {
+    const attachment = entry.attachments[attachmentIndex];
+    if (!attachment) return;
+
+    const confirmed = window.confirm(
+      displayLocale === 'ar'
+        ? `هل تريد إزالة الملف "${attachment.name}" من هذا المنشور؟`
+        : `Remove the file "${attachment.name}" from this post?`,
+    );
+
+    if (!confirmed) return;
+
+    const deletingKey = `attachment:${entry.id}:${attachmentIndex}`;
+    setPeopleDevelopmentDeletingKey(deletingKey);
+
+    try {
+      const remainingAttachments = entry.attachments.filter((_, index) => index !== attachmentIndex);
+      const assignmentRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}`);
+
+      if (!entry.text.trim() && remainingAttachments.length === 0) {
+        await remove(assignmentRef);
+      } else {
+        const updatedAt = Date.now();
+        await update(assignmentRef, {
+          attachments: remainingAttachments,
+          hasAttachments: remainingAttachments.length > 0,
+          updatedAt,
+          updatedAtISO: new Date(updatedAt).toISOString(),
+        });
+      }
+
+      alert(displayLocale === 'ar' ? 'تمت إزالة الملف.' : 'File removed.');
+    } catch (err) {
+      console.error('Failed to remove People Development attachment:', err);
+      alert(displayLocale === 'ar' ? 'فشل إزالة الملف.' : 'Failed to remove the file.');
+    } finally {
+      setPeopleDevelopmentDeletingKey(null);
     }
   };
 
@@ -6003,7 +6070,23 @@ Otherwise, provide a helpful response about their calendar.`;
                                 <Clock size={13} />
                                 {entry.createdAtISO || entry.date}
                               </span>
-                              <span>{entry.id}</span>
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <span>{entry.id}</span>
+                                <button
+                                  type="button"
+                                  disabled={peopleDevelopmentDeletingKey !== null}
+                                  onClick={() => handleDeletePeopleDevelopmentPost(entry)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-black text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                  title={displayLocale === 'ar' ? 'حذف المنشور بالكامل' : 'Delete entire post'}
+                                >
+                                  {peopleDevelopmentDeletingKey === `post:${entry.id}` ? (
+                                    <Hourglass size={12} className="animate-spin" />
+                                  ) : (
+                                    <Trash2 size={12} />
+                                  )}
+                                  <span>{displayLocale === 'ar' ? 'حذف المنشور' : 'Delete post'}</span>
+                                </button>
+                              </div>
                             </div>
 
                             {entry.text && (
@@ -6020,12 +6103,28 @@ Otherwise, provide a helpful response about their calendar.`;
                                 {entry.attachments.map((attachment, attachmentIndex) => (
                                   <div
                                     key={`people-history-popup-${entry.id}-attachment-${attachmentIndex}`}
-                                    className="rounded-xl border border-[#ead9d0] bg-[#fff9f4] px-3 py-2 text-xs font-black text-[#7a1717]"
+                                    className="flex items-center justify-between gap-3 rounded-xl border border-[#ead9d0] bg-[#fff9f4] px-3 py-2 text-xs font-black text-[#7a1717]"
                                   >
-                                    <div className="truncate">{attachment.name}</div>
-                                    <div className="mt-1 opacity-65">
-                                      {formatFileSize(attachment.size)} · Base64 PDF in Realtime Database
+                                    <div className="min-w-0">
+                                      <div className="truncate">{attachment.name}</div>
+                                      <div className="mt-1 opacity-65">
+                                        {formatFileSize(attachment.size)} · Base64 PDF in Realtime Database
+                                      </div>
                                     </div>
+                                    <button
+                                      type="button"
+                                      disabled={peopleDevelopmentDeletingKey !== null}
+                                      onClick={() => handleDeletePeopleDevelopmentAttachment(entry, attachmentIndex)}
+                                      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      title={displayLocale === 'ar' ? 'إزالة هذا الملف' : 'Remove this file'}
+                                    >
+                                      {peopleDevelopmentDeletingKey === `attachment:${entry.id}:${attachmentIndex}` ? (
+                                        <Hourglass size={12} className="animate-spin" />
+                                      ) : (
+                                        <Trash2 size={12} />
+                                      )}
+                                      <span>{displayLocale === 'ar' ? 'إزالة' : 'Remove'}</span>
+                                    </button>
                                   </div>
                                 ))}
                               </div>
