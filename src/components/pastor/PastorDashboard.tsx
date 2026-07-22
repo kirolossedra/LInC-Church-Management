@@ -232,11 +232,6 @@ function getFirstName(value: string): string {
   return String(value || '').trim().split(/\s+/)[0] || '';
 }
 
-function normalizeNumber(value: unknown): number {
-  const parsedValue = Number(value);
-  return Number.isFinite(parsedValue) ? parsedValue : 0;
-}
-
 type Participant = PeopleDevelopmentParticipant;
 
 export default function PastorDashboard() {
@@ -675,7 +670,13 @@ export default function PastorDashboard() {
           }
         }
 
-        await updateMeeting(editingMeeting.id, meetingData);
+        const editingMeetingId = editingMeeting.id;
+
+        if (!editingMeetingId) {
+          throw new Error('Cannot update a meeting without an ID.');
+        }
+
+        await updateMeeting(editingMeetingId, meetingData);
 
         const sourceRequestId = (editingMeeting as any).sourceRequestId;
         if (sourceRequestId) {
