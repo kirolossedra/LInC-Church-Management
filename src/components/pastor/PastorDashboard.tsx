@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import emailjs from '@emailjs/browser';
 import { database } from '../../firebase';
-import { ref, onValue, update, push, remove } from 'firebase/database';
+import { ref, onValue, push } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../../types';
 import {
   format,
@@ -30,43 +30,48 @@ import {
   Calendar as CalendarIcon,
   CheckCircle,
   XCircle,
-  Hourglass,
   Mail,
-  User,
   Trophy,
-  Search,
   UserPlus,
-  MessageSquare,
   BarChart3,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import PageTitle from '../PageTitle';
 import { useI18n } from '../../i18n';
-import type {
-  PeopleDevelopmentGroupId,
-  PeoplePersonalNoteType,
-  PeopleDevelopmentMember,
-  PeopleDevelopmentAttachment,
-  PeopleDevelopmentEntry,
-  PeoplePersonalNote,
-} from './people-development/peopleDevelopment.types';
 import {
   MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
-  PEOPLE_DEVELOPMENT_GROUPS,
   PEOPLE_DEVELOPMENT_ROOT,
-} from './people-development/peopleDevelopment.constants';
-import {
+  PeopleAssignmentsCalendarModal,
+  PeopleDevelopmentSection,
+  PeoplePersonalNoteModal,
+  assignPersonToPeopleDevelopmentGroup,
+  buildPeopleDevelopmentAssignmentNotificationEmailHtml,
   extractPeopleDevelopmentGroup,
   formatFileSize,
+  getParticipantPeopleDevelopmentGroup,
+  getPeopleAssignmentDateKey,
+  getPeopleAssignmentsInMonth,
+  getPeopleDevelopmentEmailRecipients,
+  getPeopleDevelopmentGroupAssignments,
+  getPeopleDevelopmentGroupLabel,
   getPeopleDevelopmentStaticGroupLabel,
   isUsableEmail,
-  normalizePeopleDevelopmentGroup,
-  normalizePeoplePersonalNoteType,
+  postPeopleDevelopmentAssignment,
   readFileAsBase64,
-} from './people-development/peopleDevelopment.utils';
-import {
-  buildPeopleDevelopmentAssignmentNotificationEmailHtml,
-} from './email/peopleDevelopmentEmail';
+  removePeopleDevelopmentAssignment,
+  savePeoplePersonalNote,
+  subscribeToPeopleDevelopmentAssignments,
+  subscribeToPeopleDevelopmentMembers,
+  subscribeToPeoplePersonalNotes,
+  updatePeopleDevelopmentRecords,
+  type PeopleDevelopmentAttachment,
+  type PeopleDevelopmentEntry,
+  type PeopleDevelopmentGroupId,
+  type PeopleDevelopmentMember,
+  type PeopleDevelopmentParticipant,
+  type PeoplePersonalNote,
+  type PeoplePersonalNoteType,
+} from './people-development';
 import {
   BOOKING_WINDOW_TIME_OPTIONS,
   FULL_DAY_TIME_OPTIONS,
@@ -138,16 +143,6 @@ import {
   type NextGenRegistrationStatusFilter,
   type NextGenSurveyAggregateResults,
 } from './nextgen';
-
-
-
-
-
-
-
-
-
-
 
 
 const EMAILJS_SERVICE_ID = 'service_v47g6or';
@@ -242,18 +237,7 @@ function normalizeNumber(value: unknown): number {
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 }
 
-interface Participant {
-  id: string;
-  name: string;
-  email: string;
-  primaryGift: string;
-  identifier: string;
-  memberKey: string;
-  firstName: string;
-  peopleGroup?: PeopleDevelopmentGroupId | '';
-  sourcePath: string;
-  sourceKeys: string[];
-}
+type Participant = PeopleDevelopmentParticipant;
 
 export default function PastorDashboard() {
   const { t, dir, locale } = useI18n();
@@ -470,119 +454,20 @@ export default function PastorDashboard() {
 
   useEffect(() => subscribeToNextGenRegistrations(setNextGenRegistrations), []);
 
-  useEffect(() => {
-    const membersRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/members/`);
-    const unsubscribe = onValue(membersRef, (snapshot) => {
-      const data = snapshot.val();
+  useEffect(
+    () => subscribeToPeopleDevelopmentMembers(setPeopleDevelopmentMembers),
+    [],
+  );
 
-      if (!data) {
-        setPeopleDevelopmentMembers({});
-        return;
-      }
+  useEffect(
+    () => subscribeToPeopleDevelopmentAssignments(setPeopleDevelopmentEntries),
+    [],
+  );
 
-      const parsed = Object.fromEntries(
-        Object.entries(data).map(([memberKey, value]: [string, any]) => [
-          memberKey,
-          {
-            memberKey,
-            identifier: String(value?.identifier || ''),
-            fullName: String(value?.fullName || value?.name || ''),
-            email: String(value?.email || ''),
-            group: normalizePeopleDevelopmentGroup(value?.group),
-            sourcePath: String(value?.sourcePath || 'form'),
-            sourceKeys: Array.isArray(value?.sourceKeys) ? value.sourceKeys.map((item: any) => String(item)) : [],
-            updatedAt: normalizeNumber(value?.updatedAt),
-            updatedAtISO: String(value?.updatedAtISO || ''),
-          } as PeopleDevelopmentMember,
-        ]),
-      );
-
-      setPeopleDevelopmentMembers(parsed);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const assignmentsRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/`);
-    const unsubscribe = onValue(assignmentsRef, (snapshot) => {
-      const data = snapshot.val();
-
-      if (!data) {
-        setPeopleDevelopmentEntries([]);
-        return;
-      }
-
-      const parsed = Object.entries(data)
-        .map(([id, value]: [string, any]) => {
-          const attachments: PeopleDevelopmentAttachment[] = Array.isArray(value?.attachments)
-            ? value.attachments
-                .map((attachment: any) => ({
-                  name: String(attachment?.name || '').trim(),
-                  type: String(attachment?.type || 'application/pdf').trim() || 'application/pdf',
-                  size: normalizeNumber(attachment?.size),
-                  encoding: 'base64' as const,
-                  storage: 'realtimeDatabase' as const,
-                  base64: String(attachment?.base64 || '').trim(),
-                  uploadedAt: normalizeNumber(attachment?.uploadedAt),
-                  uploadedAtISO: String(attachment?.uploadedAtISO || '').trim(),
-                }))
-                .filter((attachment: PeopleDevelopmentAttachment) => Boolean(attachment.name && attachment.base64))
-            : [];
-
-          return {
-            id,
-            group: normalizePeopleDevelopmentGroup(value?.group),
-            text: String(value?.text || '').trim(),
-            date: String(value?.date || ''),
-            createdAt: normalizeNumber(value?.createdAt),
-            createdAtISO: String(value?.createdAtISO || ''),
-            attachments,
-          };
-        })
-        .filter((entry): entry is PeopleDevelopmentEntry => Boolean(entry.group && (entry.text || entry.attachments.length > 0)))
-        .sort((a, b) => b.createdAt - a.createdAt);
-
-      setPeopleDevelopmentEntries(parsed);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const personalNotesRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/personalNotes/`);
-    const unsubscribe = onValue(personalNotesRef, (snapshot) => {
-      const data = snapshot.val();
-
-      if (!data) {
-        setPeoplePersonalNotes([]);
-        return;
-      }
-
-      const parsed = Object.entries(data)
-        .map(([id, value]: [string, any]) => ({
-          id,
-          identifier: String(value?.identifier || '').trim(),
-          memberKey: String(value?.memberKey || '').trim(),
-          fullName: String(value?.fullName || value?.name || '').trim(),
-          email: String(value?.email || '').trim(),
-          group: normalizePeopleDevelopmentGroup(value?.group),
-          groupLabel: String(value?.groupLabel || '').trim(),
-          type: normalizePeoplePersonalNoteType(value?.type),
-          text: String(value?.text || '').trim(),
-          date: String(value?.date || '').trim(),
-          createdAt: normalizeNumber(value?.createdAt),
-          createdAtISO: String(value?.createdAtISO || '').trim(),
-          source: String(value?.source || 'pastorCalendar').trim(),
-        }))
-        .filter((note): note is PeoplePersonalNote => Boolean((note.memberKey || note.identifier) && note.text))
-        .sort((a, b) => b.createdAt - a.createdAt);
-
-      setPeoplePersonalNotes(parsed);
-    });
-
-    return () => unsubscribe();
-  }, []);
+  useEffect(
+    () => subscribeToPeoplePersonalNotes(setPeoplePersonalNotes),
+    [],
+  );
 
   useEffect(() => subscribeToAvailability(setAvailability), []);
 
@@ -1183,51 +1068,50 @@ export default function PastorDashboard() {
 
   const slotBlockHours = buildSlotBlockHours();
 
-  const getPeopleDevelopmentGroupLabel = (groupId: PeopleDevelopmentGroupId): string => {
-    const group = PEOPLE_DEVELOPMENT_GROUPS.find(item => item.id === groupId);
-    if (!group) return groupId;
-    return displayLocale === 'ar' ? group.labelAr : group.labelEn;
+  const getPeopleDevelopmentGroupDisplayLabel = (
+    groupId: PeopleDevelopmentGroupId,
+  ): string => {
+    return getPeopleDevelopmentGroupLabel(
+      groupId,
+      displayLocale,
+    );
   };
 
-  const getPersonGroup = (person: Participant): PeopleDevelopmentGroupId | '' => {
-    return peopleDevelopmentMembers[person.memberKey]?.group || person.peopleGroup || '';
+  const getPersonGroup = (
+    person: Participant,
+  ): PeopleDevelopmentGroupId | '' => {
+    return getParticipantPeopleDevelopmentGroup(
+      person,
+      peopleDevelopmentMembers,
+    );
   };
 
-  const getGroupPeople = (groupId: PeopleDevelopmentGroupId): Participant[] => {
-    return participants.filter(person => getPersonGroup(person) === groupId);
+  const getGroupAssignments = (
+    groupId: PeopleDevelopmentGroupId,
+  ): PeopleDevelopmentEntry[] => {
+    return getPeopleDevelopmentGroupAssignments(
+      peopleDevelopmentEntries,
+      groupId,
+    );
   };
 
-  const getGroupAssignments = (groupId: PeopleDevelopmentGroupId): PeopleDevelopmentEntry[] => {
-    return peopleDevelopmentEntries.filter(entry => entry.group === groupId);
-  };
-
-  const getPeopleAssignmentDateKey = (entry: PeopleDevelopmentEntry): string => {
-    try {
-      const source = entry.date || entry.createdAtISO || (entry.createdAt ? new Date(entry.createdAt).toISOString() : '');
-      if (!source) return '';
-
-      const date = source.includes('T') ? new Date(source) : new Date(`${source}T12:00:00`);
-      if (Number.isNaN(date.getTime())) return entry.date || '';
-
-      return format(date, 'yyyy-MM-dd');
-    } catch {
-      return entry.date || '';
-    }
-  };
-
-  const getPeopleAssignmentsInMonth = (entries: PeopleDevelopmentEntry[], monthDate: Date): PeopleDevelopmentEntry[] => {
-    const monthKey = format(monthDate, 'yyyy-MM');
-    return entries.filter(entry => getPeopleAssignmentDateKey(entry).startsWith(monthKey));
-  };
-
-  const openPeopleAssignmentsPopup = (groupId: PeopleDevelopmentGroupId) => {
+  const openPeopleAssignmentsPopup = (
+    groupId: PeopleDevelopmentGroupId,
+  ) => {
     const monthDate = new Date();
-    const monthEntries = getPeopleAssignmentsInMonth(getGroupAssignments(groupId), monthDate);
+    const monthEntries = getPeopleAssignmentsInMonth(
+      getGroupAssignments(groupId),
+      monthDate,
+    );
     const firstMonthEntry = monthEntries[0] || null;
 
     setPeopleAssignmentsPopupGroup(groupId);
     setPeopleAssignmentsPopupMonth(monthDate);
-    setPeopleAssignmentsPopupSelectedDate(firstMonthEntry ? getPeopleAssignmentDateKey(firstMonthEntry) : '');
+    setPeopleAssignmentsPopupSelectedDate(
+      firstMonthEntry
+        ? getPeopleAssignmentDateKey(firstMonthEntry)
+        : '',
+    );
   };
 
   const closePeopleAssignmentsPopup = () => {
@@ -1235,35 +1119,31 @@ export default function PastorDashboard() {
     setPeopleAssignmentsPopupSelectedDate('');
   };
 
-  const changePeopleAssignmentsPopupMonth = (nextMonth: Date) => {
+  const changePeopleAssignmentsPopupMonth = (
+    nextMonth: Date,
+  ) => {
     const monthEntries = peopleAssignmentsPopupGroup
-      ? getPeopleAssignmentsInMonth(getGroupAssignments(peopleAssignmentsPopupGroup), nextMonth)
+      ? getPeopleAssignmentsInMonth(
+          getGroupAssignments(
+            peopleAssignmentsPopupGroup,
+          ),
+          nextMonth,
+        )
       : [];
     const firstMonthEntry = monthEntries[0] || null;
 
     setPeopleAssignmentsPopupMonth(nextMonth);
-    setPeopleAssignmentsPopupSelectedDate(firstMonthEntry ? getPeopleAssignmentDateKey(firstMonthEntry) : '');
-  };
-
-  const searchedPeople = participants.filter(person => {
-    const search = peopleSearchTerm.trim().toLowerCase();
-    if (!search) return true;
-
-    return person.firstName.toLowerCase().includes(search) ||
-      person.name.toLowerCase().includes(search) ||
-      person.identifier.toLowerCase().includes(search);
-  });
-
-  const getPersonPersonalNotes = (person: Participant): PeoplePersonalNote[] => {
-    const normalizedIdentifier = person.identifier.trim().toLowerCase();
-
-    return peoplePersonalNotes.filter(note =>
-      note.memberKey === person.memberKey ||
-      (normalizedIdentifier && note.identifier.trim().toLowerCase() === normalizedIdentifier)
+    setPeopleAssignmentsPopupSelectedDate(
+      firstMonthEntry
+        ? getPeopleAssignmentDateKey(firstMonthEntry)
+        : '',
     );
   };
 
-  const openPeopleNotePopup = (person: Participant, type: PeoplePersonalNoteType = 'strength') => {
+  const openPeopleNotePopup = (
+    person: Participant,
+    type: PeoplePersonalNoteType = 'strength',
+  ) => {
     setSelectedPeopleNotePerson(person);
     setPeopleNoteType(type);
     setPeopleNoteText('');
@@ -1272,44 +1152,64 @@ export default function PastorDashboard() {
 
   const closePeopleNotePopup = () => {
     if (peopleNoteSaving) return;
+
     setShowPeopleNotePopup(false);
     setSelectedPeopleNotePerson(null);
     setPeopleNoteType('strength');
     setPeopleNoteText('');
   };
 
-  const handleSubmitPeoplePersonalNote = async (event: React.FormEvent) => {
+  const handleSubmitPeoplePersonalNote = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
 
     if (!selectedPeopleNotePerson) return;
 
     const text = peopleNoteText.trim();
+
     if (!text) {
-      alert(displayLocale === 'ar' ? 'اكتب نص الملاحظة أولاً.' : 'Write the note text first.');
+      alert(
+        displayLocale === 'ar'
+          ? 'اكتب نص الملاحظة أولاً.'
+          : 'Write the note text first.',
+      );
       return;
     }
 
     setPeopleNoteSaving(true);
 
     try {
-      const createdAt = Date.now();
-      const createdAtISO = new Date().toISOString();
-      const date = format(new Date(), 'yyyy-MM-dd');
-      const assignedGroup = getPersonGroup(selectedPeopleNotePerson);
-      const groupLabel = assignedGroup ? getPeopleDevelopmentGroupLabel(assignedGroup) : '';
+      const assignedGroup = getPersonGroup(
+        selectedPeopleNotePerson,
+      );
+      const groupLabel = assignedGroup
+        ? getPeopleDevelopmentGroupDisplayLabel(
+            assignedGroup,
+          )
+        : '';
 
-      await push(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/personalNotes/`), {
-        identifier: selectedPeopleNotePerson.identifier,
-        memberKey: selectedPeopleNotePerson.memberKey,
-        fullName: selectedPeopleNotePerson.name,
-        email: selectedPeopleNotePerson.email,
+      await savePeoplePersonalNote({
+        person: {
+          memberKey:
+            selectedPeopleNotePerson.memberKey,
+          identifier:
+            selectedPeopleNotePerson.identifier,
+          fullName:
+            selectedPeopleNotePerson.name,
+          email:
+            selectedPeopleNotePerson.email,
+          primaryGift:
+            selectedPeopleNotePerson.primaryGift,
+          sourcePath:
+            selectedPeopleNotePerson.sourcePath,
+          sourceKeys:
+            selectedPeopleNotePerson.sourceKeys,
+        },
         group: assignedGroup,
         groupLabel,
         type: peopleNoteType,
         text,
-        date,
-        createdAt,
-        createdAtISO,
         source: 'pastorCalendar',
       });
 
@@ -1318,82 +1218,92 @@ export default function PastorDashboard() {
       setSelectedPeopleNotePerson(null);
       setPeopleNoteType('strength');
     } catch (err) {
-      console.error('Failed to save personal people note:', err);
-      alert(displayLocale === 'ar' ? 'فشل حفظ الملاحظة الشخصية.' : 'Failed to save the personal note.');
+      console.error(
+        'Failed to save personal people note:',
+        err,
+      );
+      alert(
+        displayLocale === 'ar'
+          ? 'فشل حفظ الملاحظة الشخصية.'
+          : 'Failed to save the personal note.',
+      );
     } finally {
       setPeopleNoteSaving(false);
     }
   };
 
-  const handleAssignPersonToGroup = async (person: Participant, group: PeopleDevelopmentGroupId | '') => {
+  const handleAssignPersonToGroup = async (
+    person: Participant,
+    group: PeopleDevelopmentGroupId | '',
+  ) => {
     const currentGroup = getPersonGroup(person);
+
     if (currentGroup === group) return;
 
-    setPeopleDevelopmentSavingKey(person.memberKey);
+    setPeopleDevelopmentSavingKey(
+      person.memberKey,
+    );
 
     try {
-      const updatedAt = Date.now();
-      const updatedAtISO = new Date().toISOString();
-      const groupLabel = group ? getPeopleDevelopmentGroupLabel(group) : '';
-
-      const updates: Record<string, any> = {
-        [`${PEOPLE_DEVELOPMENT_ROOT}/members/${person.memberKey}`]: {
+      await assignPersonToPeopleDevelopmentGroup({
+        person: {
           memberKey: person.memberKey,
           identifier: person.identifier,
           fullName: person.name,
           email: person.email,
-          group,
-          groupLabel,
-          primaryGift: person.primaryGift || '',
-          sourcePath: person.sourcePath || 'form',
-          sourceKeys: person.sourceKeys || [],
-          updatedAt,
-          updatedAtISO,
+          primaryGift: person.primaryGift,
+          sourcePath: person.sourcePath,
+          sourceKeys: person.sourceKeys,
         },
-      };
-
-      (person.sourceKeys || []).forEach(sourceKey => {
-        const sourcePath = person.sourcePath || 'form';
-        updates[`${sourcePath}/${sourceKey}/peopleDevelopmentGroup`] = group;
-        updates[`${sourcePath}/${sourceKey}/peopleDevelopment`] = {
-          group,
-          groupLabel,
-          memberKey: person.memberKey,
-          identifier: person.identifier,
-          updatedAt,
-          updatedAtISO,
-        };
-        updates[`${sourcePath}/${sourceKey}/fields/peopleDevelopment/group`] = {
-          fieldEnglish: 'People Development Group',
-          fieldArabic: 'مجموعة نمو الأشخاص',
-          value: group,
-          label: groupLabel,
-          updatedAt,
-          updatedAtISO,
-        };
+        group,
+        groupLabel: group
+          ? getPeopleDevelopmentGroupDisplayLabel(
+              group,
+            )
+          : '',
       });
-
-      await update(ref(database), updates);
     } catch (err) {
-      console.error('Failed to update people development group:', err);
-      alert(displayLocale === 'ar' ? 'فشل تحديث مجموعة الشخص.' : 'Failed to update the person group.');
+      console.error(
+        'Failed to update people development group:',
+        err,
+      );
+      alert(
+        displayLocale === 'ar'
+          ? 'فشل تحديث مجموعة الشخص.'
+          : 'Failed to update the person group.',
+      );
     } finally {
       setPeopleDevelopmentSavingKey(null);
       setDraggedPeopleMemberKey(null);
     }
   };
 
-  const handleDropPersonOnGroup = async (event: React.DragEvent<HTMLElement>, groupId: PeopleDevelopmentGroupId) => {
+  const handleDropPersonOnGroup = async (
+    event: React.DragEvent<HTMLElement>,
+    groupId: PeopleDevelopmentGroupId,
+  ) => {
     event.preventDefault();
-    const memberKey = event.dataTransfer.getData('text/plain') || draggedPeopleMemberKey;
-    const person = participants.find(item => item.memberKey === memberKey);
+
+    const memberKey =
+      event.dataTransfer.getData('text/plain') ||
+      draggedPeopleMemberKey;
+
+    const person = participants.find(
+      item => item.memberKey === memberKey,
+    );
 
     if (person) {
-      await handleAssignPersonToGroup(person, groupId);
+      await handleAssignPersonToGroup(
+        person,
+        groupId,
+      );
     }
   };
 
-  const handlePeopleAssignmentFileChange = (groupId: PeopleDevelopmentGroupId, file: File | null) => {
+  const handlePeopleAssignmentFileChange = (
+    groupId: PeopleDevelopmentGroupId,
+    file: File | null,
+  ) => {
     if (!file) {
       setPeopleAssignmentFiles(previous => ({
         ...previous,
@@ -1402,35 +1312,54 @@ export default function PastorDashboard() {
       return;
     }
 
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isPdf =
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf');
 
     if (!isPdf) {
-      alert(displayLocale === 'ar' ? 'يمكن رفع ملفات PDF فقط حالياً.' : 'Only PDF files can be attached for now.');
-      setPeopleAssignmentFiles(previous => ({
-        ...previous,
-        [groupId]: null,
-      }));
-      setPeopleAssignmentFileInputResetKeys(previous => ({
-        ...previous,
-        [groupId]: (previous[groupId] || 0) + 1,
-      }));
-      return;
-    }
-
-    if (file.size > MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES) {
       alert(
         displayLocale === 'ar'
-          ? `حجم ملف PDF يجب ألا يتجاوز ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)}.`
-          : `PDF file size must be ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)} or less.`,
+          ? 'يمكن رفع ملفات PDF فقط حالياً.'
+          : 'Only PDF files can be attached for now.',
       );
       setPeopleAssignmentFiles(previous => ({
         ...previous,
         [groupId]: null,
       }));
-      setPeopleAssignmentFileInputResetKeys(previous => ({
+      setPeopleAssignmentFileInputResetKeys(
+        previous => ({
+          ...previous,
+          [groupId]:
+            (previous[groupId] || 0) + 1,
+        }),
+      );
+      return;
+    }
+
+    if (
+      file.size >
+      MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES
+    ) {
+      alert(
+        displayLocale === 'ar'
+          ? `حجم ملف PDF يجب ألا يتجاوز ${formatFileSize(
+              MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
+            )}.`
+          : `PDF file size must be ${formatFileSize(
+              MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
+            )} or less.`,
+      );
+      setPeopleAssignmentFiles(previous => ({
         ...previous,
-        [groupId]: (previous[groupId] || 0) + 1,
+        [groupId]: null,
       }));
+      setPeopleAssignmentFileInputResetKeys(
+        previous => ({
+          ...previous,
+          [groupId]:
+            (previous[groupId] || 0) + 1,
+        }),
+      );
       return;
     }
 
@@ -1440,50 +1369,69 @@ export default function PastorDashboard() {
     }));
   };
 
-  const clearPeopleAssignmentFile = (groupId: PeopleDevelopmentGroupId) => {
+  const clearPeopleAssignmentFile = (
+    groupId: PeopleDevelopmentGroupId,
+  ) => {
     setPeopleAssignmentFiles(previous => ({
       ...previous,
       [groupId]: null,
     }));
-    setPeopleAssignmentFileInputResetKeys(previous => ({
-      ...previous,
-      [groupId]: (previous[groupId] || 0) + 1,
-    }));
+    setPeopleAssignmentFileInputResetKeys(
+      previous => ({
+        ...previous,
+        [groupId]:
+          (previous[groupId] || 0) + 1,
+      }),
+    );
   };
 
-  const getPeopleDevelopmentNotificationRecipients = (groupId: PeopleDevelopmentGroupId): Participant[] => {
-    const peopleInGroup = getGroupPeople(groupId);
-    const peopleByEmail = new Map<string, Participant>();
-
-    peopleInGroup.forEach(person => {
-      const email = String(person.email || '').trim();
-
-      if (!isUsableEmail(email)) return;
-
-      peopleByEmail.set(email.toLowerCase(), {
-        ...person,
-        email,
-      });
-    });
-
-    return Array.from(peopleByEmail.values()).sort((a, b) => a.name.localeCompare(b.name));
+  const getPeopleDevelopmentNotificationRecipients = (
+    groupId: PeopleDevelopmentGroupId,
+  ): Participant[] => {
+    return getPeopleDevelopmentEmailRecipients(
+      participants,
+      peopleDevelopmentMembers,
+      groupId,
+    );
   };
 
-  const sendPeopleDevelopmentAssignmentNotificationEmails = async (params: {
-    assignmentId: string;
-    groupId: PeopleDevelopmentGroupId;
-    text: string;
-    date: string;
-    createdAt: number;
-    createdAtISO: string;
-    attachments: PeopleDevelopmentAttachment[];
-  }): Promise<{ totalCount: number; sentCount: number; failedCount: number }> => {
-    const recipients = getPeopleDevelopmentNotificationRecipients(params.groupId);
-    const groupLabelEn = getPeopleDevelopmentStaticGroupLabel(params.groupId, 'en');
-    const groupLabelAr = getPeopleDevelopmentStaticGroupLabel(params.groupId, 'ar');
-    const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const sendPeopleDevelopmentAssignmentNotificationEmails = async (
+    params: {
+      assignmentId: string;
+      groupId: PeopleDevelopmentGroupId;
+      text: string;
+      date: string;
+      createdAt: number;
+      createdAtISO: string;
+      attachments: PeopleDevelopmentAttachment[];
+    },
+  ): Promise<{
+    totalCount: number;
+    sentCount: number;
+    failedCount: number;
+  }> => {
+    const recipients =
+      getPeopleDevelopmentNotificationRecipients(
+        params.groupId,
+      );
+    const groupLabelEn =
+      getPeopleDevelopmentStaticGroupLabel(
+        params.groupId,
+        'en',
+      );
+    const groupLabelAr =
+      getPeopleDevelopmentStaticGroupLabel(
+        params.groupId,
+        'ar',
+      );
+    const appUrl =
+      typeof window !== 'undefined'
+        ? window.location.origin
+        : '';
     const postedAtLabel = params.createdAt
-      ? new Date(params.createdAt).toLocaleString('en-CA', {
+      ? new Date(
+          params.createdAt,
+        ).toLocaleString('en-CA', {
           timeZone: 'America/Toronto',
           year: 'numeric',
           month: 'short',
@@ -1497,20 +1445,27 @@ export default function PastorDashboard() {
     let failedCount = 0;
 
     for (const recipient of recipients) {
-      const recipientEmail = String(recipient.email || '').trim();
-      const recipientName = recipient.name && recipient.name !== 'N/A'
-        ? recipient.name
-        : recipient.firstName || 'Friend';
+      const recipientEmail = String(
+        recipient.email || '',
+      ).trim();
+      const recipientName =
+        recipient.name &&
+        recipient.name !== 'N/A'
+          ? recipient.name
+          : recipient.firstName || 'Friend';
       const subject = `LinC People Development Update - ${groupLabelEn} / تحديث نمو الأشخاص - ${groupLabelAr}`;
-      const htmlBody = buildPeopleDevelopmentAssignmentNotificationEmailHtml({
-        recipientName,
-        groupLabelEn,
-        groupLabelAr,
-        noteText: params.text,
-        attachments: params.attachments,
-        postedAtLabel,
-        appUrl,
-      });
+      const htmlBody =
+        buildPeopleDevelopmentAssignmentNotificationEmailHtml(
+          {
+            recipientName,
+            groupLabelEn,
+            groupLabelAr,
+            noteText: params.text,
+            attachments: params.attachments,
+            postedAtLabel,
+            appUrl,
+          },
+        );
 
       try {
         const response = await emailjs.send(
@@ -1529,53 +1484,79 @@ export default function PastorDashboard() {
         sentCount += 1;
 
         try {
-          await push(ref(database, 'emailJsSendLogs/'), {
-            recipientEmail,
-            subject,
-            fullName: recipientName,
-            sentUsing: 'EmailJS',
-            serviceId: EMAILJS_SERVICE_ID,
-            templateId: EMAILJS_TEMPLATE_ID,
-            source: 'peopleDevelopmentAssignmentNotification',
-            assignmentId: params.assignmentId,
-            group: params.groupId,
-            groupLabelEn,
-            groupLabelAr,
-            attachmentNames: params.attachments.map(attachment => attachment.name),
-            sentAt: Date.now(),
-            sentAtISO: new Date().toISOString(),
-            emailJsResponse: {
-              status: response.status,
-              text: response.text,
+          await push(
+            ref(database, 'emailJsSendLogs/'),
+            {
+              recipientEmail,
+              subject,
+              fullName: recipientName,
+              sentUsing: 'EmailJS',
+              serviceId: EMAILJS_SERVICE_ID,
+              templateId: EMAILJS_TEMPLATE_ID,
+              source:
+                'peopleDevelopmentAssignmentNotification',
+              assignmentId: params.assignmentId,
+              group: params.groupId,
+              groupLabelEn,
+              groupLabelAr,
+              attachmentNames:
+                params.attachments.map(
+                  attachment =>
+                    attachment.name,
+                ),
+              sentAt: Date.now(),
+              sentAtISO:
+                new Date().toISOString(),
+              emailJsResponse: {
+                status: response.status,
+                text: response.text,
+              },
             },
-          });
+          );
         } catch (logError) {
-          console.error('Failed to log People Development notification success:', logError);
+          console.error(
+            'Failed to log People Development notification success:',
+            logError,
+          );
         }
       } catch (error) {
         failedCount += 1;
-        console.error(`Failed to send People Development assignment notification to ${recipientEmail}:`, error);
+        console.error(
+          `Failed to send People Development assignment notification to ${recipientEmail}:`,
+          error,
+        );
 
         try {
-          await push(ref(database, 'emailJsSendLogs/'), {
-            recipientEmail,
-            subject,
-            fullName: recipientName,
-            sentUsing: 'EmailJS',
-            serviceId: EMAILJS_SERVICE_ID,
-            templateId: EMAILJS_TEMPLATE_ID,
-            source: 'peopleDevelopmentAssignmentNotification',
-            assignmentId: params.assignmentId,
-            group: params.groupId,
-            groupLabelEn,
-            groupLabelAr,
-            failed: true,
-            errorMessage: error instanceof Error ? error.message : String(error),
-            attemptedAt: Date.now(),
-            attemptedAtISO: new Date().toISOString(),
-          });
+          await push(
+            ref(database, 'emailJsSendLogs/'),
+            {
+              recipientEmail,
+              subject,
+              fullName: recipientName,
+              sentUsing: 'EmailJS',
+              serviceId: EMAILJS_SERVICE_ID,
+              templateId: EMAILJS_TEMPLATE_ID,
+              source:
+                'peopleDevelopmentAssignmentNotification',
+              assignmentId: params.assignmentId,
+              group: params.groupId,
+              groupLabelEn,
+              groupLabelAr,
+              failed: true,
+              errorMessage:
+                error instanceof Error
+                  ? error.message
+                  : String(error),
+              attemptedAt: Date.now(),
+              attemptedAtISO:
+                new Date().toISOString(),
+            },
+          );
         } catch (logError) {
-          console.error('Failed to log People Development notification failure:', logError);
+          console.error(
+            'Failed to log People Development notification failure:',
+            logError,
+          );
         }
       }
     }
@@ -1587,32 +1568,44 @@ export default function PastorDashboard() {
     };
   };
 
-  const handlePostPeopleDevelopmentAssignment = async (groupId: PeopleDevelopmentGroupId) => {
-    const text = (peopleAssignmentDrafts[groupId] || '').trim();
-    const selectedFile = peopleAssignmentFiles[groupId];
+  const handlePostPeopleDevelopmentAssignment = async (
+    groupId: PeopleDevelopmentGroupId,
+  ) => {
+    const text = (
+      peopleAssignmentDrafts[groupId] || ''
+    ).trim();
+    const selectedFile =
+      peopleAssignmentFiles[groupId];
 
     if (!text && !selectedFile) {
-      alert(displayLocale === 'ar' ? 'اكتب نص الملاحظة أو أرفق ملف PDF أولاً.' : 'Write a note or attach a PDF first.');
+      alert(
+        displayLocale === 'ar'
+          ? 'اكتب نص الملاحظة أو أرفق ملف PDF أولاً.'
+          : 'Write a note or attach a PDF first.',
+      );
       return;
     }
 
     setPeopleDevelopmentPostingGroup(groupId);
 
     try {
-      const createdAt = Date.now();
-      const createdAtISO = new Date().toISOString();
-      const date = format(new Date(), 'yyyy-MM-dd');
-      const groupLabel = getPeopleDevelopmentGroupLabel(groupId);
-      const attachments: PeopleDevelopmentAttachment[] = [];
+      const attachments:
+        PeopleDevelopmentAttachment[] = [];
 
       if (selectedFile) {
         const uploadedAt = Date.now();
-        const uploadedAtISO = new Date(uploadedAt).toISOString();
-        const base64 = await readFileAsBase64(selectedFile);
+        const uploadedAtISO =
+          new Date(uploadedAt).toISOString();
+        const base64 =
+          await readFileAsBase64(
+            selectedFile,
+          );
 
         attachments.push({
           name: selectedFile.name,
-          type: selectedFile.type || 'application/pdf',
+          type:
+            selectedFile.type ||
+            'application/pdf',
           size: selectedFile.size,
           encoding: 'base64',
           storage: 'realtimeDatabase',
@@ -1622,35 +1615,46 @@ export default function PastorDashboard() {
         });
       }
 
-      const assignmentReference = await push(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/`), {
-        group: groupId,
-        groupLabel,
-        text,
-        date,
-        createdAt,
-        createdAtISO,
-        attachments,
-        hasAttachments: attachments.length > 0,
-        source: 'pastorCalendar',
-      });
+      const postedAssignment =
+        await postPeopleDevelopmentAssignment({
+          group: groupId,
+          groupLabel:
+            getPeopleDevelopmentGroupDisplayLabel(
+              groupId,
+            ),
+          text,
+          attachments,
+          source: 'pastorCalendar',
+        });
 
-      const notificationResult = await sendPeopleDevelopmentAssignmentNotificationEmails({
-        assignmentId: assignmentReference.key || '',
-        groupId,
-        text,
-        date,
-        createdAt,
-        createdAtISO,
-        attachments,
-      });
+      const notificationResult =
+        await sendPeopleDevelopmentAssignmentNotificationEmails(
+          {
+            assignmentId:
+              postedAssignment.assignmentId,
+            groupId,
+            text: postedAssignment.text,
+            date: postedAssignment.date,
+            createdAt:
+              postedAssignment.createdAt,
+            createdAtISO:
+              postedAssignment.createdAtISO,
+            attachments:
+              postedAssignment.attachments,
+          },
+        );
 
-      if (notificationResult.totalCount === 0) {
+      if (
+        notificationResult.totalCount === 0
+      ) {
         alert(
           displayLocale === 'ar'
             ? 'تم حفظ الملاحظة / التكليف، لكن لا يوجد أعضاء في هذه المجموعة لديهم بريد إلكتروني صالح.'
             : 'Note / assignment saved, but no group members with valid email addresses were found.',
         );
-      } else if (notificationResult.failedCount > 0) {
+      } else if (
+        notificationResult.failedCount > 0
+      ) {
         alert(
           displayLocale === 'ar'
             ? `تم حفظ الملاحظة / التكليف. تم إرسال ${notificationResult.sentCount} بريد، وفشل إرسال ${notificationResult.failedCount}.`
@@ -1670,14 +1674,23 @@ export default function PastorDashboard() {
       }));
       clearPeopleAssignmentFile(groupId);
     } catch (err) {
-      console.error('Failed to post people development assignment:', err);
-      alert(displayLocale === 'ar' ? 'فشل حفظ الملاحظة أو التكليف.' : 'Failed to save the note or assignment.');
+      console.error(
+        'Failed to post people development assignment:',
+        err,
+      );
+      alert(
+        displayLocale === 'ar'
+          ? 'فشل حفظ الملاحظة أو التكليف.'
+          : 'Failed to save the note or assignment.',
+      );
     } finally {
       setPeopleDevelopmentPostingGroup(null);
     }
   };
 
-  const handleDeletePeopleDevelopmentPost = async (entry: PeopleDevelopmentEntry) => {
+  const handleDeletePeopleDevelopmentPost = async (
+    entry: PeopleDevelopmentEntry,
+  ) => {
     const confirmed = window.confirm(
       displayLocale === 'ar'
         ? 'هل أنت متأكد أنك تريد حذف هذا المنشور بالكامل مع جميع ملفاته؟ لا يمكن التراجع عن هذا الإجراء.'
@@ -1686,15 +1699,31 @@ export default function PastorDashboard() {
 
     if (!confirmed) return;
 
-    const deletingKey = `post:${entry.id}`;
-    setPeopleDevelopmentDeletingKey(deletingKey);
+    const deletingKey =
+      `assignment-${entry.id}`;
+    setPeopleDevelopmentDeletingKey(
+      deletingKey,
+    );
 
     try {
-      await remove(ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}`));
-      alert(displayLocale === 'ar' ? 'تم حذف المنشور.' : 'Post deleted.');
+      await removePeopleDevelopmentAssignment(
+        entry.id,
+      );
+      alert(
+        displayLocale === 'ar'
+          ? 'تم حذف المنشور.'
+          : 'Post deleted.',
+      );
     } catch (err) {
-      console.error('Failed to delete People Development post:', err);
-      alert(displayLocale === 'ar' ? 'فشل حذف المنشور.' : 'Failed to delete the post.');
+      console.error(
+        'Failed to delete People Development post:',
+        err,
+      );
+      alert(
+        displayLocale === 'ar'
+          ? 'فشل حذف المنشور.'
+          : 'Failed to delete the post.',
+      );
     } finally {
       setPeopleDevelopmentDeletingKey(null);
     }
@@ -1704,7 +1733,9 @@ export default function PastorDashboard() {
     entry: PeopleDevelopmentEntry,
     attachmentIndex: number,
   ) => {
-    const attachment = entry.attachments[attachmentIndex];
+    const attachment =
+      entry.attachments[attachmentIndex];
+
     if (!attachment) return;
 
     const confirmed = window.confirm(
@@ -1715,80 +1746,81 @@ export default function PastorDashboard() {
 
     if (!confirmed) return;
 
-    const deletingKey = `attachment:${entry.id}:${attachmentIndex}`;
-    setPeopleDevelopmentDeletingKey(deletingKey);
+    const deletingKey =
+      `attachment-${entry.id}-${attachmentIndex}`;
+    setPeopleDevelopmentDeletingKey(
+      deletingKey,
+    );
 
     try {
-      const remainingAttachments = entry.attachments.filter((_, index) => index !== attachmentIndex);
-      const assignmentRef = ref(database, `${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}`);
+      const remainingAttachments =
+        entry.attachments.filter(
+          (_, index) =>
+            index !== attachmentIndex,
+        );
 
-      if (!entry.text.trim() && remainingAttachments.length === 0) {
-        await remove(assignmentRef);
+      if (
+        !entry.text.trim() &&
+        remainingAttachments.length === 0
+      ) {
+        await removePeopleDevelopmentAssignment(
+          entry.id,
+        );
       } else {
         const updatedAt = Date.now();
-        await update(assignmentRef, {
-          attachments: remainingAttachments,
-          hasAttachments: remainingAttachments.length > 0,
-          updatedAt,
-          updatedAtISO: new Date(updatedAt).toISOString(),
+
+        await updatePeopleDevelopmentRecords({
+          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/attachments`]:
+            remainingAttachments,
+          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/hasAttachments`]:
+            remainingAttachments.length > 0,
+          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/updatedAt`]:
+            updatedAt,
+          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/updatedAtISO`]:
+            new Date(updatedAt).toISOString(),
         });
       }
 
-      alert(displayLocale === 'ar' ? 'تمت إزالة الملف.' : 'File removed.');
+      alert(
+        displayLocale === 'ar'
+          ? 'تمت إزالة الملف.'
+          : 'File removed.',
+      );
     } catch (err) {
-      console.error('Failed to remove People Development attachment:', err);
-      alert(displayLocale === 'ar' ? 'فشل إزالة الملف.' : 'Failed to remove the file.');
+      console.error(
+        'Failed to remove People Development attachment:',
+        err,
+      );
+      alert(
+        displayLocale === 'ar'
+          ? 'فشل إزالة الملف.'
+          : 'Failed to remove the file.',
+      );
     } finally {
       setPeopleDevelopmentDeletingKey(null);
     }
   };
 
-  const handleAddSelectedPersonToGroup = async (groupId: PeopleDevelopmentGroupId) => {
-    const selectedMemberKey = peopleGroupSelectDrafts[groupId];
-    const person = participants.find(item => item.memberKey === selectedMemberKey);
+  const activePeopleAssignmentsPopupEntries =
+    peopleAssignmentsPopupGroup
+      ? getGroupAssignments(
+          peopleAssignmentsPopupGroup,
+        )
+      : [];
 
-    if (!person) {
-      alert(displayLocale === 'ar' ? 'اختر شخصاً أولاً.' : 'Select a person first.');
-      return;
-    }
+  const selectedPeopleNoteAssignedGroup =
+    selectedPeopleNotePerson
+      ? getPersonGroup(
+          selectedPeopleNotePerson,
+        )
+      : '';
 
-    await handleAssignPersonToGroup(person, groupId);
-
-    setPeopleGroupSelectDrafts(previous => ({
-      ...previous,
-      [groupId]: '',
-    }));
-  };
-
-  const activePeopleAssignmentsPopupGroup = peopleAssignmentsPopupGroup;
-  const activePeopleAssignmentsPopupGroupConfig = activePeopleAssignmentsPopupGroup
-    ? PEOPLE_DEVELOPMENT_GROUPS.find(group => group.id === activePeopleAssignmentsPopupGroup) || null
-    : null;
-  const activePeopleAssignmentsPopupEntries = activePeopleAssignmentsPopupGroup
-    ? getGroupAssignments(activePeopleAssignmentsPopupGroup)
-    : [];
-  const peopleAssignmentsPopupMonthDays = eachDayOfInterval({
-    start: startOfMonth(peopleAssignmentsPopupMonth),
-    end: endOfMonth(peopleAssignmentsPopupMonth),
-  });
-  const peopleAssignmentsPopupStartPadding = startOfMonth(peopleAssignmentsPopupMonth).getDay();
-  const peopleAssignmentsPopupEntriesByDate = activePeopleAssignmentsPopupEntries.reduce<Record<string, PeopleDevelopmentEntry[]>>((accumulator, entry) => {
-    const dateKey = getPeopleAssignmentDateKey(entry);
-    if (!dateKey) return accumulator;
-
-    accumulator[dateKey] = [...(accumulator[dateKey] || []), entry];
-    return accumulator;
-  }, {});
-  const selectedPeopleAssignmentsPopupEntries = peopleAssignmentsPopupSelectedDate
-    ? peopleAssignmentsPopupEntriesByDate[peopleAssignmentsPopupSelectedDate] || []
-    : [];
-  const peopleAssignmentsPopupMonthLabel = format(peopleAssignmentsPopupMonth, 'MMMM yyyy', { locale: dateLocale });
-  const peopleAssignmentsPopupSelectedDateLabel = peopleAssignmentsPopupSelectedDate
-    ? format(new Date(`${peopleAssignmentsPopupSelectedDate}T12:00:00`), 'EEEE, MMMM d, yyyy', { locale: dateLocale })
-    : '';
-  const peopleAssignmentsWeekdayLabels = displayLocale === 'ar'
-    ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const selectedPeopleNoteGroupLabel =
+    selectedPeopleNoteAssignedGroup
+      ? getPeopleDevelopmentGroupDisplayLabel(
+          selectedPeopleNoteAssignedGroup,
+        )
+      : '';
 
   const selectedCount = selectedParticipants.length;
   const selectedNames = participants
@@ -2106,399 +2138,61 @@ export default function PastorDashboard() {
       </div>
 
       {showPeopleDevelopment && (
-        <section className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-[#ead9d0] space-y-5">
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-black text-[#7a1717] flex items-center gap-2">
-                <Users size={20} />
-                {displayLocale === 'ar' ? 'مجموعات نمو الأشخاص' : 'People Development Groups'}
-              </h3>
-              <p className="text-gray-500 mt-1">
-                {displayLocale === 'ar'
-                  ? 'اسحب الأشخاص إلى مجموعة، أو استخدم أزرار الإضافة والتغيير. يتم حفظ المجموعة والتكليفات في Firebase.'
-                  : 'Drag people into a group, or use the compact add/change controls. Group placement and assignments are saved to Firebase.'}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-[#f8eeee] text-[#7a1717] border border-[#d8aaaa] px-4 py-3 font-black">
-              {participants.length} {displayLocale === 'ar' ? 'شخص' : 'people'}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {PEOPLE_DEVELOPMENT_GROUPS.map(group => {
-              const groupPeople = getGroupPeople(group.id);
-
-              return (
-                <button
-                  key={group.id}
-                  type="button"
-                  onDragOver={event => event.preventDefault()}
-                  onDrop={event => handleDropPersonOnGroup(event, group.id)}
-                  className={`aspect-square min-h-[138px] sm:min-h-[170px] rounded-3xl border-2 p-4 text-start shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${group.cardClass}`}
-                >
-                  <div className="flex h-full flex-col justify-between gap-3">
-                    <div>
-                      <div className="text-2xl sm:text-3xl font-black leading-none">
-                        {displayLocale === 'ar' ? group.labelAr : group.labelEn}
-                      </div>
-                      <div className="mt-2 text-sm leading-snug opacity-80">
-                        {displayLocale === 'ar' ? group.descriptionAr : group.descriptionEn}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full border px-3 py-1 text-sm font-black ${group.badgeClass}`}>
-                        {groupPeople.length} {displayLocale === 'ar' ? 'أشخاص' : 'people'}
-                      </span>
-                      {draggedPeopleMemberKey && (
-                        <span className="rounded-full bg-white/70 px-3 py-1 text-sm font-black">
-                          {displayLocale === 'ar' ? 'أفلت هنا' : 'Drop here'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] gap-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {PEOPLE_DEVELOPMENT_GROUPS.map(group => {
-                const groupPeople = getGroupPeople(group.id);
-                const groupAssignments = getGroupAssignments(group.id);
-                const latestGroupAssignment = groupAssignments[0] || null;
-                const selectedMemberKey = peopleGroupSelectDrafts[group.id];
-
-                return (
-                  <div
-                    key={`panel-${group.id}`}
-                    onDragOver={event => event.preventDefault()}
-                    onDrop={event => handleDropPersonOnGroup(event, group.id)}
-                    className={`rounded-3xl border-2 p-4 space-y-4 ${group.softClass}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="text-xl font-black">
-                          {displayLocale === 'ar' ? group.labelAr : group.labelEn}
-                        </h4>
-                        <p className="mt-1 text-sm opacity-80">
-                          {displayLocale === 'ar' ? 'ملاحظات وتكليفات هذه المجموعة' : 'Notes & Assignments for this group'}
-                        </p>
-                      </div>
-                      <span className={`rounded-full border px-3 py-1 text-sm font-black ${group.badgeClass}`}>
-                        {groupPeople.length}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <textarea
-                        value={peopleAssignmentDrafts[group.id]}
-                        onChange={event => setPeopleAssignmentDrafts(previous => ({ ...previous, [group.id]: event.target.value }))}
-                        placeholder={displayLocale === 'ar' ? 'اكتب ملاحظة أو تكليف لهذه المجموعة...' : 'Write a note or assignment for this group...'}
-                        className="w-full min-h-[96px] rounded-2xl border border-white/70 bg-white px-4 py-3 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20"
-                      />
-
-                      <label className="block rounded-2xl border border-dashed border-white/80 bg-white/70 p-3 text-sm font-black text-[#242424]">
-                        <span className="block opacity-75">
-                          {displayLocale === 'ar' ? 'إرفاق ملف PDF صغير اختياري' : 'Optional small PDF attachment'}
-                        </span>
-                        <span className="mt-1 block text-xs font-bold opacity-60">
-                          {displayLocale === 'ar'
-                            ? `الحد الأقصى ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)} — سيتم حفظه كـ Base64 في Realtime Database.`
-                            : `Max ${formatFileSize(MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES)} — saved as Base64 in Realtime Database.`}
-                        </span>
-                        <input
-                          key={`${group.id}-assignment-file-${peopleAssignmentFileInputResetKeys[group.id]}`}
-                          type="file"
-                          accept="application/pdf,.pdf"
-                          disabled={peopleDevelopmentPostingGroup === group.id}
-                          onChange={event => handlePeopleAssignmentFileChange(group.id, event.target.files?.[0] || null)}
-                          className="mt-3 block w-full text-sm font-bold text-[#242424] file:me-3 file:rounded-xl file:border-0 file:bg-[#f8eeee] file:px-3 file:py-2 file:font-black file:text-[#7a1717] hover:file:bg-[#efd8d8]"
-                        />
-                      </label>
-
-                      {peopleAssignmentFiles[group.id] && (
-                        <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-sm font-black text-[#242424] border border-white/80">
-                          <div className="min-w-0">
-                            <div className="truncate">{peopleAssignmentFiles[group.id]?.name}</div>
-                            <div className="text-xs opacity-60">
-                              {formatFileSize(peopleAssignmentFiles[group.id]?.size || 0)}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => clearPeopleAssignmentFile(group.id)}
-                            className="shrink-0 rounded-full bg-[#f8eeee] p-1.5 text-[#7a1717] hover:bg-[#efd8d8] transition-colors"
-                            title={displayLocale === 'ar' ? 'إزالة الملف' : 'Remove file'}
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => handlePostPeopleDevelopmentAssignment(group.id)}
-                        disabled={peopleDevelopmentPostingGroup === group.id}
-                        className={`w-full rounded-2xl px-4 py-3 font-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${group.buttonClass}`}
-                      >
-                        {peopleDevelopmentPostingGroup === group.id
-                          ? (displayLocale === 'ar' ? 'جار الحفظ والإرسال...' : 'Posting & emailing...')
-                          : (displayLocale === 'ar' ? 'نشر وإرسال للمجموعة' : 'Post & Email Group')}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                      <select
-                        value={selectedMemberKey}
-                        onChange={event => setPeopleGroupSelectDrafts(previous => ({ ...previous, [group.id]: event.target.value }))}
-                        className="min-w-0 rounded-2xl border border-white/70 bg-white px-3 py-3 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20"
-                      >
-                        <option value="">{displayLocale === 'ar' ? 'اختر شخصاً' : 'Select person'}</option>
-                        {participants.map(person => (
-                          <option key={`${group.id}-${person.memberKey}`} value={person.memberKey}>
-                            {person.name} {getPersonGroup(person) ? `(${getPeopleDevelopmentGroupLabel(getPersonGroup(person) as PeopleDevelopmentGroupId)})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => handleAddSelectedPersonToGroup(group.id)}
-                        className={`rounded-2xl px-4 py-3 font-black ${group.buttonClass}`}
-                        title={displayLocale === 'ar' ? 'إضافة للمجموعة' : 'Add to group'}
-                      >
-                        <UserPlus size={18} />
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-sm font-black uppercase tracking-widest opacity-70">
-                        {displayLocale === 'ar' ? 'الأشخاص' : 'People'}
-                      </div>
-                      {groupPeople.length === 0 ? (
-                        <div className="rounded-2xl bg-white/70 p-3 text-sm font-black opacity-70">
-                          {displayLocale === 'ar' ? 'لا يوجد أشخاص في هذه المجموعة.' : 'No people assigned to this group.'}
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {groupPeople.map(person => (
-                            <div
-                              key={`chip-${group.id}-${person.memberKey}`}
-                              draggable
-                              onDragStart={event => {
-                                setDraggedPeopleMemberKey(person.memberKey);
-                                event.dataTransfer.setData('text/plain', person.memberKey);
-                              }}
-                              onDragEnd={() => setDraggedPeopleMemberKey(null)}
-                              className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-2 text-sm font-black shadow-sm border border-white/80"
-                              title={person.identifier || person.email}
-                            >
-                              <span>{person.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => openPeopleNotePopup(person)}
-                                className="rounded-full bg-[#f8eeee] p-1 text-[#7a1717] hover:bg-[#efd8d8] transition-colors"
-                                title={displayLocale === 'ar' ? 'إضافة ملاحظة شخصية' : 'Add personal note'}
-                              >
-                                <MessageSquare size={13} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-sm font-black uppercase tracking-widest opacity-70">
-                        {displayLocale === 'ar' ? 'الملاحظات والتكليفات السابقة' : 'Previous Notes & Assignments'}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => openPeopleAssignmentsPopup(group.id)}
-                        className="w-full rounded-2xl border-2 border-white/80 bg-white/80 p-3 text-start transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-md"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <CalendarIcon size={18} className="shrink-0 text-[#7a1717]" />
-                            <div className="min-w-0">
-                              <div className="font-black text-[#7a1717]">
-                                {displayLocale === 'ar' ? 'عرض التقويم الشهري' : 'Open monthly calendar'}
-                              </div>
-                              <div className="text-xs font-bold opacity-65">
-                                {displayLocale === 'ar'
-                                  ? 'افتح نافذة مستقلة لعرض الأيام التي تحتوي على منشورات.'
-                                  : 'Open a focused popup with dots on days that have posts.'}
-                              </div>
-                            </div>
-                          </div>
-                          <span className={`shrink-0 rounded-full border px-3 py-1 text-sm font-black ${group.badgeClass}`}>
-                            {groupAssignments.length}
-                          </span>
-                        </div>
-                      </button>
-
-                      {latestGroupAssignment ? (
-                        <div className="rounded-2xl bg-white/70 p-3 text-sm font-black opacity-85">
-                          <div className="flex flex-wrap items-center gap-2 text-xs opacity-65">
-                            <Clock size={13} />
-                            <span>{latestGroupAssignment.date || latestGroupAssignment.createdAtISO}</span>
-                            {latestGroupAssignment.attachments.length > 0 && (
-                              <span>
-                                • {latestGroupAssignment.attachments.length} {displayLocale === 'ar' ? 'ملف' : 'file(s)'}
-                              </span>
-                            )}
-                          </div>
-                          {latestGroupAssignment.text && (
-                            <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-[#242424]">{latestGroupAssignment.text}</p>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="rounded-2xl bg-white/70 p-3 text-sm font-black opacity-70">
-                          {displayLocale === 'ar' ? 'لا توجد ملاحظات أو تكليفات بعد.' : 'No notes or assignments yet.'}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <aside className="rounded-3xl border-2 border-[#ead9d0] bg-[#fffdf9] p-4 space-y-4">
-              <div>
-                <h4 className="text-xl font-black text-[#7a1717] flex items-center gap-2">
-                  <Users size={19} />
-                  {displayLocale === 'ar' ? 'قائمة الأشخاص' : 'People List'}
-                </h4>
-                <p className="text-sm text-gray-500 mt-1">
-                  {displayLocale === 'ar'
-                    ? 'ابحث بالاسم الأول، ثم اسحب أو غيّر المجموعة من القائمة.'
-                    : 'Search by first name, then drag or change the group from the list.'}
-                </p>
-              </div>
-
-              <div className="relative">
-                <Search className="absolute start-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="text"
-                  value={peopleSearchTerm}
-                  onChange={event => setPeopleSearchTerm(event.target.value)}
-                  placeholder={displayLocale === 'ar' ? 'بحث بالاسم الأول...' : 'Search first name...'}
-                  className="w-full rounded-2xl border border-[#ead9d0] bg-white py-3 ps-11 pe-4 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20"
-                />
-              </div>
-
-              <div className="space-y-2 max-h-[620px] overflow-y-auto pe-1">
-                {searchedPeople.length === 0 ? (
-                  <div className="rounded-2xl bg-stone-50 p-4 text-gray-500 font-black">
-                    {displayLocale === 'ar' ? 'لا توجد نتائج.' : 'No people found.'}
-                  </div>
-                ) : searchedPeople.map(person => {
-                  const assignedGroup = getPersonGroup(person);
-                  const savingThisPerson = peopleDevelopmentSavingKey === person.memberKey;
-                  const personNotes = getPersonPersonalNotes(person);
-                  const latestPersonNotes = personNotes.slice(0, 2);
-                  const strengthCount = personNotes.filter(note => note.type === 'strength').length;
-                  const weaknessCount = personNotes.filter(note => note.type === 'weakness').length;
-
-                  return (
-                    <div
-                      key={`person-${person.memberKey}`}
-                      draggable
-                      onDragStart={event => {
-                        setDraggedPeopleMemberKey(person.memberKey);
-                        event.dataTransfer.setData('text/plain', person.memberKey);
-                      }}
-                      onDragEnd={() => setDraggedPeopleMemberKey(null)}
-                      className="rounded-2xl border border-[#ead9d0] bg-white p-3 shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-[#242424] font-black">{person.name}</div>
-                          <div className="truncate text-sm text-gray-500">{person.identifier || person.email}</div>
-                          {person.primaryGift && (
-                            <div className="mt-1 text-xs text-gray-400">
-                              {person.primaryGift}
-                            </div>
-                          )}
-                        </div>
-                        <span className="shrink-0 rounded-full bg-[#f8eeee] px-2 py-1 text-xs text-[#7a1717] font-black border border-[#d8aaaa]">
-                          {assignedGroup ? getPeopleDevelopmentGroupLabel(assignedGroup) : (displayLocale === 'ar' ? 'غير محدد' : 'Unassigned')}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                        <select
-                          value={assignedGroup}
-                          onChange={event => handleAssignPersonToGroup(person, event.target.value as PeopleDevelopmentGroupId | '')}
-                          disabled={savingThisPerson}
-                          className="min-w-0 rounded-xl border border-[#ead9d0] bg-stone-50 px-3 py-2 text-[#242424] outline-none focus:ring-2 focus:ring-[#7a1717]/20 disabled:opacity-60"
-                        >
-                          <option value="">{displayLocale === 'ar' ? 'بدون مجموعة' : 'Unassigned'}</option>
-                          {PEOPLE_DEVELOPMENT_GROUPS.map(group => (
-                            <option key={`person-select-${person.memberKey}-${group.id}`} value={group.id}>
-                              {displayLocale === 'ar' ? group.labelAr : group.labelEn}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          disabled={savingThisPerson}
-                          onClick={() => assignedGroup ? handleAssignPersonToGroup(person, '') : handleAssignPersonToGroup(person, 'helpers')}
-                          className="rounded-xl bg-[#7a1717] px-3 py-2 text-white font-black disabled:opacity-60"
-                        >
-                          {savingThisPerson ? '...' : assignedGroup ? <X size={16} /> : <Plus size={16} />}
-                        </button>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openPeopleNotePopup(person, 'strength')}
-                          className="flex items-center justify-center gap-2 rounded-xl bg-green-50 px-3 py-2 text-green-700 font-black border border-green-100 hover:bg-green-100 transition-colors"
-                        >
-                          <MessageSquare size={15} />
-                          {displayLocale === 'ar' ? `قوة (${strengthCount})` : `Strength (${strengthCount})`}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openPeopleNotePopup(person, 'weakness')}
-                          className="flex items-center justify-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-red-700 font-black border border-red-100 hover:bg-red-100 transition-colors"
-                        >
-                          <MessageSquare size={15} />
-                          {displayLocale === 'ar' ? `ضعف (${weaknessCount})` : `Weakness (${weaknessCount})`}
-                        </button>
-                      </div>
-
-                      {latestPersonNotes.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {latestPersonNotes.map(note => (
-                            <div
-                              key={`latest-note-${person.memberKey}-${note.id}`}
-                              className={`rounded-xl border px-3 py-2 ${
-                                note.type === 'strength'
-                                  ? 'bg-green-50 border-green-100 text-green-800'
-                                  : 'bg-red-50 border-red-100 text-red-800'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2 text-xs font-black">
-                                <span>{note.type === 'strength'
-                                  ? (displayLocale === 'ar' ? 'قوة' : 'Strength')
-                                  : (displayLocale === 'ar' ? 'ضعف' : 'Weakness')}
-                                </span>
-                                <span>{note.date}</span>
-                              </div>
-                              <p className="mt-1 line-clamp-2 text-sm text-[#242424]">{note.text}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </aside>
-          </div>
-        </section>
+        <PeopleDevelopmentSection
+          expanded={showPeopleDevelopment}
+          locale={displayLocale}
+          participants={participants}
+          members={peopleDevelopmentMembers}
+          assignments={peopleDevelopmentEntries}
+          personalNotes={peoplePersonalNotes}
+          searchTerm={peopleSearchTerm}
+          draggedMemberKey={draggedPeopleMemberKey}
+          savingMemberKey={peopleDevelopmentSavingKey}
+          postingGroup={peopleDevelopmentPostingGroup}
+          assignmentDrafts={peopleAssignmentDrafts}
+          assignmentFiles={peopleAssignmentFiles}
+          assignmentFileInputResetKeys={
+            peopleAssignmentFileInputResetKeys
+          }
+          groupSelectDrafts={peopleGroupSelectDrafts}
+          onToggleExpanded={() =>
+            setShowPeopleDevelopment(
+              previous => !previous,
+            )
+          }
+          onSearchTermChange={setPeopleSearchTerm}
+          onDraggedMemberKeyChange={
+            setDraggedPeopleMemberKey
+          }
+          onDropMember={handleDropPersonOnGroup}
+          onAssignPerson={handleAssignPersonToGroup}
+          onDraftTextChange={(groupId, value) =>
+            setPeopleAssignmentDrafts(previous => ({
+              ...previous,
+              [groupId]: value,
+            }))
+          }
+          onFileChange={
+            handlePeopleAssignmentFileChange
+          }
+          onClearFile={clearPeopleAssignmentFile}
+          onPostAssignment={
+            handlePostPeopleDevelopmentAssignment
+          }
+          onGroupSelectDraftChange={(
+            groupId,
+            memberKey,
+          ) =>
+            setPeopleGroupSelectDrafts(previous => ({
+              ...previous,
+              [groupId]: memberKey,
+            }))
+          }
+          onOpenAssignments={
+            openPeopleAssignmentsPopup
+          }
+          onOpenPersonalNote={openPeopleNotePopup}
+        />
       )}
 
       <MeetingRequestsSection
@@ -3468,422 +3162,46 @@ export default function PastorDashboard() {
         </div>
       )}
 
-      <AnimatePresence>
-        {selectedPeopleNotePerson && showPeopleNotePopup && (
-          <motion.div
-            key="people-personal-note-popup-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 backdrop-blur-md px-4 py-6"
-            onClick={closePeopleNotePopup}
-            dir={dir}
-            style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}
-          >
-            <motion.div
-              key="people-personal-note-popup-panel"
-              initial={{ opacity: 0, scale: 0.94, y: 18 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.94, y: 18 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-              className="w-full max-w-xl overflow-hidden rounded-3xl bg-[#fffdf9] shadow-2xl border border-[#ead9d0] font-bold"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="relative bg-[#7a1717] px-6 py-5 text-white">
-                <button
-                  type="button"
-                  disabled={peopleNoteSaving}
-                  onClick={closePeopleNotePopup}
-                  className="absolute top-4 end-4 rounded-full bg-white/15 p-2 transition-colors hover:bg-white/25 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <X size={18} />
-                </button>
+      <PeoplePersonalNoteModal
+        open={showPeopleNotePopup}
+        person={selectedPeopleNotePerson}
+        noteType={peopleNoteType}
+        noteText={peopleNoteText}
+        saving={peopleNoteSaving}
+        locale={displayLocale}
+        assignedGroup={selectedPeopleNoteAssignedGroup}
+        groupLabel={selectedPeopleNoteGroupLabel}
+        onNoteTypeChange={setPeopleNoteType}
+        onNoteTextChange={setPeopleNoteText}
+        onClose={closePeopleNotePopup}
+        onSubmit={handleSubmitPeoplePersonalNote}
+      />
 
-                <div className="flex items-center gap-3 pe-10">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
-                    <MessageSquare size={24} />
-                  </div>
+      <PeopleAssignmentsCalendarModal
+        open={Boolean(peopleAssignmentsPopupGroup)}
+        groupId={peopleAssignmentsPopupGroup}
+        entries={activePeopleAssignmentsPopupEntries}
+        month={peopleAssignmentsPopupMonth}
+        selectedDate={
+          peopleAssignmentsPopupSelectedDate
+        }
+        deletingKey={peopleDevelopmentDeletingKey}
+        locale={displayLocale}
+        onMonthChange={
+          changePeopleAssignmentsPopupMonth
+        }
+        onSelectedDateChange={
+          setPeopleAssignmentsPopupSelectedDate
+        }
+        onClose={closePeopleAssignmentsPopup}
+        onDeleteAssignment={
+          handleDeletePeopleDevelopmentPost
+        }
+        onDeleteAttachment={
+          handleDeletePeopleDevelopmentAttachment
+        }
+      />
 
-                  <div>
-                    <h3 className="text-2xl font-bold">
-                      {displayLocale === 'ar' ? 'إضافة ملاحظة شخصية' : 'Add Personal Note'}
-                    </h3>
-                    <p className="mt-1 text-base text-white/90">
-                      {selectedPeopleNotePerson.name} • {selectedPeopleNotePerson.identifier}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <form onSubmit={handleSubmitPeoplePersonalNote} className="p-6 space-y-4">
-                <div>
-                  <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest flex items-center gap-1 mb-2">
-                    <MessageSquare size={12} />
-                    {displayLocale === 'ar' ? 'نوع الملاحظة' : 'Note Type'}
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setPeopleNoteType('strength')}
-                      disabled={peopleNoteSaving}
-                      className={`rounded-2xl border-2 px-4 py-3 font-black transition-all disabled:opacity-60 ${
-                        peopleNoteType === 'strength'
-                          ? 'bg-green-600 border-green-600 text-white shadow-md'
-                          : 'bg-green-50 border-green-100 text-green-700 hover:bg-green-100'
-                      }`}
-                    >
-                      {displayLocale === 'ar' ? 'قوة' : 'Strength'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPeopleNoteType('weakness')}
-                      disabled={peopleNoteSaving}
-                      className={`rounded-2xl border-2 px-4 py-3 font-black transition-all disabled:opacity-60 ${
-                        peopleNoteType === 'weakness'
-                          ? 'bg-red-600 border-red-600 text-white shadow-md'
-                          : 'bg-red-50 border-red-100 text-red-700 hover:bg-red-100'
-                      }`}
-                    >
-                      {displayLocale === 'ar' ? 'ضعف' : 'Weakness'}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest flex items-center gap-1 mb-2">
-                    <User size={12} />
-                    {displayLocale === 'ar' ? 'الشخص' : 'Person'}
-                  </label>
-
-                  <div className="rounded-2xl border-2 border-[#ead9d0] bg-[#fffdf9] px-4 py-3">
-                    <div className="text-[#2b1717] font-black">{selectedPeopleNotePerson.name}</div>
-                    <div className="mt-1 text-sm text-[#6b4b4b]">
-                      {selectedPeopleNotePerson.email} • {getPersonGroup(selectedPeopleNotePerson)
-                        ? getPeopleDevelopmentGroupLabel(getPersonGroup(selectedPeopleNotePerson) as PeopleDevelopmentGroupId)
-                        : (displayLocale === 'ar' ? 'غير محدد' : 'Unassigned')}
-                    </div>
-                  </div>
-                </div>
-
-                {getPersonPersonalNotes(selectedPeopleNotePerson).length > 0 && (
-                  <div className="rounded-2xl border-2 border-[#ead9d0] bg-[#fffdf9] p-4">
-                    <div className="mb-3 text-base font-bold text-[#7a1717]/70 uppercase tracking-widest">
-                      {displayLocale === 'ar' ? 'آخر الملاحظات الشخصية' : 'Latest Personal Notes'}
-                    </div>
-                    <div className="space-y-2 max-h-44 overflow-y-auto">
-                      {getPersonPersonalNotes(selectedPeopleNotePerson).slice(0, 5).map(note => (
-                        <div
-                          key={`popup-person-note-${note.id}`}
-                          className={`rounded-xl border px-3 py-2 ${
-                            note.type === 'strength'
-                              ? 'bg-green-50 border-green-100 text-green-800'
-                              : 'bg-red-50 border-red-100 text-red-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2 text-xs font-black">
-                            <span>
-                              {note.type === 'strength'
-                                ? (displayLocale === 'ar' ? 'قوة' : 'Strength')
-                                : (displayLocale === 'ar' ? 'ضعف' : 'Weakness')}
-                            </span>
-                            <span>{note.date}</span>
-                          </div>
-                          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[#242424]">{note.text}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label className="text-base font-bold text-[#7a1717]/70 uppercase tracking-widest flex items-center gap-1 mb-2">
-                    <MessageSquare size={12} />
-                    {displayLocale === 'ar' ? 'نص الملاحظة' : 'Note'}
-                  </label>
-                  <textarea
-                    required
-                    rows={5}
-                    value={peopleNoteText}
-                    disabled={peopleNoteSaving}
-                    onChange={event => setPeopleNoteText(event.target.value)}
-                    placeholder={displayLocale === 'ar' ? 'اكتب الملاحظة هنا...' : 'Write the note here...'}
-                    className="w-full px-4 py-3 bg-[#fffdf9] border-2 border-[#ead9d0] rounded-xl focus:ring-2 focus:ring-[#7a1717]/25 focus:border-[#7a1717] outline-none text-base font-bold text-[#2b1717] placeholder:text-[#9b7b7b] resize-none disabled:opacity-60"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <button
-                    type="button"
-                    disabled={peopleNoteSaving}
-                    onClick={closePeopleNotePopup}
-                    className="py-3 bg-[#f4e8e2] text-[#7a1717] rounded-xl font-bold hover:bg-[#ead9d0] transition-all text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {displayLocale === 'ar' ? 'إغلاق' : 'Close'}
-                  </button>
-
-                  <button
-                    disabled={peopleNoteSaving || !peopleNoteText.trim()}
-                    type="submit"
-                    className="py-3 bg-[#7a1717] text-white rounded-xl font-bold shadow hover:bg-[#5e1010] transition-all flex items-center justify-center gap-2 text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {peopleNoteSaving ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
-                    ) : (
-                      <>
-                        <CheckCircle size={14} />
-                        {displayLocale === 'ar' ? 'حفظ الملاحظة' : 'Save Note'}
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {activePeopleAssignmentsPopupGroup && activePeopleAssignmentsPopupGroupConfig && (
-          <motion.div
-            key="people-assignments-history-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 px-3 py-4 backdrop-blur-md sm:px-6"
-            onClick={closePeopleAssignmentsPopup}
-            dir={dir}
-            style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}
-          >
-            <motion.div
-              key="people-assignments-history-panel"
-              initial={{ opacity: 0, scale: 0.94, y: 18 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.94, y: 18 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-              className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-[#ead9d0] bg-[#fffdf9] shadow-2xl"
-              onClick={event => event.stopPropagation()}
-            >
-              <div className="shrink-0 bg-[#7a1717] px-4 py-4 text-white sm:px-6 sm:py-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm font-black">
-                      <CalendarIcon size={16} />
-                      {displayLocale === 'ar' ? 'تقويم منشورات المجموعة' : 'Group Posts Calendar'}
-                    </div>
-                    <h3 className="text-2xl font-black leading-tight sm:text-3xl">
-                      {displayLocale === 'ar' ? activePeopleAssignmentsPopupGroupConfig.labelAr : activePeopleAssignmentsPopupGroupConfig.labelEn}
-                    </h3>
-                    <p className="mt-1 text-sm text-white/85">
-                      {displayLocale === 'ar'
-                        ? 'الخلفية مغلقة ومموّهة. مرّر داخل هذه النافذة فقط، أو أغلقها للرجوع للصفحة.'
-                        : 'The page behind is blocked and blurred. Scroll inside this popup only, or close it to return.'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closePeopleAssignmentsPopup}
-                    className="shrink-0 rounded-full bg-white/15 p-2 text-white transition-colors hover:bg-white/25"
-                    title={displayLocale === 'ar' ? 'إغلاق' : 'Close'}
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-                <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                  <section className="rounded-3xl border-2 border-[#ead9d0] bg-white p-4 shadow-sm">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => changePeopleAssignmentsPopupMonth(subMonths(peopleAssignmentsPopupMonth, 1))}
-                        className="rounded-2xl border border-[#ead9d0] bg-[#fff9f4] p-3 text-[#7a1717] transition-colors hover:bg-[#f8eeee]"
-                        title={displayLocale === 'ar' ? 'الشهر السابق' : 'Previous month'}
-                      >
-                        <ChevronLeft size={18} />
-                      </button>
-                      <div className="text-center">
-                        <div className="text-xl font-black text-[#7a1717]">
-                          {peopleAssignmentsPopupMonthLabel}
-                        </div>
-                        <div className="text-xs font-bold uppercase tracking-widest text-[#7a1717]/60">
-                          {displayLocale === 'ar' ? 'النقاط تعني وجود منشورات' : 'Dots indicate posts'}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => changePeopleAssignmentsPopupMonth(addMonths(peopleAssignmentsPopupMonth, 1))}
-                        className="rounded-2xl border border-[#ead9d0] bg-[#fff9f4] p-3 text-[#7a1717] transition-colors hover:bg-[#f8eeee]"
-                        title={displayLocale === 'ar' ? 'الشهر التالي' : 'Next month'}
-                      >
-                        <ChevronRight size={18} />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-black uppercase tracking-wider text-[#7a1717]/65 sm:text-xs">
-                      {peopleAssignmentsWeekdayLabels.map(dayLabel => (
-                        <div key={`people-history-weekday-${dayLabel}`} className="py-2">
-                          {dayLabel}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-7 gap-1 sm:gap-2">
-                      {Array.from({ length: peopleAssignmentsPopupStartPadding }).map((_, index) => (
-                        <div key={`people-history-empty-${index}`} className="min-h-[54px] rounded-2xl bg-stone-50/70 sm:min-h-[68px]" />
-                      ))}
-                      {peopleAssignmentsPopupMonthDays.map(day => {
-                        const dateKey = format(day, 'yyyy-MM-dd');
-                        const postsForDay = peopleAssignmentsPopupEntriesByDate[dateKey] || [];
-                        const hasPosts = postsForDay.length > 0;
-                        const isSelected = peopleAssignmentsPopupSelectedDate === dateKey;
-                        const isToday = dateKey === format(new Date(), 'yyyy-MM-dd');
-
-                        return (
-                          <button
-                            key={`people-history-day-${dateKey}`}
-                            type="button"
-                            disabled={!hasPosts}
-                            onClick={() => setPeopleAssignmentsPopupSelectedDate(dateKey)}
-                            className={`min-h-[54px] rounded-2xl border-2 p-1 text-center transition-all sm:min-h-[68px] sm:p-2 ${
-                              isSelected
-                                ? 'border-[#7a1717] bg-[#7a1717] text-white shadow-lg shadow-[#7a1717]/20'
-                                : hasPosts
-                                  ? 'border-[#d8aaaa] bg-[#fff9f4] text-[#7a1717] hover:-translate-y-0.5 hover:bg-[#f8eeee] hover:shadow-md'
-                                  : isToday
-                                    ? 'border-[#ead9d0] bg-white text-[#7a1717]/55'
-                                    : 'border-[#ead9d0] bg-white text-[#8f7777]/45'
-                            } disabled:cursor-default disabled:opacity-75`}
-                          >
-                            <div className="text-sm font-black sm:text-base">{format(day, 'd')}</div>
-                            {hasPosts && (
-                              <div className="mt-1 flex items-center justify-center gap-1">
-                                {Array.from({ length: Math.min(postsForDay.length, 3) }).map((_, dotIndex) => (
-                                  <span
-                                    key={`people-history-dot-${dateKey}-${dotIndex}`}
-                                    className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-[#7a1717]'}`}
-                                  />
-                                ))}
-                                {postsForDay.length > 3 && (
-                                  <span className="ms-0.5 text-[10px] font-black">+{postsForDay.length - 3}</span>
-                                )}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-
-                  <section className="rounded-3xl border-2 border-[#ead9d0] bg-white p-4 shadow-sm">
-                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <h4 className="text-xl font-black text-[#7a1717]">
-                          {peopleAssignmentsPopupSelectedDateLabel || (displayLocale === 'ar' ? 'اختر يوماً يحتوي على نقطة' : 'Select a dotted day')}
-                        </h4>
-                        <p className="mt-1 text-sm font-bold text-[#6b4b4b]">
-                          {displayLocale === 'ar'
-                            ? `${selectedPeopleAssignmentsPopupEntries.length} منشور في اليوم المحدد`
-                            : `${selectedPeopleAssignmentsPopupEntries.length} post(s) on the selected day`}
-                        </p>
-                      </div>
-                      <span className={`w-fit rounded-full border px-3 py-1 text-sm font-black ${activePeopleAssignmentsPopupGroupConfig.badgeClass}`}>
-                        {activePeopleAssignmentsPopupEntries.length} {displayLocale === 'ar' ? 'إجمالي' : 'total'}
-                      </span>
-                    </div>
-
-                    {!peopleAssignmentsPopupSelectedDate ? (
-                      <div className="rounded-2xl border border-[#ead9d0] bg-stone-50 p-6 text-center text-[#6b4b4b]">
-                        <CalendarIcon className="mx-auto mb-2 text-[#7a1717]" size={32} />
-                        {displayLocale === 'ar'
-                          ? 'لا توجد منشورات في هذا الشهر أو لم يتم اختيار يوم بعد.'
-                          : 'No posts in this month yet, or no day is selected.'}
-                      </div>
-                    ) : selectedPeopleAssignmentsPopupEntries.length === 0 ? (
-                      <div className="rounded-2xl border border-[#ead9d0] bg-stone-50 p-6 text-center text-[#6b4b4b]">
-                        {displayLocale === 'ar' ? 'لا توجد منشورات في هذا اليوم.' : 'No posts on this day.'}
-                      </div>
-                    ) : (
-                      <div className="max-h-[52vh] space-y-3 overflow-y-auto pe-1">
-                        {selectedPeopleAssignmentsPopupEntries.map(entry => (
-                          <article key={`people-history-popup-entry-${entry.id}`} className="rounded-2xl border border-[#ead9d0] bg-[#fffdf9] p-4">
-                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-black text-[#7a1717]/65">
-                              <span className="inline-flex items-center gap-1">
-                                <Clock size={13} />
-                                {entry.createdAtISO || entry.date}
-                              </span>
-                              <div className="flex flex-wrap items-center justify-end gap-2">
-                                <span>{entry.id}</span>
-                                <button
-                                  type="button"
-                                  disabled={peopleDevelopmentDeletingKey !== null}
-                                  onClick={() => handleDeletePeopleDevelopmentPost(entry)}
-                                  className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-black text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                  title={displayLocale === 'ar' ? 'حذف المنشور بالكامل' : 'Delete entire post'}
-                                >
-                                  {peopleDevelopmentDeletingKey === `post:${entry.id}` ? (
-                                    <Hourglass size={12} className="animate-spin" />
-                                  ) : (
-                                    <Trash2 size={12} />
-                                  )}
-                                  <span>{displayLocale === 'ar' ? 'حذف المنشور' : 'Delete post'}</span>
-                                </button>
-                              </div>
-                            </div>
-
-                            {entry.text && (
-                              <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#242424] sm:text-base">
-                                {entry.text}
-                              </p>
-                            )}
-
-                            {entry.attachments.length > 0 && (
-                              <div className="mt-3 space-y-2">
-                                <div className="text-xs font-black uppercase tracking-widest text-[#7a1717]/65">
-                                  {displayLocale === 'ar' ? 'الملفات' : 'Files'}
-                                </div>
-                                {entry.attachments.map((attachment, attachmentIndex) => (
-                                  <div
-                                    key={`people-history-popup-${entry.id}-attachment-${attachmentIndex}`}
-                                    className="flex items-center justify-between gap-3 rounded-xl border border-[#ead9d0] bg-[#fff9f4] px-3 py-2 text-xs font-black text-[#7a1717]"
-                                  >
-                                    <div className="min-w-0">
-                                      <div className="truncate">{attachment.name}</div>
-                                      <div className="mt-1 opacity-65">
-                                        {formatFileSize(attachment.size)} · Base64 PDF in Realtime Database
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      disabled={peopleDevelopmentDeletingKey !== null}
-                                      onClick={() => handleDeletePeopleDevelopmentAttachment(entry, attachmentIndex)}
-                                      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                      title={displayLocale === 'ar' ? 'إزالة هذا الملف' : 'Remove this file'}
-                                    >
-                                      {peopleDevelopmentDeletingKey === `attachment:${entry.id}:${attachmentIndex}` ? (
-                                        <Hourglass size={12} className="animate-spin" />
-                                      ) : (
-                                        <Trash2 size={12} />
-                                      )}
-                                      <span>{displayLocale === 'ar' ? 'إزالة' : 'Remove'}</span>
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
 
       </div>
