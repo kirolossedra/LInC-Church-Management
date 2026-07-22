@@ -70,6 +70,12 @@ import {
 import {
   buildPeopleDevelopmentAssignmentNotificationEmailHtml,
 } from './email/peopleDevelopmentEmail';
+import type {
+  Availability,
+  Unavailability,
+  AvailabilityForm,
+  UnavailabilityForm,
+} from './calendar/calendar.types';
 
 
 
@@ -563,24 +569,6 @@ interface Participant {
   sourceKeys: string[];
 }
 
-interface Availability {
-  id: string;
-  date: string;
-  startTime?: string;
-  endTime?: string;
-  reason?: string;
-  allDay?: boolean;
-}
-
-interface Unavailability {
-  id: string;
-  date: string;
-  startTime?: string;
-  endTime?: string;
-  reason?: string;
-  allDay?: boolean;
-}
-
 interface NextGenVerse {
   reference: string;
   text: string;
@@ -600,26 +588,6 @@ interface NextGenQuestion {
   netVotes: number;
   createdAt: number;
   updatedAt: number;
-}
-
-interface AvailabilityForm {
-  mode: 'single' | 'multiple';
-  date: string;
-  startDate: string;
-  endDate: string;
-  selectedWeekdays: number[];
-  startTime: string;
-  endTime: string;
-  reason: string;
-  allDay: boolean;
-}
-
-interface UnavailabilityForm {
-  date: string;
-  startTime: string;
-  endTime: string;
-  reason: string;
-  allDay: boolean;
 }
 
 export default function PastorDashboard() {
