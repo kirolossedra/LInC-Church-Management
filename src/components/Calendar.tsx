@@ -5,11 +5,10 @@ import { ref, onValue, update, push, remove } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, IdCard, MessageSquare, BarChart3 } from 'lucide-react';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, IdCard, MessageSquare, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import PageTitle from './PageTitle';
 import { useI18n } from '../i18n';
-import OpenAI from 'openai';
 
 const SLOT_BLOCK_START = 9;
 const SLOT_BLOCK_END = 20;
@@ -1069,12 +1068,6 @@ export default function Calendar() {
     reason: '',
     allDay: true,
   });
-
-  const [showAiAssistant, setShowAiAssistant] = useState(false);
-  const [aiMessages, setAiMessages] = useState<{ role: string; content: string; timestamp: Date }[]>([]);
-  const [aiInput, setAiInput] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-
 
   useEffect(() => {
     const formRef = ref(database, 'form/');
@@ -2370,149 +2363,6 @@ ${safeFullReport}
     }
   };
 
-  const handleAiAssistant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiInput.trim()) return;
-
-    const userMessage = aiInput.trim();
-    setAiInput('');
-    setAiMessages(prev => [...prev, { role: 'user', content: userMessage, timestamp: new Date() }]);
-    setAiLoading(true);
-
-    try {
-      const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
-      if (!OPENROUTER_API_KEY) {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: 'AI is not configured. Please add VITE_OPENROUTER_API_KEY to your .env file.', timestamp: new Date() }]);
-        return;
-      }
-
-      const calendarContext = {
-        meetings: meetings.map(m => ({
-          title: getMeetingDisplayTitle(m),
-          date: m.date,
-          startTime: m.startTime,
-          endTime: m.endTime,
-          requesterEmail: getMeetingRequestEmail(m),
-          requestReason: getMeetingRequestReason(m),
-        })),
-        availability: availability.map(a => ({
-          id: a.id,
-          date: a.date,
-          startTime: a.startTime,
-          endTime: a.endTime,
-          allDay: a.allDay,
-          reason: a.reason,
-        })),
-        unavailability: unavailability.map(u => ({
-          id: u.id,
-          date: u.date,
-          startTime: u.startTime,
-          endTime: u.endTime,
-          allDay: u.allDay,
-          reason: u.reason,
-        })),
-        pendingRequests: meetingRequests.filter(r => r.status === 'pending').map(r => ({
-          id: r.id,
-          name: r.name,
-          email: r.email,
-          date: r.date,
-          startTime: r.startTime,
-          endTime: r.endTime,
-          reason: r.reason,
-        })),
-      };
-
-      const systemPrompt = `You are an AI assistant for a church pastor to manage their calendar.
-
-The database scheduling model is:
-- availability/ opens bookable time.
-- unavailability/ closes time and overrides availability.
-- meetings/ contains confirmed meetings.
-- meetingRequests/ contains pending requests.
-
-You can help with:
-1. Adding availability - say "I'm available on [date]" or "make [date] available from [time] to [time]"
-2. Adding unavailability - say "I'm unavailable on [date]" or "block [date] from [time] to [time]"
-3. Accepting meeting requests - say "accept request from [name]" or "accept request #[id]"
-4. Rejecting meeting requests - say "reject request from [name]" or "reject request #[id]"
-5. Viewing schedule - say "show my schedule" or "what's my calendar look like"
-
-Current calendar context:
-${JSON.stringify(calendarContext, null, 2)}
-
-When the user wants to add availability, respond with: ACTION:ADD_AVAILABILITY|date|startTime|endTime|reason
-When the user wants to add unavailability, respond with: ACTION:ADD_UNAVAILABILITY|date|startTime|endTime|reason
-When the user wants to accept a request, respond with: ACTION:ACCEPT_REQUEST|requestId
-When the user wants to reject a request, respond with: ACTION:REJECT_REQUEST|requestId
-
-Otherwise, provide a helpful response about their calendar.`;
-
-      const client = new OpenAI({
-        baseURL: 'https://openrouter.ai/api/v1',
-        apiKey: OPENROUTER_API_KEY,
-        dangerouslyAllowBrowser: true,
-      });
-
-      const apiResponse = await client.chat.completions.create({
-        model: 'nvidia/nemotron-3-super-120b-a12b:free',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ] as any,
-        reasoning: { enabled: true },
-      } as any);
-
-      const aiResponse = apiResponse.choices?.[0]?.message?.content || 'I could not process that request.';
-
-      if (aiResponse.startsWith('ACTION:')) {
-        const [action, ...params] = aiResponse.split('|');
-
-        if (action === 'ACTION:ADD_AVAILABILITY' && params.length >= 3) {
-          const [date, startTime, endTime, reason = ''] = params;
-          const { push } = await import('firebase/database');
-          await push(ref(database, 'availability/'), {
-            date,
-            startTime,
-            endTime,
-            reason,
-            allDay: startTime === '09:00' && endTime === '20:00',
-            updatedAt: Date.now(),
-          });
-          setAiMessages(prev => [...prev, { role: 'assistant', content: `✅ Added availability for ${date}${reason ? ` (${reason})` : ''}.`, timestamp: new Date() }]);
-        } else if (action === 'ACTION:ADD_UNAVAILABILITY' && params.length >= 3) {
-          const [date, startTime, endTime, reason = ''] = params;
-          const { push } = await import('firebase/database');
-          await push(ref(database, 'unavailability/'), {
-            date,
-            startTime,
-            endTime,
-            reason,
-            allDay: startTime === '00:00' && endTime === '23:59',
-            updatedAt: Date.now(),
-          });
-          setAiMessages(prev => [...prev, { role: 'assistant', content: `✅ Added unavailability for ${date}${reason ? ` (${reason})` : ''}.`, timestamp: new Date() }]);
-        } else if (action === 'ACTION:ACCEPT_REQUEST' && params[0]) {
-          const requestId = params[0];
-          await handleRequestStatus(requestId, 'accepted');
-          setAiMessages(prev => [...prev, { role: 'assistant', content: '✅ Meeting request accepted. A meeting has been created and the EmailJS confirmation was sent.', timestamp: new Date() }]);
-        } else if (action === 'ACTION:REJECT_REQUEST' && params[0]) {
-          const requestId = params[0];
-          await handleRequestStatus(requestId, 'rejected');
-          setAiMessages(prev => [...prev, { role: 'assistant', content: '✅ Meeting request rejected. The requester has been notified.', timestamp: new Date() }]);
-        } else {
-          setAiMessages(prev => [...prev, { role: 'assistant', content: aiResponse, timestamp: new Date() }]);
-        }
-      } else {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: aiResponse, timestamp: new Date() }]);
-      }
-    } catch (err) {
-      console.error('AI assistant error:', err);
-      setAiMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.', timestamp: new Date() }]);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const handleRequestStatus = async (id: string, status: 'accepted' | 'rejected') => {
     setLoading(true);
 
@@ -3702,25 +3552,6 @@ Otherwise, provide a helpful response about their calendar.`;
           >
             <XCircle size={16} />
             <span>{t('calendar.markUnavailable')}</span>
-          </button>
-          <button
-            onClick={() => {
-              setShowAiAssistant(!showAiAssistant);
-              if (!showAiAssistant && aiMessages.length === 0) {
-                const pendingCount = meetingRequests.filter(r => r.status === 'pending').length;
-                setAiMessages([
-                  {
-                    role: 'assistant',
-                    content: `Hi Pastor! I'm your AI calendar assistant. You have ${pendingCount} pending request${pendingCount !== 1 ? 's' : ''}.\n\nI can help you:\n• Add availability\n• Add unavailability\n• Accept/reject meeting requests\n• View your schedule\n\nWhat would you like to do?`,
-                    timestamp: new Date(),
-                  },
-                ]);
-              }
-            }}
-            className="pastor-main-button flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
-          >
-            <Bot size={16} />
-            <span>{t('calendar.aiAssistant')}</span>
           </button>
         </div>
       </div>
@@ -6101,80 +5932,6 @@ Otherwise, provide a helpful response about their calendar.`;
       </AnimatePresence>
 
 
-      {showAiAssistant && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
-            <div className="p-6 border-b flex justify-between items-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                  <Bot size={20} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold">{t('calendar.pastorAiAssistant')}</h3>
-                  <p className="text-xs text-white/80">{t('calendar.manageCalendarNaturalLanguage')}</p>
-                </div>
-              </div>
-              <button onClick={() => setShowAiAssistant(false)} className="p-2 hover:bg-white/20 rounded-full transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
-              {aiMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 whitespace-pre-wrap ${
-                    msg.role === 'user'
-                      ? 'bg-purple-600 text-white rounded-br-sm'
-                      : 'bg-white text-gray-800 shadow-sm rounded-bl-sm border border-gray-100'
-                  }`}>
-                    {msg.role === 'assistant' && (
-                      <div className="flex items-center gap-2 mb-1">
-                        <Bot size={12} className="text-purple-500" />
-                        <span className="text-xs font-bold text-purple-600">{t('calendar.aiAssistant')}</span>
-                      </div>
-                    )}
-                    <p className="text-sm">{msg.content}</p>
-                    <p className={`text-[10px] mt-1 ${msg.role === 'user' ? 'text-purple-200' : 'text-gray-400'}`}>
-                      {format(msg.timestamp, 'h:mm a', { locale: dateLocale })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-
-              {aiLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-100 rounded-bl-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-purple-600"></div>
-                      <span className="text-sm text-gray-500">AI is thinking...</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t bg-white">
-              <form onSubmit={handleAiAssistant} className="flex gap-3">
-                <input
-                  type="text"
-                  value={aiInput}
-                  onChange={e => setAiInput(e.target.value)}
-                  placeholder="e.g., 'I'm available next Friday' or 'block Friday afternoon'"
-                  className="flex-1 px-4 py-3 bg-gray-100 border-none rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm"
-                  disabled={aiLoading}
-                />
-                <button
-                  type="submit"
-                  disabled={aiLoading || !aiInput.trim()}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send size={16} />
-                </button>
-              </form>
-            </div>
-          </motion.div>
-        </div>
-      )}
       </div>
     </>
   );
