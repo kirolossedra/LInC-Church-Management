@@ -21,7 +21,7 @@ import type {
 
 type FirebaseErrorHandler = (error: Error) => void;
 
-function removeId<T extends { id: string }>(
+function removeId<T extends { id?: string }>(
   value: T,
 ): Omit<T, 'id'> {
   const { id: _id, ...data } = value;
@@ -222,8 +222,16 @@ export async function updateMeeting(
 export async function saveMeeting(
   meeting: Meeting,
 ): Promise<void> {
+  const meetingId = meeting.id;
+
+  if (!meetingId) {
+    throw new Error(
+      'Cannot save a meeting without an ID.',
+    );
+  }
+
   await update(
-    ref(database, `meetings/${meeting.id}`),
+    ref(database, `meetings/${meetingId}`),
     removeId(meeting),
   );
 }
