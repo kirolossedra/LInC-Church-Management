@@ -76,6 +76,15 @@ import type {
   AvailabilityForm,
   UnavailabilityForm,
 } from './calendar/calendar.types';
+import {
+  buildTimeOptions,
+  hourToLabel,
+  hourToTime,
+  slotOverlaps,
+  timeRangeToLabel,
+  timeToHour,
+  timeToLabel,
+} from './calendar/calendar.utils';
 
 
 
@@ -96,55 +105,9 @@ const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
-function timeToHour(time?: string): number {
-  if (!time) return 0;
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours + (minutes || 0) / 60;
-}
-
-function hourToTime(hourValue: number): string {
-  const hours = Math.floor(hourValue);
-  const minutes = Math.round((hourValue - hours) * 60);
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-}
-
-function hourToLabel(hourValue: number, locale: 'en' | 'ar'): string {
-  const isAr = locale === 'ar';
-  const hours = Math.floor(hourValue);
-  const minutes = Math.round((hourValue - hours) * 60);
-  const period = hours >= 12 ? (isAr ? 'م' : 'PM') : (isAr ? 'ص' : 'AM');
-  const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-
-  return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
-}
-
-function timeToLabel(time: string | undefined, locale: 'en' | 'ar'): string {
-  return hourToLabel(timeToHour(time || '00:00'), locale);
-}
-
-function timeRangeToLabel(startTime: string | undefined, endTime: string | undefined, locale: 'en' | 'ar'): string {
-  return `${timeToLabel(startTime, locale)} - ${timeToLabel(endTime, locale)}`;
-}
-
-
-function buildTimeOptions(startHour: number, endHour: number, step: number = 0.5): { value: string; hour: number }[] {
-  const options: { value: string; hour: number }[] = [];
-
-  for (let hour = startHour; hour <= endHour; hour += step) {
-    const roundedHour = Math.round(hour * 100) / 100;
-    options.push({ value: hourToTime(roundedHour), hour: roundedHour });
-  }
-
-  return options;
-}
-
 const MEETING_TIME_OPTIONS = buildTimeOptions(0, 23.5);
 const BOOKING_WINDOW_TIME_OPTIONS = buildTimeOptions(SLOT_BLOCK_START, SLOT_BLOCK_END);
 const FULL_DAY_TIME_OPTIONS = buildTimeOptions(0, 23.5);
-
-function slotOverlaps(startA: number, endA: number, startB: number, endB: number): boolean {
-  return startA < endB && endA > startB;
-}
 
 function escapeHtml(value: string): string {
   return value
