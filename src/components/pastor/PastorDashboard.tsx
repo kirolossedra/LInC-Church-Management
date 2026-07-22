@@ -45,6 +45,14 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import PageTitle from '../PageTitle';
 import { useI18n } from '../../i18n';
+import type {
+  PeopleDevelopmentGroupId,
+  PeoplePersonalNoteType,
+  PeopleDevelopmentMember,
+  PeopleDevelopmentAttachment,
+  PeopleDevelopmentEntry,
+  PeoplePersonalNote,
+} from './people-development/peopleDevelopment.types';
 
 
 
@@ -66,19 +74,6 @@ const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
 const MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES = 1024 * 1024;
-
-type PeopleDevelopmentGroupId =
-  | 'pastors'
-  | 'prophets'
-  | 'evangelists'
-  | 'teachers'
-  | 'apostles'
-  | 'helpers'
-  | 'mercy'
-  | 'facilitators'
-  | 'services'
-  | 'giving';
-type PeoplePersonalNoteType = 'strength' | 'weakness';
 
 const PEOPLE_DEVELOPMENT_ROOT = 'peopleDevelopment';
 
@@ -884,55 +879,6 @@ interface Participant {
   peopleGroup?: PeopleDevelopmentGroupId | '';
   sourcePath: string;
   sourceKeys: string[];
-}
-
-interface PeopleDevelopmentMember {
-  memberKey: string;
-  identifier: string;
-  fullName: string;
-  email: string;
-  group: PeopleDevelopmentGroupId | '';
-  sourcePath?: string;
-  sourceKeys?: string[];
-  updatedAt?: number;
-  updatedAtISO?: string;
-}
-
-interface PeopleDevelopmentAttachment {
-  name: string;
-  type: string;
-  size: number;
-  encoding: 'base64';
-  storage: 'realtimeDatabase';
-  base64: string;
-  uploadedAt: number;
-  uploadedAtISO: string;
-}
-
-interface PeopleDevelopmentEntry {
-  id: string;
-  group: PeopleDevelopmentGroupId;
-  text: string;
-  date: string;
-  createdAt: number;
-  createdAtISO: string;
-  attachments: PeopleDevelopmentAttachment[];
-}
-
-interface PeoplePersonalNote {
-  id: string;
-  identifier: string;
-  memberKey: string;
-  fullName: string;
-  email: string;
-  group: PeopleDevelopmentGroupId | '';
-  groupLabel: string;
-  type: PeoplePersonalNoteType;
-  text: string;
-  date: string;
-  createdAt: number;
-  createdAtISO: string;
-  source: string;
 }
 
 interface Availability {
