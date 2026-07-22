@@ -4,8 +4,7 @@ import { ref, onValue, push } from 'firebase/database';
 import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '../i18n';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, startOfDay, isBefore } from 'date-fns';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Ban, Bot, X } from 'lucide-react';
-import AIBookingAssistant from '../components/AIBookingAssistant';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Ban, X } from 'lucide-react';
 import { sendEmailViaEmailJS } from '../services/gmail';
 
 const BUSINESS_START = 9;
@@ -72,7 +71,6 @@ export default function BookMeeting({ isOpen, onClose, preSelectedDate }: BookMe
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [showAi, setShowAi] = useState(false);
   const [isPastDay, setIsPastDay] = useState(false);
   const [pastors, setPastors] = useState<string[]>([]);
 
@@ -364,13 +362,6 @@ export default function BookMeeting({ isOpen, onClose, preSelectedDate }: BookMe
           </h1>
           <p className="text-gray-500 text-sm mt-1">{t('booking.pageDesc')}</p>
         </div>
-        <button
-          onClick={() => setShowAi(true)}
-          className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-purple-200"
-        >
-          <Bot size={16} />
-          {t('booking.aiAssistant')}
-        </button>
       </div>
 
       <div className="flex flex-wrap justify-center gap-4 text-xs font-bold">
@@ -550,7 +541,6 @@ export default function BookMeeting({ isOpen, onClose, preSelectedDate }: BookMe
         </motion.div>
       )}
 
-      <AIBookingAssistant isOpen={showAi} onClose={() => setShowAi(false)} />
     </div>
   );
 
