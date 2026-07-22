@@ -7,8 +7,8 @@ import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
 import { useI18n } from '../i18n';
-import fiveServicePathwaysYaml from './five-service-pathways.yml?raw';
-import spiritualGiftsDiscoveryYaml from './spiritual-gifts-discovery.yml?raw';
+import fiveServicePathwaysYaml from './forms/five-service-pathways.yml?raw';
+import spiritualGiftsDiscoveryYaml from './forms/spiritual-gifts-discovery.yml?raw';
 
 const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
