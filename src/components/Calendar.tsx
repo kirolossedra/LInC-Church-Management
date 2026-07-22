@@ -5,19 +5,8 @@ import { ref, onValue, update, push, remove } from 'firebase/database';
 import type { Meeting, MeetingRequest } from '../types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Wand2, LogOut, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, IdCard, MessageSquare, BarChart3 } from 'lucide-react';
+import { Plus, Trash2, Video, MapPin, Clock, X, ChevronLeft, ChevronRight, Send, Users, Check, ChevronDown, Calendar as CalendarIcon, CheckCircle, XCircle, Hourglass, Mail, User, Bot, ThumbsDown, ThumbsUp, Trophy, Search, UserPlus, IdCard, MessageSquare, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  createCalendarMeetLink,
-  generatePlaceholderLink,
-  startGoogleAuth,
-  handleOAuthCallback,
-  getStoredTokens,
-  storeTokens,
-  clearTokens,
-  sendGmailEmail,
-  type GmailTokens,
-} from '../services/gmail';
 import PageTitle from './PageTitle';
 import { useI18n } from '../i18n';
 import OpenAI from 'openai';
@@ -968,7 +957,6 @@ export default function Calendar() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   const [loading, setLoading] = useState(false);
-  const [googleTokens, setGoogleTokens] = useState<GmailTokens | null>(() => getStoredTokens());
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [showParticipantDropdown, setShowParticipantDropdown] = useState(false);
@@ -1087,13 +1075,6 @@ export default function Calendar() {
   const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
-  useEffect(() => {
-    const tokens = handleOAuthCallback();
-    if (tokens && !tokens.error) {
-      storeTokens(tokens);
-      setGoogleTokens(tokens);
-    }
-  }, []);
 
   useEffect(() => {
     const formRef = ref(database, 'form/');
@@ -1999,39 +1980,88 @@ ${safeFullReport}
   };
 
   const sendEmails = async (meetingData: { title: string; date: string; startTime: string; endTime: string; location: string; meetLink: string }) => {
-    if (selectedParticipants.length === 0 || !googleTokens) return true;
+    if (selectedParticipants.length === 0) return true;
 
-    const selected = participants.filter(p => selectedParticipants.includes(p.id));
+    const selected = participants.filter(participant => selectedParticipants.includes(participant.id));
+    let allSucceeded = true;
 
-    for (const p of selected) {
-      if (!p.email) continue;
+    for (const participant of selected) {
+      if (!isUsableEmail(participant.email)) continue;
+
+      const participantName = participant.name || (displayLocale === 'ar' ? 'المشارك' : 'Participant');
+      const meetingDate = format(parseISO(meetingData.date), 'EEEE, MMMM d, yyyy', { locale: dateLocale });
+      const meetingTime = timeRangeToLabel(meetingData.startTime, meetingData.endTime, displayLocale);
+      const safeParticipantName = escapeHtml(participantName);
+      const safeMeetingTitle = escapeHtml(meetingData.title);
+      const safeMeetingDate = escapeHtml(meetingDate);
+      const safeMeetingTime = escapeHtml(meetingTime);
+      const safeMeetingLocation = escapeHtml(meetingData.location || (displayLocale === 'ar' ? 'يحدد لاحقاً' : 'TBA'));
+      const safeMeetingLink = escapeHtml(meetingData.meetLink || '');
+      const onlineLinkHtml = meetingData.meetLink
+        ? `<p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'رابط الاجتماع عبر الإنترنت' : 'Online meeting link'}:</strong> <a href="${safeMeetingLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetingLink}</a></p>`
+        : '';
 
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #f5f4f0; border-radius: 22px;">
           <div style="background: #8b1e1e; color: white; padding: 16px; border-radius: 14px; text-align: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; font-size: 20px;">LINC Church Meeting Invitation</h1>
+            <h1 style="margin: 0; font-size: 20px;">${displayLocale === 'ar' ? 'دعوة لاجتماع LINC' : 'LINC Meeting Invitation'}</h1>
           </div>
-          <p style="color: #333; font-size: 15px;">Dear ${p.name},</p>
-          <p style="color: #555; font-size: 14px;">You are invited to attend the following meeting:</p>
+          <p style="color: #333; font-size: 15px;">${displayLocale === 'ar' ? `مرحباً ${safeParticipantName}،` : `Dear ${safeParticipantName},`}</p>
+          <p style="color: #555; font-size: 14px;">${displayLocale === 'ar' ? 'تمت دعوتك لحضور الاجتماع التالي:' : 'You are invited to attend the following meeting:'}</p>
           <div style="background: white; padding: 16px; border-radius: 14px; border: 1px solid #e5e5e5; margin-bottom: 16px;">
-            <p style="margin: 4px 0; font-size: 14px;"><strong>Meeting:</strong> ${meetingData.title}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>Date:</strong> ${format(parseISO(meetingData.date), 'EEEE, MMMM d, yyyy', { locale: dateLocale })}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>Time:</strong> ${timeRangeToLabel(meetingData.startTime, meetingData.endTime, displayLocale)}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>Location:</strong> ${meetingData.location || 'TBA'}</p>
-            ${meetingData.meetLink ? `<p style="margin: 4px 0; font-size: 14px;"><strong>Google Meet:</strong> <a href="${meetingData.meetLink}">${meetingData.meetLink}</a></p>` : ''}
+            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'الاجتماع' : 'Meeting'}:</strong> ${safeMeetingTitle}</p>
+            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'التاريخ' : 'Date'}:</strong> ${safeMeetingDate}</p>
+            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'الوقت' : 'Time'}:</strong> ${safeMeetingTime}</p>
+            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'المكان' : 'Location'}:</strong> ${safeMeetingLocation}</p>
+            ${onlineLinkHtml}
           </div>
-          <p style="color: #999; font-size: 12px; margin-top: 24px;">We look forward to seeing you there.</p>
+          <p style="color: #999; font-size: 12px; margin-top: 24px;">${displayLocale === 'ar' ? 'نتطلع إلى رؤيتك هناك.' : 'We look forward to seeing you there.'}</p>
         </div>
       `.trim();
 
       try {
-        await sendGmailEmail(googleTokens, p.email, `Meeting Invitation: ${meetingData.title}`, htmlBody);
-      } catch (err) {
-        console.error(`Failed to send email to ${p.email}:`, err);
+        const response = await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          {
+            to_email: participant.email,
+            subject: displayLocale === 'ar'
+              ? `دعوة لاجتماع: ${meetingData.title}`
+              : `Meeting Invitation: ${meetingData.title}`,
+            fullName: participantName,
+            message_html: htmlBody,
+            reply_to: participant.email,
+          },
+          EMAILJS_PUBLIC_KEY,
+        );
+
+        await push(ref(database, 'emailJsSendLogs/'), {
+          recipientEmail: participant.email,
+          subject: displayLocale === 'ar'
+            ? `دعوة لاجتماع: ${meetingData.title}`
+            : `Meeting Invitation: ${meetingData.title}`,
+          fullName: participantName,
+          sentUsing: 'EmailJS',
+          serviceId: EMAILJS_SERVICE_ID,
+          templateId: EMAILJS_TEMPLATE_ID,
+          source: 'calendarParticipantInvitation',
+          meetingDate: meetingData.date,
+          meetingStartTime: meetingData.startTime,
+          meetingEndTime: meetingData.endTime,
+          sentAt: Date.now(),
+          sentAtISO: new Date().toISOString(),
+          emailJsResponse: {
+            status: response.status,
+            text: response.text,
+          },
+        });
+      } catch (error) {
+        allSucceeded = false;
+        console.error(`Failed to send meeting invitation to ${participant.email}:`, error);
       }
     }
 
-    return true;
+    return allSucceeded;
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -2519,16 +2549,6 @@ Otherwise, provide a helpful response about their calendar.`;
         return;
       }
 
-      let meetLink = generatePlaceholderLink();
-
-      if (googleTokens) {
-        try {
-          const created = await createCalendarMeetLink(googleTokens, `${t('calendar.meetingWith')} ${req.name}`, req.date, req.startTime, req.endTime);
-          meetLink = created.meetLink;
-        } catch (err) {
-          console.error('Failed to create real Meet link, using placeholder:', err);
-        }
-      }
 
       const confirmationTimestamp = Date.now();
       const meetingData: Record<string, any> = {
@@ -2537,7 +2557,7 @@ Otherwise, provide a helpful response about their calendar.`;
         startTime: req.startTime,
         endTime: req.endTime,
         location: '',
-        meetLink,
+        meetLink: '',
         type: 'counseling',
         participantIds: [],
         requestName: req.name,
@@ -3559,7 +3579,7 @@ Otherwise, provide a helpful response about their calendar.`;
       <div className="pastor-calendar-ui min-h-screen space-y-8 px-4 py-6" style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }} dir={dir}>
       <PageTitle
         title={t('calendar.title')}
-        subtitle={t('calendar.subtitle')}
+        subtitle={displayLocale === 'ar' ? 'إدارة الاجتماعات والإتاحة وطلبات الحجز وإشعارات المشاركين' : 'Manage meetings, availability, booking requests, and participant notifications'}
         icon={<CalendarIcon size={22} />}
       />
 
@@ -3575,29 +3595,6 @@ Otherwise, provide a helpful response about their calendar.`;
             <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft size={20} /></button>
             <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight size={20} /></button>
           </div>
-          {googleTokens ? (
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-2 text-green-700 font-semibold bg-green-50 px-4 py-2 rounded-full border border-green-100 text-sm">
-                <Video size={14} />
-                {t('calendar.googleConnected')}
-              </span>
-              <button
-                onClick={() => { clearTokens(); setGoogleTokens(null); }}
-                className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                title={t('calendar.disconnectGoogle')}
-              >
-                <LogOut size={16} />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={startGoogleAuth}
-              className="pastor-main-button flex items-center gap-2 bg-[#7a1717] hover:bg-[#5e1010] text-white px-6 py-3 rounded-xl font-bold shadow transition-colors"
-            >
-              <Video size={16} />
-              {t('calendar.connectGoogle')}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setShowPeopleDevelopment(!showPeopleDevelopment)}
@@ -5374,56 +5371,18 @@ Otherwise, provide a helpful response about their calendar.`;
               )}
 
               <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.meetLink')}</label>
-                  <div className="flex gap-4">
-                    {googleTokens ? (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setLoading(true);
-                          try {
-                            const { meetLink } = await createCalendarMeetLink(googleTokens, newMeeting.title || t('calendar.meeting'), newMeeting.date || '', newMeeting.startTime || '', newMeeting.endTime || '');
-                            setNewMeeting(p => ({ ...p, meetLink }));
-                          } catch (err: any) {
-                            alert(err.message || t('calendar.failedMeet'));
-                            setGoogleTokens(null);
-                          } finally {
-                            setLoading(false);
-                          }
-                        }}
-                        className="flex items-center gap-1 text-[10px] font-bold text-green-600 hover:underline"
-                        disabled={loading}
-                      >
-                        <Wand2 size={10} />
-                        {t('calendar.createMeet')}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={startGoogleAuth}
-                        className="flex items-center gap-1 text-[10px] font-bold text-amber-600 hover:underline"
-                      >
-                        <Wand2 size={10} />
-                        {t('calendar.authForMeet')}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const link = generatePlaceholderLink();
-                        setNewMeeting(p => ({ ...p, meetLink: link }));
-                      }}
-                      className="flex items-center gap-1 text-[10px] font-bold text-[#7a1717] hover:underline"
-                    >
-                      <Wand2 size={10} />
-                      {t('calendar.genFake')}
-                    </button>
-                  </div>
-                </div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                  {displayLocale === 'ar' ? 'رابط الاجتماع عبر الإنترنت (اختياري)' : 'Online Meeting Link (Optional)'}
+                </label>
                 <div className="relative">
                   <Video className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input type="url" placeholder="https://meet.google.com/..." className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.meetLink} onChange={e => setNewMeeting(p => ({ ...p, meetLink: e.target.value }))} />
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    className="w-full pl-12 pr-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none"
+                    value={newMeeting.meetLink}
+                    onChange={event => setNewMeeting(previous => ({ ...previous, meetLink: event.target.value }))}
+                  />
                 </div>
               </div>
 
