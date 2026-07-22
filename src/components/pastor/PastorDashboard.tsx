@@ -53,6 +53,23 @@ import type {
   PeopleDevelopmentEntry,
   PeoplePersonalNote,
 } from './people-development/peopleDevelopment.types';
+import {
+  MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
+  PEOPLE_DEVELOPMENT_GROUPS,
+  PEOPLE_DEVELOPMENT_ROOT,
+} from './people-development/peopleDevelopment.constants';
+import {
+  extractPeopleDevelopmentGroup,
+  formatFileSize,
+  getPeopleDevelopmentStaticGroupLabel,
+  isUsableEmail,
+  normalizePeopleDevelopmentGroup,
+  normalizePeoplePersonalNoteType,
+  readFileAsBase64,
+} from './people-development/peopleDevelopment.utils';
+import {
+  buildPeopleDevelopmentAssignmentNotificationEmailHtml,
+} from './email/peopleDevelopmentEmail';
 
 
 
@@ -72,134 +89,6 @@ const SLOT_BLOCK_DURATION = 0.5;
 const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
-
-const MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES = 1024 * 1024;
-
-const PEOPLE_DEVELOPMENT_ROOT = 'peopleDevelopment';
-
-const PEOPLE_DEVELOPMENT_GROUPS: {
-  id: PeopleDevelopmentGroupId;
-  labelEn: string;
-  labelAr: string;
-  descriptionEn: string;
-  descriptionAr: string;
-  cardClass: string;
-  softClass: string;
-  buttonClass: string;
-  badgeClass: string;
-}[] = [
-  {
-    id: 'pastors',
-    labelEn: 'Pastors',
-    labelAr: 'الرعاة',
-    descriptionEn: 'Care, shepherding, and spiritual follow-up',
-    descriptionAr: 'رعاية، متابعة، واهتمام روحي',
-    cardClass: 'bg-rose-50 border-rose-200 text-rose-800',
-    softClass: 'bg-rose-50 border-rose-100 text-rose-800',
-    buttonClass: 'bg-rose-700 hover:bg-rose-800 text-white',
-    badgeClass: 'bg-rose-100 text-rose-800 border-rose-200',
-  },
-  {
-    id: 'prophets',
-    labelEn: 'Prophets',
-    labelAr: 'الأنبياء',
-    descriptionEn: 'Discernment, direction, and spiritual clarity',
-    descriptionAr: 'تمييز، توجيه، ووضوح روحي',
-    cardClass: 'bg-purple-50 border-purple-200 text-purple-800',
-    softClass: 'bg-purple-50 border-purple-100 text-purple-800',
-    buttonClass: 'bg-purple-700 hover:bg-purple-800 text-white',
-    badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
-  },
-  {
-    id: 'evangelists',
-    labelEn: 'Evangelists',
-    labelAr: 'المبشرون',
-    descriptionEn: 'Outreach, invitation, and sharing faith',
-    descriptionAr: 'خدمة خارجية، دعوة، ومشاركة الإيمان',
-    cardClass: 'bg-amber-50 border-amber-200 text-amber-800',
-    softClass: 'bg-amber-50 border-amber-100 text-amber-800',
-    buttonClass: 'bg-amber-600 hover:bg-amber-700 text-white',
-    badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
-  },
-  {
-    id: 'teachers',
-    labelEn: 'Teachers',
-    labelAr: 'المعلمون',
-    descriptionEn: 'Teaching, explaining, and grounding people in truth',
-    descriptionAr: 'تعليم، شرح، وتثبيت الناس في الحق',
-    cardClass: 'bg-indigo-50 border-indigo-200 text-indigo-800',
-    softClass: 'bg-indigo-50 border-indigo-100 text-indigo-800',
-    buttonClass: 'bg-indigo-700 hover:bg-indigo-800 text-white',
-    badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-  },
-  {
-    id: 'apostles',
-    labelEn: 'Apostles',
-    labelAr: 'الرسل',
-    descriptionEn: 'Building, sending, and starting new work',
-    descriptionAr: 'بناء، إرسال، وبدء أعمال جديدة',
-    cardClass: 'bg-sky-50 border-sky-200 text-sky-800',
-    softClass: 'bg-sky-50 border-sky-100 text-sky-800',
-    buttonClass: 'bg-sky-700 hover:bg-sky-800 text-white',
-    badgeClass: 'bg-sky-100 text-sky-800 border-sky-200',
-  },
-  {
-    id: 'helpers',
-    labelEn: 'Helpers',
-    labelAr: 'المساعدون',
-    descriptionEn: 'Care, support, and practical service',
-    descriptionAr: 'رعاية، دعم، وخدمة عملية',
-    cardClass: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-    softClass: 'bg-emerald-50 border-emerald-100 text-emerald-800',
-    buttonClass: 'bg-emerald-700 hover:bg-emerald-800 text-white',
-    badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  },
-  {
-    id: 'mercy',
-    labelEn: 'Mercy',
-    labelAr: 'الرحمة',
-    descriptionEn: 'Compassion, comfort, and support for hurting people',
-    descriptionAr: 'رحمة، تعزية، ومساندة للمتألمين',
-    cardClass: 'bg-pink-50 border-pink-200 text-pink-800',
-    softClass: 'bg-pink-50 border-pink-100 text-pink-800',
-    buttonClass: 'bg-pink-700 hover:bg-pink-800 text-white',
-    badgeClass: 'bg-pink-100 text-pink-800 border-pink-200',
-  },
-  {
-    id: 'facilitators',
-    labelEn: 'Facilitators',
-    labelAr: 'الميسّرون',
-    descriptionEn: 'Organizing, connecting, and making ministry flow',
-    descriptionAr: 'تنظيم، ربط، وتسهيل سير الخدمة',
-    cardClass: 'bg-cyan-50 border-cyan-200 text-cyan-800',
-    softClass: 'bg-cyan-50 border-cyan-100 text-cyan-800',
-    buttonClass: 'bg-cyan-700 hover:bg-cyan-800 text-white',
-    badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-200',
-  },
-  {
-    id: 'services',
-    labelEn: 'Services',
-    labelAr: 'الخدمات',
-    descriptionEn: 'Practical ministry, operations, and serving needs',
-    descriptionAr: 'خدمة عملية، تشغيل، وتلبية الاحتياجات',
-    cardClass: 'bg-stone-50 border-stone-200 text-stone-800',
-    softClass: 'bg-stone-50 border-stone-100 text-stone-800',
-    buttonClass: 'bg-stone-700 hover:bg-stone-800 text-white',
-    badgeClass: 'bg-stone-100 text-stone-800 border-stone-200',
-  },
-  {
-    id: 'giving',
-    labelEn: 'Giving',
-    labelAr: 'العطاء',
-    descriptionEn: 'Generosity, resources, and practical contribution',
-    descriptionAr: 'سخاء، موارد، ومساهمة عملية',
-    cardClass: 'bg-lime-50 border-lime-200 text-lime-800',
-    softClass: 'bg-lime-50 border-lime-100 text-lime-800',
-    buttonClass: 'bg-lime-700 hover:bg-lime-800 text-white',
-    badgeClass: 'bg-lime-100 text-lime-800 border-lime-200',
-  },
-];
-
 
 function timeToHour(time?: string): number {
   if (!time) return 0;
@@ -330,41 +219,6 @@ function safeFirebaseKey(value: string): string {
   return safeValue || `unknown_${Date.now()}`;
 }
 
-function normalizePeopleDevelopmentGroup(value: unknown): PeopleDevelopmentGroupId | '' {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, '');
-
-  if (normalized === 'pastor' || normalized === 'pastors' || normalized === 'pastoral') return 'pastors';
-  if (normalized === 'prophet' || normalized === 'prophets' || normalized === 'prophetic') return 'prophets';
-  if (normalized === 'evangelist' || normalized === 'evangelists' || normalized === 'evangelistic') return 'evangelists';
-  if (normalized === 'teacher' || normalized === 'teachers' || normalized === 'teaching') return 'teachers';
-  if (normalized === 'apostle' || normalized === 'apostles' || normalized === 'apostolic') return 'apostles';
-  if (normalized === 'helper' || normalized === 'helpers') return 'helpers';
-  if (normalized === 'mercy' || normalized === 'mercies' || normalized === 'merciful') return 'mercy';
-  if (normalized === 'facilitator' || normalized === 'facilitators' || normalized === 'facilitation') return 'facilitators';
-  if (normalized === 'service' || normalized === 'services' || normalized === 'serving') return 'services';
-  if (normalized === 'giving' || normalized === 'giver' || normalized === 'givers') return 'giving';
-
-  return '';
-}
-
-function normalizePeoplePersonalNoteType(value: unknown): PeoplePersonalNoteType {
-  const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'weakness' ? 'weakness' : 'strength';
-}
-
-function extractPeopleDevelopmentGroup(raw: Record<string, any>): PeopleDevelopmentGroupId | '' {
-  return normalizePeopleDevelopmentGroup(
-    raw.peopleDevelopmentGroup ||
-    raw.peopleDevelopment?.group ||
-    raw.fields?.peopleDevelopment?.group?.value ||
-    raw.fields?.peopleDevelopment?.group?.answer ||
-    '',
-  );
-}
-
 function getFirstName(value: string): string {
   return String(value || '').trim().split(/\s+/)[0] || '';
 }
@@ -372,178 +226,6 @@ function getFirstName(value: string): string {
 function normalizeNumber(value: unknown): number {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
-}
-
-function formatFileSize(bytes: number): string {
-  if (!bytes || bytes <= 0) return '0 KB';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes >= 10 * 1024 ? 0 : 1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      const [, base64 = ''] = result.split(',');
-
-      if (!base64) {
-        reject(new Error('Could not read the selected file.'));
-        return;
-      }
-
-      resolve(base64);
-    };
-
-    reader.onerror = () => reject(reader.error || new Error('Could not read the selected file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function isUsableEmail(value: string): boolean {
-  const trimmed = String(value || '').trim();
-
-  return trimmed.length > 3 &&
-    trimmed !== 'N/A' &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
-}
-
-function truncateEmailText(value: string, maxLength = 700): string {
-  const normalized = String(value || '').trim();
-
-  if (normalized.length <= maxLength) return normalized;
-
-  return `${normalized.slice(0, maxLength).trim()}...`;
-}
-
-function getPeopleDevelopmentStaticGroupLabel(groupId: PeopleDevelopmentGroupId, targetLocale: 'en' | 'ar'): string {
-  const group = PEOPLE_DEVELOPMENT_GROUPS.find(item => item.id === groupId);
-  if (!group) return groupId;
-
-  return targetLocale === 'ar' ? group.labelAr : group.labelEn;
-}
-
-function buildPeopleDevelopmentAssignmentNotificationEmailHtml(params: {
-  recipientName: string;
-  groupLabelEn: string;
-  groupLabelAr: string;
-  noteText: string;
-  attachments: PeopleDevelopmentAttachment[];
-  postedAtLabel: string;
-  appUrl: string;
-}): string {
-  const displayName = params.recipientName || 'Friend';
-  const hasNote = Boolean(params.noteText.trim());
-  const hasAttachments = params.attachments.length > 0;
-  const notePreview = hasNote
-    ? truncateEmailText(params.noteText)
-    : 'Pastor uploaded a resource for your group.';
-  const arabicNotePreview = hasNote
-    ? truncateEmailText(params.noteText)
-    : 'قام Pastor برفع ملف أو مورد جديد لمجموعتك.';
-
-  const attachmentRowsEn = hasAttachments
-    ? params.attachments.map(attachment => `
-      <li style="margin: 4px 0;">
-        ${escapeHtml(attachment.name)} <span style="color: #777777;">(${escapeHtml(formatFileSize(attachment.size))})</span>
-      </li>
-    `).join('')
-    : '<li style="margin: 4px 0; color: #777777;">No PDF attachment included.</li>';
-
-  const attachmentRowsAr = hasAttachments
-    ? params.attachments.map(attachment => `
-      <li style="margin: 4px 0;">
-        ${escapeHtml(attachment.name)} <span style="color: #777777;">(${escapeHtml(formatFileSize(attachment.size))})</span>
-      </li>
-    `).join('')
-    : '<li style="margin: 4px 0; color: #777777;">لا يوجد ملف PDF مرفق.</li>';
-
-  const appLinkEn = params.appUrl
-    ? `<p style="margin: 12px 0 0;">Open the LinC app and log in with your personal identifier to view the full note/resource.</p>
-       <p style="margin: 8px 0 0;"><a href="${escapeHtml(params.appUrl)}" style="color: #8b1e1e; font-weight: 800; word-break: break-all;">${escapeHtml(params.appUrl)}</a></p>`
-    : '<p style="margin: 12px 0 0;">Open the LinC app and log in with your personal identifier to view the full note/resource.</p>';
-
-  const appLinkAr = params.appUrl
-    ? `<p style="margin: 12px 0 0;">افتح تطبيق LinC وسجل الدخول باستخدام رمز العبور الشخصي الخاص بك لعرض الملاحظة أو الملف كاملاً.</p>
-       <p style="margin: 8px 0 0;"><a href="${escapeHtml(params.appUrl)}" style="color: #8b1e1e; font-weight: 800; word-break: break-all;">${escapeHtml(params.appUrl)}</a></p>`
-    : '<p style="margin: 12px 0 0;">افتح تطبيق LinC وسجل الدخول باستخدام رمز العبور الشخصي الخاص بك لعرض الملاحظة أو الملف كاملاً.</p>';
-
-  return `
-<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 720px; margin: 0 auto;">
-  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">LinC People Development Update</h2>
-    <div style="margin-top: 6px; font-size: 13px;">تحديث جديد في برنامج نمو الأشخاص</div>
-  </div>
-
-  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
-    <div dir="ltr" style="text-align: left;">
-      <p style="margin: 0 0 12px; font-weight: 800;">Hi ${escapeHtml(displayName)},</p>
-      <p style="margin: 0 0 12px;">Pastor has posted a new note or assignment for your group.</p>
-
-      <table role="presentation" style="width: 100%; border-collapse: collapse; margin: 12px 0 16px;">
-        <tr>
-          <td style="padding: 8px 0; width: 150px; color: #666666; font-weight: 800;">Group</td>
-          <td style="padding: 8px 0;">${escapeHtml(params.groupLabelEn)}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #666666; font-weight: 800;">Posted</td>
-          <td style="padding: 8px 0;">${escapeHtml(params.postedAtLabel)}</td>
-        </tr>
-      </table>
-
-      <div style="margin: 14px 0; padding: 14px; background-color: #fffafa; border-left: 5px solid #8b1e1e; border-radius: 10px;">
-        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">Preview</div>
-        <div style="white-space: pre-wrap;">${escapeHtml(notePreview)}</div>
-      </div>
-
-      <div style="margin-top: 12px;">
-        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">Files</div>
-        <ul style="margin-top: 0; padding-left: 22px;">${attachmentRowsEn}</ul>
-      </div>
-
-      ${appLinkEn}
-    </div>
-
-    <hr style="border: 0; border-top: 1px solid #ead1d1; margin: 24px 0;" />
-
-    <div dir="rtl" style="text-align: right;">
-      <p style="margin: 0 0 12px; font-weight: 800;">مرحباً ${escapeHtml(displayName)}،</p>
-      <p style="margin: 0 0 12px;">قام Pastor بنشر ملاحظة أو تكليف جديد لمجموعتك.</p>
-
-      <table role="presentation" style="width: 100%; border-collapse: collapse; margin: 12px 0 16px;">
-        <tr>
-          <td style="padding: 8px 0; width: 150px; color: #666666; font-weight: 800;">المجموعة</td>
-          <td style="padding: 8px 0;">${escapeHtml(params.groupLabelAr)}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #666666; font-weight: 800;">وقت النشر</td>
-          <td style="padding: 8px 0;">${escapeHtml(params.postedAtLabel)}</td>
-        </tr>
-      </table>
-
-      <div style="margin: 14px 0; padding: 14px; background-color: #fffafa; border-right: 5px solid #8b1e1e; border-radius: 10px;">
-        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">معاينة</div>
-        <div style="white-space: pre-wrap;">${escapeHtml(arabicNotePreview)}</div>
-      </div>
-
-      <div style="margin-top: 12px;">
-        <div style="font-weight: 800; color: #641414; margin-bottom: 6px;">الملفات</div>
-        <ul style="margin-top: 0; padding-right: 22px;">${attachmentRowsAr}</ul>
-      </div>
-
-      ${appLinkAr}
-    </div>
-
-    <div style="margin-top: 22px; color: #777777; font-size: 12px; text-align: center;">
-      This email was sent automatically by the LinC People Development system.
-      <br />
-      تم إرسال هذا البريد تلقائياً من نظام نمو الأشخاص في LinC.
-    </div>
-  </div>
-</div>
-  `.trim();
 }
 
 type NextGenRegistrationStatus = 'pending' | 'approved' | 'rejected';
