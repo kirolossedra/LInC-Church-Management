@@ -5,8 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '../i18n';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, startOfDay, isBefore } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Bot, X } from 'lucide-react';
-import AIBookingAssistant from '../components/AIBookingAssistant';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, X } from 'lucide-react';
 import { sendEmailViaEmailJS } from '../services/gmail';
 
 const BUSINESS_START = 9;
@@ -61,7 +60,6 @@ export default function BookingCalendar() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isPastDay, setIsPastDay] = useState(false);
-  const [showAi, setShowAi] = useState(false);
   const [pastors, setPastors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -579,13 +577,6 @@ export default function BookingCalendar() {
             </h1>
             <p className="text-[#6b4b4b] text-base mt-2 font-bold">{t('booking.pageDesc')}</p>
           </div>
-          <button
-            onClick={() => setShowAi(true)}
-            className="w-full sm:w-auto justify-center flex items-center gap-2 bg-[#f8eeee] hover:bg-[#efd8d8] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors text-base border border-[#d8aaaa] shadow-sm"
-          >
-            <Bot size={16} />
-            {t('booking.aiAssistant')}
-          </button>
         </div>
 
         <div className="flex flex-wrap justify-center gap-4 sm:gap-6 text-base font-bold text-[#3a2424]">
@@ -688,7 +679,6 @@ export default function BookingCalendar() {
           </div>
         </div>
 
-        <AIBookingAssistant isOpen={showAi} onClose={() => setShowAi(false)} />
       </div>
 
       {dayPopup}
