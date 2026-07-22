@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import Layout from './components/Layout';
 import AssessmentForm from './components/AssessmentForm';
 import AdminDashboard from './pages/AdminDashboard';
-import Calendar from './components/Calendar';
+import PastorDashboard from './components/pastor/PastorDashboard';
 import LandingPage from './pages/LandingPage';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -327,7 +327,7 @@ function AppRoutes() {
         element={
           <Layout activeTab={getActiveTab()} isAdmin={!!isPastor} isSuperAdmin={!!isSuperAdmin}>
             <ProtectedRoute hasAccess={!!isPastor} loading={appLoading}>
-              <Calendar />
+              <PastorDashboard />
             </ProtectedRoute>
           </Layout>
         }
