@@ -994,7 +994,7 @@ interface UnavailabilityForm {
   allDay: boolean;
 }
 
-export default function Calendar() {
+export default function PastorDashboard() {
   const { t, dir, locale } = useI18n();
   const displayLocale = locale === 'ar' ? 'ar' : 'en';
   const dateLocale = displayLocale === 'ar' ? ar : enUS;
