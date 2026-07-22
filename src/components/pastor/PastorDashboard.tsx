@@ -70,21 +70,54 @@ import {
 import {
   buildPeopleDevelopmentAssignmentNotificationEmailHtml,
 } from './email/peopleDevelopmentEmail';
-import type {
-  Availability,
-  Unavailability,
-  AvailabilityForm,
-  UnavailabilityForm,
-} from './calendar/calendar.types';
 import {
-  buildTimeOptions,
+  BOOKING_WINDOW_TIME_OPTIONS,
+  FULL_DAY_TIME_OPTIONS,
+  MEETING_TIME_OPTIONS,
+  SLOT_BLOCK_DURATION,
+  buildAvailabilityDates,
+  buildSlotBlockHours,
+  createAvailability,
+  createInitialAvailabilityForm,
+  createInitialUnavailabilityForm,
+  createMeeting,
+  createUnavailability,
+  deleteAvailability,
+  deleteMeeting,
+  deleteUnavailability,
+  getAvailabilityBlocksForDate,
+  getBlockingUnavailabilityForSlot,
+  getDateString,
+  getMeetingRequestEmail,
+  getMeetingsForDate,
+  getPastorSlotStatus as calculatePastorSlotStatus,
+  getPastorSlotTranslationKey,
+  getPendingRequestsForDate,
+  getUnavailabilityBlocksForDate,
+  getUnavailabilityRange,
   hourToLabel,
   hourToTime,
-  slotOverlaps,
+  isPastorSlotBooked,
+  isPastorSlotInsideAvailability,
+  sendMeetingConfirmationViaEmailJs,
+  sendMeetingStatusEmailViaEmailJs,
+  subscribeToAvailability,
+  subscribeToMeetingRequests,
+  subscribeToMeetings,
+  subscribeToUnavailability,
   timeRangeToLabel,
   timeToHour,
-  timeToLabel,
-} from './calendar/calendar.utils';
+  toggleAvailabilityWeekday,
+  updateAvailability,
+  updateMeeting,
+  updateMeetingRequest,
+  updateUnavailability,
+  type Availability,
+  type AvailabilityForm,
+  type PastorSlotStatus,
+  type Unavailability,
+  type UnavailabilityForm,
+} from './calendar';
 
 
 
@@ -96,18 +129,10 @@ import {
 
 
 
-
-const SLOT_BLOCK_START = 9;
-const SLOT_BLOCK_END = 20;
-const SLOT_BLOCK_DURATION = 0.5;
 
 const EMAILJS_SERVICE_ID = 'service_v47g6or';
 const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
 const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
-
-const MEETING_TIME_OPTIONS = buildTimeOptions(0, 23.5);
-const BOOKING_WINDOW_TIME_OPTIONS = buildTimeOptions(SLOT_BLOCK_START, SLOT_BLOCK_END);
-const FULL_DAY_TIME_OPTIONS = buildTimeOptions(0, 23.5);
 
 function escapeHtml(value: string): string {
   return value
@@ -653,27 +678,15 @@ export default function PastorDashboard() {
 
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [editingAvailability, setEditingAvailability] = useState<Availability | null>(null);
-  const [availabilityForm, setAvailabilityForm] = useState<AvailabilityForm>({
-    mode: 'single',
-    date: format(new Date(), 'yyyy-MM-dd'),
-    startDate: format(new Date(), 'yyyy-MM-dd'),
-    endDate: format(new Date(), 'yyyy-MM-dd'),
-    selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
-    startTime: '09:00',
-    endTime: '20:00',
-    reason: '',
-    allDay: true,
-  });
+  const [availabilityForm, setAvailabilityForm] = useState<AvailabilityForm>(
+    () => createInitialAvailabilityForm(),
+  );
 
   const [showUnavailabilityModal, setShowUnavailabilityModal] = useState(false);
   const [editingUnavailability, setEditingUnavailability] = useState<Unavailability | null>(null);
-  const [unavailabilityForm, setUnavailabilityForm] = useState<UnavailabilityForm>({
-    date: format(new Date(), 'yyyy-MM-dd'),
-    startTime: '09:00',
-    endTime: '20:00',
-    reason: '',
-    allDay: true,
-  });
+  const [unavailabilityForm, setUnavailabilityForm] = useState<UnavailabilityForm>(
+    () => createInitialUnavailabilityForm(),
+  );
 
   useEffect(() => {
     const formRef = ref(database, 'form/');
@@ -742,45 +755,9 @@ export default function PastorDashboard() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const meetingsRef = ref(database, 'meetings/');
-    const unsubscribe = onValue(meetingsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const parsed = Object.entries(data).map(([id, val]: [string, any]) => ({
-          id,
-          ...(val as Meeting),
-        }));
-        (parsed as Meeting[]).sort((a, b) => {
-          if (!a.date) return 1;
-          if (!b.date) return -1;
-          return a.date.localeCompare(b.date);
-        });
-        setMeetings(parsed);
-      } else {
-        setMeetings([]);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  useEffect(() => subscribeToMeetings(setMeetings), []);
 
-  useEffect(() => {
-    const requestsRef = ref(database, 'meetingRequests/');
-    const unsubscribe = onValue(requestsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const parsed = Object.entries(data).map(([id, val]: [string, any]) => ({
-          id,
-          ...(val as MeetingRequest),
-        }));
-        (parsed as MeetingRequest[]).sort((a, b) => a.createdAt - b.createdAt);
-        setMeetingRequests(parsed);
-      } else {
-        setMeetingRequests([]);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  useEffect(() => subscribeToMeetingRequests(setMeetingRequests), []);
 
   useEffect(() => {
     const nextGenQuestionsRef = ref(database, 'nextGenActivities/qaSessions/');
@@ -978,49 +955,9 @@ export default function PastorDashboard() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const availabilityRef = ref(database, 'availability/');
-    const unsubscribe = onValue(availabilityRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const parsed = Object.entries(data).map(([firebaseId, val]: [string, any]) => ({
-          id: firebaseId,
-          date: val.date,
-          startTime: val.startTime,
-          endTime: val.endTime,
-          reason: val.reason || '',
-          allDay: val.allDay || false,
-        }));
-        parsed.sort((a, b) => a.date.localeCompare(b.date));
-        setAvailability(parsed);
-      } else {
-        setAvailability([]);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  useEffect(() => subscribeToAvailability(setAvailability), []);
 
-  useEffect(() => {
-    const unavailabilityRef = ref(database, 'unavailability/');
-    const unsubscribe = onValue(unavailabilityRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const parsed = Object.entries(data).map(([firebaseId, val]: [string, any]) => ({
-          id: firebaseId,
-          date: val.date,
-          startTime: val.startTime,
-          endTime: val.endTime,
-          reason: val.reason || '',
-          allDay: val.allDay || false,
-        }));
-        parsed.sort((a, b) => a.date.localeCompare(b.date));
-        setUnavailability(parsed);
-      } else {
-        setUnavailability([]);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  useEffect(() => subscribeToUnavailability(setUnavailability), []);
 
   const [newMeeting, setNewMeeting] = useState<Partial<Meeting>>({
     title: '',
@@ -1039,59 +976,11 @@ export default function PastorDashboard() {
   });
 
   const resetAvailabilityForm = () => {
-    const today = format(new Date(), 'yyyy-MM-dd');
-    setAvailabilityForm({
-      mode: 'single',
-      date: today,
-      startDate: today,
-      endDate: today,
-      selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
-      startTime: '09:00',
-      endTime: '20:00',
-      reason: '',
-      allDay: true,
-    });
+    setAvailabilityForm(createInitialAvailabilityForm());
   };
 
   const resetUnavailabilityForm = () => {
-    setUnavailabilityForm({
-      date: format(new Date(), 'yyyy-MM-dd'),
-      startTime: '09:00',
-      endTime: '20:00',
-      reason: '',
-      allDay: true,
-    });
-  };
-
-  const buildAvailabilityDates = (): string[] => {
-    if (availabilityForm.mode === 'single') {
-      return [availabilityForm.date];
-    }
-
-    const start = parseISO(availabilityForm.startDate);
-    const end = parseISO(availabilityForm.endDate);
-
-    if (end < start) {
-      return [];
-    }
-
-    return eachDayOfInterval({ start, end })
-      .filter(day => availabilityForm.selectedWeekdays.includes(day.getDay()))
-      .map(day => format(day, 'yyyy-MM-dd'));
-  };
-
-  const toggleAvailabilityWeekday = (weekday: number) => {
-    setAvailabilityForm(prev => {
-      const alreadySelected = prev.selectedWeekdays.includes(weekday);
-      const nextSelected = alreadySelected
-        ? prev.selectedWeekdays.filter(d => d !== weekday)
-        : [...prev.selectedWeekdays, weekday].sort((a, b) => a - b);
-
-      return {
-        ...prev,
-        selectedWeekdays: nextSelected,
-      };
-    });
+    setUnavailabilityForm(createInitialUnavailabilityForm());
   };
 
   const getMeetingDisplayTitle = (meeting: Meeting): string => {
@@ -1104,464 +993,12 @@ export default function PastorDashboard() {
     return meeting.title || t('calendar.meeting');
   };
 
-  const getMeetingRequestEmail = (meeting: Meeting): string => {
-    return (meeting as any).requestEmail || '';
-  };
-
   const getMeetingRequestReason = (meeting: Meeting): string => {
     return (meeting as any).requestReason || '';
   };
 
   const getMeetingAcknowledged = (meeting: Meeting): boolean => {
     return Boolean((meeting as any).acknowledged);
-  };
-
-  const getMeetingRequesterLocale = (meeting: Meeting): 'en' | 'ar' => {
-    return (meeting as any).requesterLocale === 'ar' ? 'ar' : 'en';
-  };
-
-  const buildMeetingConfirmationEmail = (meeting: Meeting): {
-    subject: string;
-    requesterName: string;
-    meetingTitle: string;
-    meetingType: string;
-    meetingDate: string;
-    meetingTime: string;
-    meetingLocation: string;
-    meetingLink: string;
-    fullReport: string;
-    htmlBody: string;
-  } => {
-    const requesterLocale = getMeetingRequesterLocale(meeting);
-    const requesterName = (meeting as any).requestName || '';
-    const displayName = requesterName || (requesterLocale === 'ar' ? 'صديقنا العزيز' : 'Friend');
-    const meetingTitle = getMeetingDisplayTitle(meeting) || t('calendar.meetingWithPastor');
-    const meetingType = requesterLocale === 'ar' ? 'اجتماع مع Pastor' : 'Meeting with Pastor';
-    const meetingLink = meeting.meetLink || '';
-    const meetingDate = meeting.date
-      ? format(parseISO(meeting.date), 'EEEE, MMMM d, yyyy', { locale: requesterLocale === 'ar' ? ar : enUS })
-      : '';
-    const meetingTime = timeRangeToLabel(meeting.startTime, meeting.endTime, requesterLocale);
-    const meetingLocation = meeting.location || (requesterLocale === 'ar' ? 'اجتماع عبر الإنترنت' : 'Online meeting');
-
-    const safeName = escapeHtml(displayName);
-    const safeMeetingType = escapeHtml(meetingType);
-    const safeMeetingDate = escapeHtml(meetingDate);
-    const safeMeetingTime = escapeHtml(meetingTime);
-    const safeMeetingLocation = escapeHtml(meetingLocation);
-    const safeMeetLink = escapeHtml(meetingLink);
-
-    if (requesterLocale === 'ar') {
-      const fullReport = [
-        'تأكيد موعد الاجتماع',
-        '=========================================',
-        '',
-        `مرحباً ${displayName}،`,
-        '',
-        'نود تأكيد موعد اجتماعك مع Pastor بالتفاصيل التالية:',
-        `نوع الاجتماع: ${meetingType}`,
-        `التاريخ: ${meetingDate}`,
-        `الوقت: ${meetingTime}`,
-        `المكان: ${meetingLocation}`,
-        meetingLink ? `رابط الانضمام: ${meetingLink}` : 'رابط الانضمام: سيتم إرساله لاحقاً.',
-        '',
-        'شكراً لك، ونتطلع إلى لقائك.',
-      ].join('\n');
-
-      const safeFullReport = escapeHtml(fullReport);
-      const meetingLinkHtml = meetingLink
-        ? `<a href="${safeMeetLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetLink}</a>`
-        : '<span style="color: #666666; font-weight: 700;">سيتم إرساله لاحقاً</span>';
-
-      const htmlBody = `
-<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto; direction: rtl; text-align: right;">
-  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">تأكيد موعد الاجتماع</h2>
-    <div style="margin-top: 6px; font-size: 13px;">اجتماع مع Pastor</div>
-  </div>
-
-  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
-    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
-      <tr>
-        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">الاسم</td>
-        <td style="padding: 8px 0;">${safeName}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">نوع الاجتماع</td>
-        <td style="padding: 8px 0;">${safeMeetingType}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">التاريخ</td>
-        <td style="padding: 8px 0;">${safeMeetingDate}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">الوقت</td>
-        <td style="padding: 8px 0;">${safeMeetingTime}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">المكان</td>
-        <td style="padding: 8px 0;">${safeMeetingLocation}</td>
-      </tr>
-    </table>
-
-    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; border-right: 5px solid #8b1e1e; border-radius: 10px;">
-      <h3 style="margin: 0 0 10px; color: #5e1010; font-size: 17px;">رابط الانضمام</h3>
-      <div style="margin-bottom: 8px;">
-        ${meetingLinkHtml}
-      </div>
-    </div>
-
-    <div style="margin-top: 22px;">
-      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">تأكيد موعد الاجتماع</h3>
-      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
-${safeFullReport}
-      </div>
-    </div>
-
-    <div style="margin-top: 22px; color: #777777; font-size: 12px;">
-      تم إرسال هذا البريد تلقائياً لتأكيد موعد اجتماعك مع Pastor.
-    </div>
-  </div>
-</div>
-      `.trim();
-
-      return {
-        subject: `تأكيد موعد اجتماع LINC - ${displayName}`,
-        requesterName: displayName,
-        meetingTitle,
-        meetingType,
-        meetingDate,
-        meetingTime,
-        meetingLocation,
-        meetingLink,
-        fullReport,
-        htmlBody,
-      };
-    }
-
-    const fullReport = [
-      'Meeting Confirmation',
-      '=========================================',
-      '',
-      `Hi ${displayName},`,
-      '',
-      'We would like to confirm your meeting with Pastor using the details below:',
-      `Meeting Type: ${meetingType}`,
-      `Date: ${meetingDate}`,
-      `Time: ${meetingTime}`,
-      `Location: ${meetingLocation}`,
-      meetingLink ? `Joining Link: ${meetingLink}` : 'Joining Link: The joining link will be sent later.',
-      '',
-      'Thank you, and we look forward to meeting with you.',
-    ].join('\n');
-
-    const safeFullReport = escapeHtml(fullReport);
-    const meetingLinkHtml = meetingLink
-      ? `<a href="${safeMeetLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetLink}</a>`
-      : '<span style="color: #666666; font-weight: 700;">The joining link will be sent later.</span>';
-
-    const htmlBody = `
-<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto;">
-  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">Meeting Confirmation</h2>
-    <div style="margin-top: 6px; font-size: 13px;">Meeting with Pastor</div>
-  </div>
-
-  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
-    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
-      <tr>
-        <td style="padding: 8px 0; width: 190px; color: #666666; font-weight: 700;">Name</td>
-        <td style="padding: 8px 0;">${safeName}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Meeting Type</td>
-        <td style="padding: 8px 0;">${safeMeetingType}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Date</td>
-        <td style="padding: 8px 0;">${safeMeetingDate}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Time</td>
-        <td style="padding: 8px 0;">${safeMeetingTime}</td>
-      </tr>
-      <tr>
-        <td style="padding: 8px 0; color: #666666; font-weight: 700;">Location</td>
-        <td style="padding: 8px 0;">${safeMeetingLocation}</td>
-      </tr>
-    </table>
-
-    <div style="margin: 20px 0; padding: 16px; background-color: #f8eeee; border-left: 5px solid #8b1e1e; border-radius: 10px;">
-      <h3 style="margin: 0 0 10px; color: #5e1010; font-size: 17px;">Joining Link</h3>
-      <div style="margin-bottom: 8px;">
-        ${meetingLinkHtml}
-      </div>
-    </div>
-
-    <div style="margin-top: 22px;">
-      <h3 style="margin: 0 0 10px; color: #8b1e1e; font-size: 17px;">Meeting Confirmation</h3>
-      <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">
-${safeFullReport}
-      </div>
-    </div>
-
-    <div style="margin-top: 22px; color: #777777; font-size: 12px;">
-      This email was automatically generated to confirm your meeting with Pastor.
-    </div>
-  </div>
-</div>
-    `.trim();
-
-    return {
-      subject: `LINC Meeting Confirmation - ${displayName}`,
-      requesterName: displayName,
-      meetingTitle,
-      meetingType,
-      meetingDate,
-      meetingTime,
-      meetingLocation,
-      meetingLink,
-      fullReport,
-      htmlBody,
-    };
-  };
-
-
-  const buildMeetingStatusEmail = (params: {
-    kind: 'rejection' | 'cancellation';
-    name?: string;
-    date?: string;
-    startTime?: string;
-    endTime?: string;
-    location?: string;
-    requesterLocale?: string;
-  }): {
-    subject: string;
-    requesterName: string;
-    htmlBody: string;
-    fullReport: string;
-  } => {
-    const requesterLocale: 'en' | 'ar' = params.requesterLocale === 'ar' ? 'ar' : 'en';
-    const displayName = params.name || (requesterLocale === 'ar' ? 'صديقنا العزيز' : 'Friend');
-    const meetingDate = params.date
-      ? format(parseISO(params.date), 'EEEE, MMMM d, yyyy', { locale: requesterLocale === 'ar' ? ar : enUS })
-      : '';
-    const meetingTime = timeRangeToLabel(params.startTime, params.endTime, requesterLocale);
-    const meetingLocation = params.location || (requesterLocale === 'ar' ? 'اجتماع عبر الإنترنت' : 'Online meeting');
-    const isCancellation = params.kind === 'cancellation';
-
-    const safeName = escapeHtml(displayName);
-    const safeMeetingDate = escapeHtml(meetingDate);
-    const safeMeetingTime = escapeHtml(meetingTime);
-    const safeMeetingLocation = escapeHtml(meetingLocation);
-
-    if (requesterLocale === 'ar') {
-      const title = isCancellation ? 'إلغاء موعد الاجتماع' : 'تحديث بخصوص طلب الاجتماع';
-      const intro = isCancellation
-        ? 'نود إعلامك بأنه تم إلغاء موعد اجتماعك مع Pastor.'
-        : 'نشكرك على طلب الاجتماع مع Pastor. نعتذر، لن نتمكن من تأكيد هذا الموعد حالياً.';
-      const closing = isCancellation
-        ? 'نعتذر عن أي إزعاج، ويمكنك حجز موعد آخر من خلال صفحة الحجز عند توفر موعد مناسب.'
-        : 'يمكنك حجز موعد آخر من خلال صفحة الحجز عند توفر موعد مناسب.';
-      const subject = isCancellation
-        ? `إلغاء موعد اجتماع LINC - ${displayName}`
-        : `تحديث طلب اجتماع LINC - ${displayName}`;
-
-      const fullReport = [
-        title,
-        '=========================================',
-        '',
-        `مرحباً ${displayName}،`,
-        '',
-        intro,
-        '',
-        `التاريخ: ${meetingDate}`,
-        `الوقت: ${meetingTime}`,
-        `المكان: ${meetingLocation}`,
-        '',
-        closing,
-        '',
-        'شكراً لتفهمك.',
-      ].join('\n');
-
-      const safeFullReport = escapeHtml(fullReport);
-      const htmlBody = `
-<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto; direction: rtl; text-align: right;">
-  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">${escapeHtml(title)}</h2>
-    <div style="margin-top: 6px; font-size: 13px;">اجتماع مع Pastor</div>
-  </div>
-
-  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
-    <p style="margin: 0 0 14px;">مرحباً ${safeName}،</p>
-    <p style="margin: 0 0 18px;">${escapeHtml(intro)}</p>
-
-    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
-      <tr><td style="padding: 8px 0; width: 160px; color: #666666; font-weight: 700;">التاريخ</td><td style="padding: 8px 0;">${safeMeetingDate}</td></tr>
-      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">الوقت</td><td style="padding: 8px 0;">${safeMeetingTime}</td></tr>
-      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">المكان</td><td style="padding: 8px 0;">${safeMeetingLocation}</td></tr>
-    </table>
-
-    <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">${safeFullReport}</div>
-    <div style="margin-top: 22px; color: #777777; font-size: 12px;">تم إرسال هذا البريد تلقائياً بخصوص طلب اجتماعك مع Pastor.</div>
-  </div>
-</div>
-      `.trim();
-
-      return { subject, requesterName: displayName, htmlBody, fullReport };
-    }
-
-    const title = isCancellation ? 'Meeting Cancelled' : 'Meeting Request Update';
-    const intro = isCancellation
-      ? 'We would like to let you know that your meeting with Pastor has been cancelled.'
-      : 'Thank you for requesting a meeting with Pastor. Unfortunately, we are not able to confirm this time right now.';
-    const closing = isCancellation
-      ? 'We apologize for any inconvenience. You may book another meeting through the booking page when another suitable time is available.'
-      : 'You may book another meeting through the booking page when another suitable time is available.';
-    const subject = isCancellation
-      ? `LINC Meeting Cancelled - ${displayName}`
-      : `LINC Meeting Request Update - ${displayName}`;
-
-    const fullReport = [
-      title,
-      '=========================================',
-      '',
-      `Hi ${displayName},`,
-      '',
-      intro,
-      '',
-      `Date: ${meetingDate}`,
-      `Time: ${meetingTime}`,
-      `Location: ${meetingLocation}`,
-      '',
-      closing,
-      '',
-      'Thank you for your understanding.',
-    ].join('\n');
-
-    const safeFullReport = escapeHtml(fullReport);
-    const htmlBody = `
-<div style="font-family: Arial, sans-serif; font-size: 14px; color: #242424; line-height: 1.6; max-width: 680px; margin: 0 auto;">
-  <div style="padding: 18px 20px; background-color: #8b1e1e; color: #ffffff; border-radius: 12px 12px 0 0;">
-    <h2 style="margin: 0; font-size: 20px;">${escapeHtml(title)}</h2>
-    <div style="margin-top: 6px; font-size: 13px;">Meeting with Pastor</div>
-  </div>
-
-  <div style="padding: 20px; border: 1px solid #dddddd; border-top: 0; border-radius: 0 0 12px 12px; background-color: #ffffff;">
-    <p style="margin: 0 0 14px;">Hi ${safeName},</p>
-    <p style="margin: 0 0 18px;">${escapeHtml(intro)}</p>
-
-    <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
-      <tr><td style="padding: 8px 0; width: 160px; color: #666666; font-weight: 700;">Date</td><td style="padding: 8px 0;">${safeMeetingDate}</td></tr>
-      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">Time</td><td style="padding: 8px 0;">${safeMeetingTime}</td></tr>
-      <tr><td style="padding: 8px 0; color: #666666; font-weight: 700;">Location</td><td style="padding: 8px 0;">${safeMeetingLocation}</td></tr>
-    </table>
-
-    <div style="white-space: pre-wrap; padding: 16px; background-color: #fafafa; border: 1px solid #dddddd; border-radius: 10px; font-size: 14px;">${safeFullReport}</div>
-    <div style="margin-top: 22px; color: #777777; font-size: 12px;">This email was automatically generated regarding your meeting request with Pastor.</div>
-  </div>
-</div>
-    `.trim();
-
-    return { subject, requesterName: displayName, htmlBody, fullReport };
-  };
-
-  const sendMeetingStatusEmailViaEmailJs = async (params: {
-    kind: 'rejection' | 'cancellation';
-    recipientEmail: string;
-    name?: string;
-    date?: string;
-    startTime?: string;
-    endTime?: string;
-    location?: string;
-    requesterLocale?: string;
-    sourceId?: string;
-  }) => {
-    if (!params.recipientEmail) {
-      throw new Error('Recipient email is missing.');
-    }
-
-    const statusEmail = buildMeetingStatusEmail(params);
-
-    const response = await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      {
-        to_email: params.recipientEmail,
-        subject: statusEmail.subject,
-        fullName: statusEmail.requesterName,
-        message_html: statusEmail.htmlBody,
-        reply_to: params.recipientEmail,
-      },
-      EMAILJS_PUBLIC_KEY,
-    );
-
-    await push(ref(database, 'emailJsSendLogs/'), {
-      recipientEmail: params.recipientEmail,
-      subject: statusEmail.subject,
-      fullName: statusEmail.requesterName,
-      sentUsing: 'EmailJS',
-      serviceId: EMAILJS_SERVICE_ID,
-      templateId: EMAILJS_TEMPLATE_ID,
-      source: params.kind === 'cancellation' ? 'calendarMeetingCancellation' : 'calendarMeetingRejection',
-      sourceId: params.sourceId || '',
-      meetingDate: params.date || '',
-      meetingStartTime: params.startTime || '',
-      meetingEndTime: params.endTime || '',
-      requesterLocale: params.requesterLocale === 'ar' ? 'ar' : 'en',
-      sentAt: Date.now(),
-      sentAtISO: new Date().toISOString(),
-      emailJsResponse: {
-        status: response.status,
-        text: response.text,
-      },
-    });
-
-    return response;
-  };
-
-
-  const sendMeetingConfirmationViaEmailJs = async (meeting: Meeting) => {
-    const recipientEmail = getMeetingRequestEmail(meeting);
-    const confirmationEmail = buildMeetingConfirmationEmail(meeting);
-
-    if (!recipientEmail) {
-      throw new Error('Meeting requester email is missing.');
-    }
-
-    const response = await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
-      {
-        to_email: recipientEmail,
-        subject: confirmationEmail.subject,
-        fullName: confirmationEmail.requesterName,
-        message_html: confirmationEmail.htmlBody,
-        reply_to: recipientEmail,
-      },
-      EMAILJS_PUBLIC_KEY,
-    );
-
-    await push(ref(database, 'emailJsSendLogs/'), {
-      recipientEmail,
-      subject: confirmationEmail.subject,
-      fullName: confirmationEmail.requesterName,
-      sentUsing: 'EmailJS',
-      serviceId: EMAILJS_SERVICE_ID,
-      templateId: EMAILJS_TEMPLATE_ID,
-      source: 'calendarMeetingConfirmation',
-      meetingDate: meeting.date || '',
-      meetingStartTime: meeting.startTime || '',
-      meetingEndTime: meeting.endTime || '',
-      sentAt: Date.now(),
-      sentAtISO: new Date().toISOString(),
-      emailJsResponse: {
-        status: response.status,
-        text: response.text,
-      },
-    });
-
-    return response;
   };
 
   const openMeetingEditor = (meeting: Meeting) => {
@@ -1724,24 +1161,25 @@ ${safeFullReport}
           }
         }
 
-        const { update } = await import('firebase/database');
-        await update(ref(database, `meetings/${editingMeeting.id}`), meetingData);
+        await updateMeeting(editingMeeting.id, meetingData);
 
         const sourceRequestId = (editingMeeting as any).sourceRequestId;
         if (sourceRequestId) {
-          await update(ref(database, `meetingRequests/${sourceRequestId}`), {
-            date: meetingData.date,
-            startTime: meetingData.startTime,
-            endTime: meetingData.endTime,
-            updatedAt: Date.now(),
-          });
+          await updateMeetingRequest(
+            sourceRequestId,
+            {
+              date: meetingData.date,
+              startTime: meetingData.startTime,
+              endTime: meetingData.endTime,
+              updatedAt: Date.now(),
+            } as any,
+          );
         }
       } else {
-        const { push } = await import('firebase/database');
-        await push(ref(database, 'meetings/'), {
+        await createMeeting({
           ...meetingData,
           acknowledged: false,
-        });
+        } as any);
       }
 
       const emailSuccess = await sendEmails({
@@ -1796,8 +1234,7 @@ ${safeFullReport}
           });
         }
 
-        const { remove } = await import('firebase/database');
-        await remove(ref(database, `meetings/${id}`));
+        await deleteMeeting(id);
       } catch (err) {
         console.error(err);
         alert(displayLocale === 'ar' ? 'فشل إرسال بريد الإلغاء أو حذف الاجتماع.' : 'Failed to send cancellation email or delete the meeting.');
@@ -1812,8 +1249,6 @@ ${safeFullReport}
     setLoading(true);
 
     try {
-      const { push, update } = await import('firebase/database');
-
       const availabilityData = {
         date: availabilityForm.date,
         startTime: availabilityForm.allDay ? '09:00' : availabilityForm.startTime,
@@ -1824,9 +1259,14 @@ ${safeFullReport}
       };
 
       if (editingAvailability) {
-        await update(ref(database, `availability/${editingAvailability.id}`), availabilityData);
+        await updateAvailability(
+          editingAvailability.id,
+          availabilityData,
+        );
       } else {
-        const selectedDates = buildAvailabilityDates();
+        const selectedDates = buildAvailabilityDates(
+          availabilityForm,
+        );
 
         if (selectedDates.length === 0) {
           alert(t('calendar.noAvailableDatesSelected'));
@@ -1835,10 +1275,10 @@ ${safeFullReport}
 
         await Promise.all(
           selectedDates.map(date =>
-            push(ref(database, 'availability/'), {
+            createAvailability({
               ...availabilityData,
               date,
-            })
+            } as any)
           )
         );
       }
@@ -1857,8 +1297,7 @@ ${safeFullReport}
   const handleDeleteAvailability = async (id: string) => {
     if (confirm(t('calendar.removeAvailabilityConfirm'))) {
       try {
-        const { remove } = await import('firebase/database');
-        await remove(ref(database, `availability/${id}`));
+        await deleteAvailability(id);
       } catch (err) {
         console.error(err);
       }
@@ -1870,8 +1309,6 @@ ${safeFullReport}
     setLoading(true);
 
     try {
-      const { push, update } = await import('firebase/database');
-
       const unavailabilityData = {
         date: unavailabilityForm.date,
         startTime: unavailabilityForm.allDay ? '00:00' : unavailabilityForm.startTime,
@@ -1882,9 +1319,14 @@ ${safeFullReport}
       };
 
       if (editingUnavailability) {
-        await update(ref(database, `unavailability/${editingUnavailability.id}`), unavailabilityData);
+        await updateUnavailability(
+          editingUnavailability.id,
+          unavailabilityData,
+        );
       } else {
-        await push(ref(database, 'unavailability/'), unavailabilityData);
+        await createUnavailability(
+          unavailabilityData,
+        );
       }
 
       setShowUnavailabilityModal(false);
@@ -1995,13 +1437,16 @@ ${safeFullReport}
           });
         }
 
-        await update(ref(database, `meetingRequests/${id}`), {
-          status,
-          rejectionEmailSent: Boolean(req.email),
-          rejectionEmailSentUsing: req.email ? 'EmailJS' : null,
-          rejectionEmailSentAt: req.email ? Date.now() : null,
-          updatedAt: Date.now(),
-        });
+        await updateMeetingRequest(
+          id,
+          {
+            status,
+            rejectionEmailSent: Boolean(req.email),
+            rejectionEmailSentUsing: req.email ? 'EmailJS' : null,
+            rejectionEmailSentAt: req.email ? Date.now() : null,
+            updatedAt: Date.now(),
+          } as any,
+        );
         return;
       }
 
@@ -2031,15 +1476,18 @@ ${safeFullReport}
 
       await sendMeetingConfirmationViaEmailJs(meetingData as Meeting);
 
-      await push(ref(database, 'meetings/'), meetingData);
+      await createMeeting(meetingData as any);
 
-      await update(ref(database, `meetingRequests/${id}`), {
-        status: 'accepted',
-        confirmationSent: true,
-        confirmationSentUsing: 'EmailJS',
-        confirmationSentAt: confirmationTimestamp,
-        updatedAt: Date.now(),
-      });
+      await updateMeetingRequest(
+        id,
+        {
+          status: 'accepted',
+          confirmationSent: true,
+          confirmationSentUsing: 'EmailJS',
+          confirmationSentAt: confirmationTimestamp,
+          updatedAt: Date.now(),
+        } as any,
+      );
     } catch (err) {
       console.error(err);
       alert(t('booking.statusFailed'));
@@ -2048,131 +1496,115 @@ ${safeFullReport}
     }
   };
 
-  const getDateString = (day: Date): string => format(day, 'yyyy-MM-dd');
-
-  const getAvailabilityBlocksForDate = (dateStr: string): Availability[] => {
-    return availability.filter(a => a.date === dateStr);
-  };
-
-  const getUnavailabilityBlocksForDate = (dateStr: string): Unavailability[] => {
-    return unavailability.filter(u => u.date === dateStr);
-  };
-
-  const getMeetingsForDate = (dateStr: string): Meeting[] => {
-    return meetings.filter(m => m.date === dateStr);
-  };
-
-  const getPendingRequestsForDate = (dateStr: string): MeetingRequest[] => {
-    return meetingRequests.filter(r => r.date === dateStr && r.status === 'pending');
-  };
-
-  const getAvailabilityRange = (block: Availability): { start: number; end: number } => {
-    return {
-      start: timeToHour(block.startTime || '09:00'),
-      end: timeToHour(block.endTime || '20:00'),
-    };
-  };
-
-  const getUnavailabilityRange = (block: Unavailability): { start: number; end: number } => {
-    return {
-      start: timeToHour(block.startTime || '00:00'),
-      end: timeToHour(block.endTime || '23:59'),
-    };
-  };
-
-  const isPastorSlotInsideAvailability = (dateStr: string, startHour: number, endHour: number): boolean => {
-    return getAvailabilityBlocksForDate(dateStr).some(block => {
-      const range = getAvailabilityRange(block);
-      return startHour >= range.start && endHour <= range.end;
+  const getDashboardSlotStatus = (
+    day: Date,
+    startHour: number,
+  ): PastorSlotStatus => {
+    return calculatePastorSlotStatus({
+      day,
+      startHour,
+      availability,
+      unavailability,
+      meetings,
+      meetingRequests,
     });
   };
 
-  const getBlockingUnavailabilityForSlot = (dateStr: string, startHour: number, endHour: number): Unavailability | null => {
-    return getUnavailabilityBlocksForDate(dateStr).find(block => {
-      const range = getUnavailabilityRange(block);
-      return slotOverlaps(startHour, endHour, range.start, range.end);
-    }) || null;
+  const getDashboardSlotLabel = (
+    status: PastorSlotStatus,
+  ): string => {
+    return t(getPastorSlotTranslationKey(status) as any);
   };
 
-  const isPastorSlotBooked = (dateStr: string, startHour: number, endHour: number): boolean => {
-    const meetingBooked = getMeetingsForDate(dateStr).some(meeting => {
-      if (!meeting.startTime || !meeting.endTime) return false;
-      return slotOverlaps(startHour, endHour, timeToHour(meeting.startTime), timeToHour(meeting.endTime));
-    });
-
-    const requestBooked = getPendingRequestsForDate(dateStr).some(request => {
-      if (!request.startTime || !request.endTime) return false;
-      return slotOverlaps(startHour, endHour, timeToHour(request.startTime), timeToHour(request.endTime));
-    });
-
-    return meetingBooked || requestBooked;
-  };
-
-  const getPastorSlotStatus = (day: Date, startHour: number): 'available' | 'blocked' | 'booked' | 'closed' => {
+  const handleToggleSlotBlock = async (
+    day: Date,
+    startHour: number,
+  ) => {
     const dateStr = getDateString(day);
     const endHour = startHour + SLOT_BLOCK_DURATION;
 
-    if (isPastorSlotBooked(dateStr, startHour, endHour)) return 'booked';
-    if (getBlockingUnavailabilityForSlot(dateStr, startHour, endHour)) return 'blocked';
-    if (isPastorSlotInsideAvailability(dateStr, startHour, endHour)) return 'available';
-    return 'closed';
-  };
+    if (
+      isPastorSlotBooked(
+        meetings,
+        meetingRequests,
+        dateStr,
+        startHour,
+        endHour,
+      )
+    ) {
+      return;
+    }
 
-  const getPastorSlotLabel = (status: 'available' | 'blocked' | 'booked' | 'closed'): string => {
-    if (status === 'available') return t('calendar.available');
-    if (status === 'blocked') return t('calendar.unavailable');
-    if (status === 'booked') return t('booking.booked');
-    return t('calendar.noAvailabilityOpened');
-  };
+    const existingBlock =
+      getBlockingUnavailabilityForSlot(
+        unavailability,
+        dateStr,
+        startHour,
+        endHour,
+      );
 
-  const handleToggleSlotBlock = async (day: Date, startHour: number) => {
-    const dateStr = getDateString(day);
-    const endHour = startHour + SLOT_BLOCK_DURATION;
-
-    if (isPastorSlotBooked(dateStr, startHour, endHour)) return;
-    if (!isPastorSlotInsideAvailability(dateStr, startHour, endHour) && !getBlockingUnavailabilityForSlot(dateStr, startHour, endHour)) return;
+    if (
+      !isPastorSlotInsideAvailability(
+        availability,
+        dateStr,
+        startHour,
+        endHour,
+      ) &&
+      !existingBlock
+    ) {
+      return;
+    }
 
     setSlotBlockingLoading(true);
 
     try {
-      const { push, remove } = await import('firebase/database');
-      const existingBlock = getBlockingUnavailabilityForSlot(dateStr, startHour, endHour);
-
       if (!existingBlock) {
-        await push(ref(database, 'unavailability/'), {
+        const blockData = {
           date: dateStr,
           startTime: hourToTime(startHour),
           endTime: hourToTime(endHour),
           reason: 'Slot blocked by pastor',
           allDay: false,
           updatedAt: Date.now(),
-        });
+        };
+
+        await createUnavailability(blockData);
         return;
       }
 
-      const existingRange = getUnavailabilityRange(existingBlock);
-      await remove(ref(database, `unavailability/${existingBlock.id}`));
+      const existingRange =
+        getUnavailabilityRange(existingBlock);
+
+      await deleteUnavailability(existingBlock.id);
 
       if (existingRange.start < startHour) {
-        await push(ref(database, 'unavailability/'), {
+        const earlierBlock = {
           date: dateStr,
           startTime: hourToTime(existingRange.start),
           endTime: hourToTime(startHour),
-          reason: existingBlock.reason || 'Slot blocked by pastor',
+          reason:
+            existingBlock.reason ||
+            'Slot blocked by pastor',
           allDay: false,
           updatedAt: Date.now(),
-        });
+        };
+
+        await createUnavailability(earlierBlock);
       }
 
       if (endHour < existingRange.end) {
-        await push(ref(database, 'unavailability/'), {
+        const laterBlock = {
           date: dateStr,
           startTime: hourToTime(endHour),
           endTime: hourToTime(existingRange.end),
-          reason: existingBlock.reason || 'Slot blocked by pastor',
+          reason:
+            existingBlock.reason ||
+            'Slot blocked by pastor',
           allDay: false,
           updatedAt: Date.now(),
-        });
+        };
+
+        await createUnavailability(laterBlock);
       }
     } catch (err) {
       console.error(err);
@@ -2182,10 +1614,7 @@ ${safeFullReport}
     }
   };
 
-  const slotBlockHours = Array.from(
-    { length: Math.floor((SLOT_BLOCK_END - SLOT_BLOCK_START) / SLOT_BLOCK_DURATION) },
-    (_, index) => SLOT_BLOCK_START + index * SLOT_BLOCK_DURATION
-  );
+  const slotBlockHours = buildSlotBlockHours();
 
   const getPeopleDevelopmentGroupLabel = (groupId: PeopleDevelopmentGroupId): string => {
     const group = PEOPLE_DEVELOPMENT_GROUPS.find(item => item.id === groupId);
@@ -2799,7 +2228,7 @@ ${safeFullReport}
     .filter(p => selectedParticipants.includes(p.id))
     .map(p => p.name);
 
-  const availabilityDateCount = buildAvailabilityDates().length;
+  const availabilityDateCount = buildAvailabilityDates(availabilityForm).length;
 
   const nextGenRegistrationEmailCounts = nextGenRegistrations.reduce<Record<string, number>>((counts, registration) => {
     const normalizedEmail = registration.email.trim().toLowerCase();
@@ -2870,10 +2299,14 @@ ${safeFullReport}
     : 'Service groups, assignments, and people placement';
 
   const selectedSlotDateStr = selectedSlotDay ? getDateString(selectedSlotDay) : '';
-  const selectedDayAvailabilityBlocks = selectedSlotDateStr ? getAvailabilityBlocksForDate(selectedSlotDateStr) : [];
-  const selectedDayMeetings = selectedSlotDateStr ? getMeetingsForDate(selectedSlotDateStr) : [];
+  const selectedDayAvailabilityBlocks = selectedSlotDateStr
+    ? getAvailabilityBlocksForDate(availability, selectedSlotDateStr)
+    : [];
+  const selectedDayMeetings = selectedSlotDateStr
+    ? getMeetingsForDate(meetings, selectedSlotDateStr)
+    : [];
   const selectedDayOpenSlotHours = selectedSlotDay
-    ? slotBlockHours.filter(hour => getPastorSlotStatus(selectedSlotDay, hour) === 'available')
+    ? slotBlockHours.filter(hour => getDashboardSlotStatus(selectedSlotDay, hour) === 'available')
     : [];
 
   return (
@@ -4273,13 +3706,13 @@ ${safeFullReport}
           ))}
           {days.map(day => {
             const dateStr = getDateString(day);
-            const dayMeetings = getMeetingsForDate(dateStr);
-            const pendingRequests = getPendingRequestsForDate(dateStr);
-            const dayAvailability = getAvailabilityBlocksForDate(dateStr);
-            const dayUnavailability = getUnavailabilityBlocksForDate(dateStr);
-            const openSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'available').length;
-            const blockedSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'blocked').length;
-            const bookedSlotCount = slotBlockHours.filter(hour => getPastorSlotStatus(day, hour) === 'booked').length;
+            const dayMeetings = getMeetingsForDate(meetings, dateStr);
+            const pendingRequests = getPendingRequestsForDate(meetingRequests, dateStr);
+            const dayAvailability = getAvailabilityBlocksForDate(availability, dateStr);
+            const dayUnavailability = getUnavailabilityBlocksForDate(unavailability, dateStr);
+            const openSlotCount = slotBlockHours.filter(hour => getDashboardSlotStatus(day, hour) === 'available').length;
+            const blockedSlotCount = slotBlockHours.filter(hour => getDashboardSlotStatus(day, hour) === 'blocked').length;
+            const bookedSlotCount = slotBlockHours.filter(hour => getDashboardSlotStatus(day, hour) === 'booked').length;
             const isSelected = selectedSlotDay && isSameDay(selectedSlotDay, day);
             const hasAvailability = dayAvailability.length > 0;
             const isTodayDate = isSameDay(day, new Date());
@@ -4548,9 +3981,9 @@ ${safeFullReport}
                   </p>
                   <div className="pastor-slot-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                     {slotBlockHours.map(hour => {
-                      const status = getPastorSlotStatus(selectedSlotDay, hour);
+                      const status = getDashboardSlotStatus(selectedSlotDay, hour);
                       const isClickable = status === 'available' || status === 'blocked';
-                      const slotLabel = getPastorSlotLabel(status);
+                      const slotLabel = getDashboardSlotLabel(status);
 
                       return (
                         <button
@@ -4944,7 +4377,16 @@ ${safeFullReport}
                         <button
                           key={item.day}
                           type="button"
-                          onClick={() => toggleAvailabilityWeekday(item.day)}
+                          onClick={() =>
+                            setAvailabilityForm(previous => ({
+                              ...previous,
+                              selectedWeekdays:
+                                toggleAvailabilityWeekday(
+                                  previous.selectedWeekdays,
+                                  item.day,
+                                ),
+                            }))
+                          }
                           className={`py-2 rounded-lg text-[10px] font-bold border transition-colors ${
                             availabilityForm.selectedWeekdays.includes(item.day)
                               ? 'bg-green-600 text-white border-green-600'
