@@ -99,7 +99,6 @@ import {
   hourToTime,
   isPastorSlotBooked,
   isPastorSlotInsideAvailability,
-  sendMeetingConfirmationViaEmailJs,
   sendMeetingStatusEmailViaEmailJs,
   subscribeToAvailability,
   subscribeToMeetingRequests,
@@ -118,6 +117,13 @@ import {
   type Unavailability,
   type UnavailabilityForm,
 } from './calendar';
+
+import {
+  MeetingRequestsSection,
+  findMeetingRequest,
+  processMeetingRequestDecision,
+  type MeetingRequestDecision,
+} from './meeting-requests';
 
 
 
@@ -1411,83 +1417,30 @@ export default function PastorDashboard() {
     }
   };
 
-  const handleRequestStatus = async (id: string, status: 'accepted' | 'rejected') => {
+  const handleRequestStatus = async (
+    requestId: string,
+    decision: MeetingRequestDecision,
+  ) => {
     setLoading(true);
 
     try {
-      const req = meetingRequests.find(r => r.id === id);
+      const request = findMeetingRequest(
+        meetingRequests,
+        requestId,
+      );
 
-      if (!req) {
+      if (!request) {
         alert(t('booking.statusFailed'));
         return;
       }
 
-      if (status === 'rejected') {
-        if (req.email) {
-          await sendMeetingStatusEmailViaEmailJs({
-            kind: 'rejection',
-            recipientEmail: req.email,
-            name: req.name,
-            date: req.date,
-            startTime: req.startTime,
-            endTime: req.endTime,
-            location: '',
-            requesterLocale: (req as any).requesterLocale || 'en',
-            sourceId: id,
-          });
-        }
-
-        await updateMeetingRequest(
-          id,
-          {
-            status,
-            rejectionEmailSent: Boolean(req.email),
-            rejectionEmailSentUsing: req.email ? 'EmailJS' : null,
-            rejectionEmailSentAt: req.email ? Date.now() : null,
-            updatedAt: Date.now(),
-          } as any,
-        );
-        return;
-      }
-
-
-      const confirmationTimestamp = Date.now();
-      const meetingData: Record<string, any> = {
-        title: t('calendar.meetingWithPastor'),
-        date: req.date,
-        startTime: req.startTime,
-        endTime: req.endTime,
-        location: '',
-        meetLink: '',
-        type: 'counseling',
-        participantIds: [],
-        requestName: req.name,
-        requestEmail: req.email,
-        requestReason: req.reason || '',
-        requesterLocale: (req as any).requesterLocale === 'ar' ? 'ar' : 'en',
-        requesterLanguage: (req as any).requesterLanguage || ((req as any).requesterLocale === 'ar' ? 'Arabic' : 'English'),
-        sourceRequestId: id,
-        acknowledged: true,
-        acknowledgedAt: confirmationTimestamp,
-        acknowledgedEmail: req.email,
-        confirmationSentUsing: 'EmailJS',
-        updatedAt: confirmationTimestamp,
-      };
-
-      await sendMeetingConfirmationViaEmailJs(meetingData as Meeting);
-
-      await createMeeting(meetingData as any);
-
-      await updateMeetingRequest(
-        id,
-        {
-          status: 'accepted',
-          confirmationSent: true,
-          confirmationSentUsing: 'EmailJS',
-          confirmationSentAt: confirmationTimestamp,
-          updatedAt: Date.now(),
-        } as any,
-      );
+      await processMeetingRequestDecision({
+        request,
+        decision,
+        meetingTitle: t(
+          'calendar.meetingWithPastor',
+        ),
+      });
     } catch (err) {
       console.error(err);
       alert(t('booking.statusFailed'));
@@ -2991,54 +2944,18 @@ export default function PastorDashboard() {
         </section>
       )}
 
-      {meetingRequests.filter(r => r.status === 'pending').length > 0 && (
-        <section className="bg-white p-6 rounded-3xl shadow-sm border border-amber-200">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-amber-700">
-              <Hourglass size={18} />
-              {t('requests.title')}
-              <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold">
-                {meetingRequests.filter(r => r.status === 'pending').length}
-              </span>
-            </h3>
-            <button onClick={() => setShowRequests(!showRequests)} className="text-xs text-[#7a1717] font-bold hover:underline">
-              {showRequests ? t('requests.hide') : t('requests.viewAll')}
-            </button>
-          </div>
-          {showRequests && (
-            <div className="space-y-3">
-              {meetingRequests.filter(r => r.status === 'pending').map(req => (
-                <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-stone-50 rounded-xl border border-gray-100 gap-3">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center border border-gray-100">
-                      <User size={18} className="text-[#7a1717]" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-sm">{req.name}</h4>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-0.5">
-                        <span className="flex items-center gap-1"><Mail size={11} /> {req.email}</span>
-                        <span className="flex items-center gap-1"><CalendarIcon size={11} /> {req.date}</span>
-                        <span className="flex items-center gap-1"><Clock size={11} /> {timeRangeToLabel(req.startTime, req.endTime, displayLocale)}</span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1 italic">{req.reason}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 self-end sm:self-auto">
-                    <button onClick={() => handleRequestStatus(req.id!, 'accepted')} className="flex items-center gap-1 px-4 py-2 bg-green-50 text-green-700 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors">
-                      <CheckCircle size={14} />
-                      {t('requests.accept')}
-                    </button>
-                    <button onClick={() => handleRequestStatus(req.id!, 'rejected')} className="flex items-center gap-1 px-4 py-2 bg-red-50 text-red-700 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors">
-                      <XCircle size={14} />
-                      {t('requests.reject')}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+      <MeetingRequestsSection
+        meetingRequests={meetingRequests}
+        expanded={showRequests}
+        loading={loading}
+        locale={displayLocale}
+        onToggleExpanded={() =>
+          setShowRequests(
+            previous => !previous,
+          )
+        }
+        onDecision={handleRequestStatus}
+      />
 
       {showNextGenRegistrations && (
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-indigo-200">
