@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion, type Variants } from 'motion/react';
 import {
   ClipboardList,
   LogIn,
@@ -12,28 +12,64 @@ import {
   Globe,
   Calendar as CalendarIcon,
   Sparkles,
-  Music,
-  HeartHandshake,
-  Sunrise,
-  Droplet,
-  Compass,
-  ImagePlus,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 
-// Ministry-relevant placeholder slides for the carousel. Swap `icon` for a
-// real <img> once photography is ready — the dashed frame and ImagePlus
-// badge are there to make the "this is a placeholder" state legible.
-const CAROUSEL_ITEMS = [
-  { icon: Music, shape: 'rounded-full', en: 'Worship Nights', ar: 'ليالي العبادة' },
-  { icon: Users, shape: 'blob-a', en: 'Small Groups', ar: 'المجموعات الصغيرة' },
-  { icon: HeartHandshake, shape: 'rounded-3xl', en: 'Serving Day', ar: 'يوم الخدمة' },
-  { icon: Sunrise, shape: 'rounded-full', en: 'Youth Camp', ar: 'معسكر الشباب' },
-  { icon: Droplet, shape: 'blob-b', en: 'Baptisms', ar: 'المعمودية' },
-  { icon: Compass, shape: 'rounded-3xl', en: 'Outreach', ar: 'الخدمة الخارجية' },
+type ShapeKind = 'circle' | 'blob-a' | 'blob-b' | 'hex' | 'square';
+type ShapeTone = 'a' | 'b';
+
+interface CarouselShape {
+  kind: ShapeKind;
+  tone: ShapeTone;
+}
+
+// Pure placeholder shapes for the carousel — no icons, no names, nothing to
+// swap out later except dropping a real <img> into each tile once
+// photography exists. Shape + a faint dot pattern is all invented locally.
+const CAROUSEL_SHAPES: CarouselShape[] = [
+  { kind: 'circle', tone: 'a' },
+  { kind: 'blob-a', tone: 'b' },
+  { kind: 'hex', tone: 'a' },
+  { kind: 'square', tone: 'b' },
+  { kind: 'blob-b', tone: 'a' },
+  { kind: 'circle', tone: 'b' },
 ];
+
+const SHAPE_CLASS: Record<ShapeKind, string> = {
+  circle: 'rounded-full',
+  'blob-a': 'rounded-[42%_58%_61%_39%/45%_41%_59%_55%]',
+  'blob-b': 'rounded-[61%_39%_42%_58%/55%_59%_41%_45%]',
+  hex: '',
+  square: 'rounded-[28px]',
+};
+
+const TONE_CLASS: Record<ShapeTone, string> = {
+  a: 'from-[#f8eeee] to-[#f5e6d8]',
+  b: 'from-[#f5e6d8] to-[#efe1cf]',
+};
+
+function ShapeTile({ shape, index }: { shape: CarouselShape; index: number }) {
+  const patternId = `carousel-dots-${index}`;
+  const clipStyle = shape.kind === 'hex' ? { clipPath: 'polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0% 50%)' } : undefined;
+
+  return (
+    <div
+      className={`relative w-full aspect-square overflow-hidden bg-gradient-to-br ${TONE_CLASS[shape.tone]} border-2 border-dashed border-[#8b1e1e]/25 ${SHAPE_CLASS[shape.kind]}`}
+      style={clipStyle}
+    >
+      <svg className="absolute inset-0 w-full h-full opacity-50" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <pattern id={patternId} width="16" height="16" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="1.5" fill="#8b1e1e" fillOpacity="0.35" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+      </svg>
+    </div>
+  );
+}
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -41,7 +77,7 @@ export default function LandingPage() {
   const [scrollY, setScrollY] = useState(0);
   const [nextGenButtonClicked, setNextGenButtonClicked] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
-  const scrollerRef = useRef(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
 
   const isAr = locale === 'ar';
@@ -52,9 +88,6 @@ export default function LandingPage() {
     document.title = isAr ? 'تقييم المواهب الروحية - LINC' : 'LINC Spiritual Gifts Assessment';
   }, [isAr]);
 
-  // Load display/body typefaces once. Fraunces + Manrope give the English
-  // side a warm-but-editorial voice; Amiri + Cairo do the same for Arabic
-  // without borrowing a Latin font that renders Arabic poorly.
   useEffect(() => {
     if (document.getElementById('linc-font-link')) return;
     const link = document.createElement('link');
@@ -74,12 +107,13 @@ export default function LandingPage() {
   useEffect(() => {
     const container = scrollerRef.current;
     if (!container) return;
-    const slides = Array.from(container.querySelectorAll('[data-slide-index]'));
+    const slides = Array.from(container.querySelectorAll<HTMLElement>('[data-slide-index]'));
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio > 0.6) {
-            setActiveSlide(Number(entry.target.dataset.slideIndex));
+            const target = entry.target as HTMLElement;
+            setActiveSlide(Number(target.dataset.slideIndex));
           }
         });
       },
@@ -89,13 +123,13 @@ export default function LandingPage() {
     return () => observer.disconnect();
   }, [locale]);
 
-  const scrollToSlide = (index) => {
+  const scrollToSlide = (index: number) => {
     const container = scrollerRef.current;
-    const target = container?.querySelector(`[data-slide-index="${index}"]`);
+    const target = container?.querySelector<HTMLElement>(`[data-slide-index="${index}"]`);
     target?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   };
   const goPrev = () => scrollToSlide(Math.max(activeSlide - 1, 0));
-  const goNext = () => scrollToSlide(Math.min(activeSlide + 1, CAROUSEL_ITEMS.length - 1));
+  const goNext = () => scrollToSlide(Math.min(activeSlide + 1, CAROUSEL_SHAPES.length - 1));
 
   const Arrow = isAr ? <ArrowRight size={20} className="rotate-180" /> : <ArrowRight size={20} />;
 
@@ -113,13 +147,13 @@ export default function LandingPage() {
     { icon: ClipboardList, path: '/attendance', en: 'Attendance', ar: 'الحضور' },
   ];
 
-  const heroContainer = {
+  const heroContainer: Variants = {
     hidden: {},
     visible: { transition: { staggerChildren: prefersReducedMotion ? 0 : 0.12, delayChildren: 0.05 } },
   };
-  const heroItem = {
+  const heroItem: Variants = {
     hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 18 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } },
   };
 
   return (
@@ -341,10 +375,10 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Community carousel — placeholder shapes stand in for photography.
-          Swap each icon tile for an <img> once photos are ready; the
-          dashed frame + ImagePlus badge disappear naturally once real
-          content fills the shape. */}
+      {/* Community carousel — every tile is an invented shape (circle, blob,
+          hexagon, rounded square) filled with a faint dotted texture drawn
+          in inline SVG. Nothing here is imported or named; drop a real
+          <img> into a ShapeTile once photography exists. */}
       <section className="py-16 sm:py-20 bg-white overflow-hidden">
         <div className="max-w-5xl mx-auto px-5 sm:px-6 mb-8 sm:mb-10 flex items-end justify-between gap-4">
           <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
@@ -368,7 +402,7 @@ export default function LandingPage() {
               onClick={goNext}
               aria-label={isAr ? 'التالي' : 'Next'}
               className="w-11 h-11 grid place-items-center rounded-full border-2 border-[#8b1e1e]/20 text-[#8b1e1e] transition-colors hover:bg-[#f8eeee] disabled:opacity-30"
-              disabled={activeSlide === CAROUSEL_ITEMS.length - 1}
+              disabled={activeSlide === CAROUSEL_SHAPES.length - 1}
             >
               {dir === 'rtl' ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
             </button>
@@ -380,41 +414,22 @@ export default function LandingPage() {
           dir={dir}
           className="flex gap-4 sm:gap-5 overflow-x-auto px-5 sm:px-6 pb-4 snap-x snap-mandatory scroll-px-5 sm:scroll-px-6 no-scrollbar"
         >
-          {CAROUSEL_ITEMS.map((item, i) => {
-            const Icon = item.icon;
-            const shapeClass =
-              item.shape === 'rounded-full'
-                ? 'rounded-full'
-                : item.shape === 'blob-a'
-                ? 'rounded-[42%_58%_61%_39%/45%_41%_59%_55%]'
-                : item.shape === 'blob-b'
-                ? 'rounded-[61%_39%_42%_58%/55%_59%_41%_45%]'
-                : 'rounded-[28px]';
-            return (
-              <motion.div
-                key={item.en}
-                data-slide-index={i}
-                whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-                className="snap-center shrink-0 w-[72vw] sm:w-[280px] flex flex-col items-center text-center"
-              >
-                <div
-                  className={`relative w-full aspect-square grid place-items-center ${shapeClass} bg-gradient-to-br from-[#f8eeee] to-[#f5e6d8] border-2 border-dashed border-[#8b1e1e]/25 mb-4`}
-                >
-                  <Icon size={36} className="text-[#8b1e1e]/70" />
-                  <span className="absolute bottom-3 right-3 w-8 h-8 grid place-items-center rounded-full bg-white shadow-sm text-[#8b1e1e]/70">
-                    <ImagePlus size={15} />
-                  </span>
-                </div>
-                <p className="font-bold text-[#641414]">{isAr ? item.ar : item.en}</p>
-              </motion.div>
-            );
-          })}
+          {CAROUSEL_SHAPES.map((shape, i) => (
+            <motion.div
+              key={i}
+              data-slide-index={i}
+              whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+              className="snap-center shrink-0 w-[72vw] sm:w-[280px]"
+            >
+              <ShapeTile shape={shape} index={i} />
+            </motion.div>
+          ))}
         </div>
 
         {/* Dots — the primary progress indicator on phones, where the
             arrow buttons are hidden to keep the row uncluttered */}
-        <div className="flex justify-center gap-2 mt-2">
-          {CAROUSEL_ITEMS.map((_, i) => (
+        <div className="flex justify-center gap-2 mt-4">
+          {CAROUSEL_SHAPES.map((_, i) => (
             <button
               key={i}
               onClick={() => scrollToSlide(i)}
