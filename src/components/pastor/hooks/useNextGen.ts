@@ -4,10 +4,6 @@ import {
 } from 'react';
 
 import {
-  NextGenQuestion,
-  NextGenRegistration,
-  NextGenRegistrationStatusFilter,
-  NextGenSurveyAggregateResults,
   createEmptyNextGenSurveyResults,
   getNextGenRegistrationsByStatus,
   subscribeToNextGenQuestions,
@@ -15,6 +11,13 @@ import {
   subscribeToNextGenSurveyResults,
   updateNextGenQuestionSelection,
   updateNextGenRegistrationStatus,
+} from '../nextgen';
+
+import type {
+  NextGenQuestion,
+  NextGenRegistration,
+  NextGenRegistrationStatusFilter,
+  NextGenSurveyAggregateResults,
 } from '../nextgen';
 
 type DisplayLocale = 'en' | 'ar';
