@@ -1,19 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import emailjs from '@emailjs/browser';
-import { database } from '../../firebase';
-import { ref, onValue, push } from 'firebase/database';
-import type { Meeting, MeetingRequest } from '../../types';
 import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-  isSameDay,
   addMonths,
-  subMonths,
+  format,
+  isSameDay,
   parseISO,
+  startOfMonth,
+  subMonths,
 } from 'date-fns';
-import { ar, enUS } from 'date-fns/locale';
+
 import {
   Plus,
   Trash2,
@@ -35,1822 +28,234 @@ import {
   UserPlus,
   BarChart3,
 } from 'lucide-react';
+
 import { motion } from 'motion/react';
+
 import PageTitle from '../PageTitle';
 import { useI18n } from '../../i18n';
+
 import {
-  MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
-  PEOPLE_DEVELOPMENT_ROOT,
   PeopleAssignmentsCalendarModal,
   PeopleDevelopmentSection,
   PeoplePersonalNoteModal,
-  assignPersonToPeopleDevelopmentGroup,
-  buildPeopleDevelopmentAssignmentNotificationEmailHtml,
-  extractPeopleDevelopmentGroup,
-  formatFileSize,
-  getParticipantPeopleDevelopmentGroup,
-  getPeopleAssignmentDateKey,
-  getPeopleAssignmentsInMonth,
-  getPeopleDevelopmentEmailRecipients,
-  getPeopleDevelopmentGroupAssignments,
-  getPeopleDevelopmentGroupLabel,
-  getPeopleDevelopmentStaticGroupLabel,
-  isUsableEmail,
-  postPeopleDevelopmentAssignment,
-  readFileAsBase64,
-  removePeopleDevelopmentAssignment,
-  savePeoplePersonalNote,
-  subscribeToPeopleDevelopmentAssignments,
-  subscribeToPeopleDevelopmentMembers,
-  subscribeToPeoplePersonalNotes,
-  updatePeopleDevelopmentRecords,
-  type PeopleDevelopmentAttachment,
-  type PeopleDevelopmentEntry,
-  type PeopleDevelopmentGroupId,
-  type PeopleDevelopmentMember,
   type PeopleDevelopmentParticipant,
-  type PeoplePersonalNote,
-  type PeoplePersonalNoteType,
 } from './people-development';
+
 import {
   BOOKING_WINDOW_TIME_OPTIONS,
   FULL_DAY_TIME_OPTIONS,
   MEETING_TIME_OPTIONS,
   SLOT_BLOCK_DURATION,
-  buildAvailabilityDates,
-  buildSlotBlockHours,
-  createAvailability,
-  createInitialAvailabilityForm,
-  createInitialUnavailabilityForm,
-  createMeeting,
-  createUnavailability,
-  deleteAvailability,
-  deleteMeeting,
-  deleteUnavailability,
   getAvailabilityBlocksForDate,
-  getBlockingUnavailabilityForSlot,
   getDateString,
   getMeetingRequestEmail,
   getMeetingsForDate,
-  getPastorSlotStatus as calculatePastorSlotStatus,
-  getPastorSlotTranslationKey,
   getPendingRequestsForDate,
   getUnavailabilityBlocksForDate,
-  getUnavailabilityRange,
   hourToLabel,
-  hourToTime,
-  isPastorSlotBooked,
-  isPastorSlotInsideAvailability,
-  sendMeetingStatusEmailViaEmailJs,
-  subscribeToAvailability,
-  subscribeToMeetingRequests,
-  subscribeToMeetings,
-  subscribeToUnavailability,
   timeRangeToLabel,
-  timeToHour,
   toggleAvailabilityWeekday,
-  updateAvailability,
-  updateMeeting,
-  updateMeetingRequest,
-  updateUnavailability,
-  type Availability,
-  type AvailabilityForm,
-  type PastorSlotStatus,
-  type Unavailability,
-  type UnavailabilityForm,
 } from './calendar';
 
 import {
   MeetingRequestsSection,
-  findMeetingRequest,
-  processMeetingRequestDecision,
-  type MeetingRequestDecision,
 } from './meeting-requests';
 
 import {
   NextGenQuestionsSection,
   NextGenRegistrationsSection,
   NextGenSurveyResultsSection,
-  createEmptyNextGenSurveyResults,
-  getNextGenRegistrationsByStatus,
-  subscribeToNextGenQuestions,
-  subscribeToNextGenRegistrations,
-  subscribeToNextGenSurveyResults,
-  updateNextGenQuestionSelection,
-  updateNextGenRegistrationStatus,
-  type NextGenQuestion,
-  type NextGenRegistration,
-  type NextGenRegistrationStatusFilter,
-  type NextGenSurveyAggregateResults,
 } from './nextgen';
 
-
-const EMAILJS_SERVICE_ID = 'service_v47g6or';
-const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
-const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function normalizeLookupKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function unwrapStoredValue(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
-  if (typeof value !== 'object' || Array.isArray(value)) return '';
-
-  const record = value as Record<string, unknown>;
-  for (const key of ['value', 'answer', 'currentValue', 'userIdentifier', 'linkedUserIdentifier', 'group']) {
-    const nested = record[key];
-    if (typeof nested === 'string' || typeof nested === 'number') return String(nested).trim();
-  }
-
-  return '';
-}
-
-function extractResponseValue(value: unknown, candidateKeys: string[]): string {
-  const wantedKeys = new Set(candidateKeys.map(normalizeLookupKey));
-
-  const visit = (current: unknown, currentKey = ''): string => {
-    if (current === null || current === undefined) return '';
-
-    if (typeof current === 'string' || typeof current === 'number') {
-      return wantedKeys.has(normalizeLookupKey(currentKey)) ? String(current).trim() : '';
-    }
-
-    if (Array.isArray(current)) {
-      for (const item of current) {
-        const found = visit(item, currentKey);
-        if (found) return found;
-      }
-      return '';
-    }
-
-    if (typeof current !== 'object') return '';
-
-    const record = current as Record<string, unknown>;
-
-    for (const [key, nested] of Object.entries(record)) {
-      if (wantedKeys.has(normalizeLookupKey(key))) {
-        const directValue = unwrapStoredValue(nested);
-        if (directValue) return directValue;
-
-        const nestedValue = visit(nested, key);
-        if (nestedValue) return nestedValue;
-      }
-    }
-
-    for (const [key, nested] of Object.entries(record)) {
-      const found = visit(nested, key);
-      if (found) return found;
-    }
-
-    return '';
-  };
-
-  return visit(value);
-}
-
-function safeFirebaseKey(value: string): string {
-  const safeValue = String(value || '')
-    .trim()
-    .replace(/[.#$/[\]]/g, '_')
-    .replace(/\s+/g, '_');
-
-  return safeValue || `unknown_${Date.now()}`;
-}
-
-function getFirstName(value: string): string {
-  return String(value || '').trim().split(/\s+/)[0] || '';
-}
+import {
+  useAvailability,
+  useCalendarMonth,
+  useMeetingRequests,
+  useMeetings,
+  useNextGen,
+  useParticipants,
+  usePeopleDevelopment,
+} from './hooks';
 
 type Participant = PeopleDevelopmentParticipant;
 
 export default function PastorDashboard() {
   const { t, dir, locale } = useI18n();
   const displayLocale = locale === 'ar' ? 'ar' : 'en';
-  const dateLocale = displayLocale === 'ar' ? ar : enUS;
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
-  const [showParticipantDropdown, setShowParticipantDropdown] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
-  const [meetingRequests, setMeetingRequests] = useState<MeetingRequest[]>([]);
-  const [showRequests, setShowRequests] = useState(false);
-  const [nextGenQuestions, setNextGenQuestions] = useState<NextGenQuestion[]>([]);
-  const [showNextGenQuestions, setShowNextGenQuestions] = useState(false);
-  const [showNextGenSurveyResults, setShowNextGenSurveyResults] = useState(false);
-  const [nextGenSurveyResults, setNextGenSurveyResults] = useState<NextGenSurveyAggregateResults>(() => createEmptyNextGenSurveyResults());
-  const [nextGenSurveyResultsLoading, setNextGenSurveyResultsLoading] = useState(true);
-  const [nextGenSurveyResultsError, setNextGenSurveyResultsError] = useState('');
-  const [nextGenRegistrations, setNextGenRegistrations] = useState<NextGenRegistration[]>([]);
-  const [showNextGenRegistrations, setShowNextGenRegistrations] = useState(false);
-  const [nextGenRegistrationSearchTerm, setNextGenRegistrationSearchTerm] = useState('');
-  const [nextGenRegistrationStatusFilter, setNextGenRegistrationStatusFilter] = useState<NextGenRegistrationStatusFilter>('all');
-  const [nextGenRegistrationUpdatingId, setNextGenRegistrationUpdatingId] = useState<string | null>(null);
-  const [showPeopleDevelopment, setShowPeopleDevelopment] = useState(false);
-  const [peopleDevelopmentMembers, setPeopleDevelopmentMembers] = useState<Record<string, PeopleDevelopmentMember>>({});
-  const [peopleDevelopmentEntries, setPeopleDevelopmentEntries] = useState<PeopleDevelopmentEntry[]>([]);
-  const [peoplePersonalNotes, setPeoplePersonalNotes] = useState<PeoplePersonalNote[]>([]);
-  const [peopleSearchTerm, setPeopleSearchTerm] = useState('');
-  const [draggedPeopleMemberKey, setDraggedPeopleMemberKey] = useState<string | null>(null);
-  const [peopleDevelopmentSavingKey, setPeopleDevelopmentSavingKey] = useState<string | null>(null);
-  const [peopleDevelopmentPostingGroup, setPeopleDevelopmentPostingGroup] = useState<PeopleDevelopmentGroupId | null>(null);
-  const [peopleDevelopmentDeletingKey, setPeopleDevelopmentDeletingKey] = useState<string | null>(null);
-  const [peopleAssignmentsPopupGroup, setPeopleAssignmentsPopupGroup] = useState<PeopleDevelopmentGroupId | null>(null);
-  const [peopleAssignmentsPopupMonth, setPeopleAssignmentsPopupMonth] = useState(new Date());
-  const [peopleAssignmentsPopupSelectedDate, setPeopleAssignmentsPopupSelectedDate] = useState('');
-  const [peopleAssignmentDrafts, setPeopleAssignmentDrafts] = useState<Record<PeopleDevelopmentGroupId, string>>({
-    pastors: '',
-    prophets: '',
-    evangelists: '',
-    teachers: '',
-    apostles: '',
-    helpers: '',
-    mercy: '',
-    facilitators: '',
-    services: '',
-    giving: '',
-  });
-  const [peopleAssignmentFiles, setPeopleAssignmentFiles] = useState<Record<PeopleDevelopmentGroupId, File | null>>({
-    pastors: null,
-    prophets: null,
-    evangelists: null,
-    teachers: null,
-    apostles: null,
-    helpers: null,
-    mercy: null,
-    facilitators: null,
-    services: null,
-    giving: null,
-  });
-  const [peopleAssignmentFileInputResetKeys, setPeopleAssignmentFileInputResetKeys] = useState<Record<PeopleDevelopmentGroupId, number>>({
-    pastors: 0,
-    prophets: 0,
-    evangelists: 0,
-    teachers: 0,
-    apostles: 0,
-    helpers: 0,
-    mercy: 0,
-    facilitators: 0,
-    services: 0,
-    giving: 0,
-  });
-  const [peopleGroupSelectDrafts, setPeopleGroupSelectDrafts] = useState<Record<PeopleDevelopmentGroupId, string>>({
-    pastors: '',
-    prophets: '',
-    evangelists: '',
-    teachers: '',
-    apostles: '',
-    helpers: '',
-    mercy: '',
-    facilitators: '',
-    services: '',
-    giving: '',
-  });
-  const [showPeopleNotePopup, setShowPeopleNotePopup] = useState(false);
-  const [selectedPeopleNotePerson, setSelectedPeopleNotePerson] = useState<Participant | null>(null);
-  const [peopleNoteType, setPeopleNoteType] = useState<PeoplePersonalNoteType>('strength');
-  const [peopleNoteText, setPeopleNoteText] = useState('');
-  const [peopleNoteSaving, setPeopleNoteSaving] = useState(false);
-  const [nextGenSelectionLoadingId, setNextGenSelectionLoadingId] = useState<string | null>(null);
-  const [selectedSlotDay, setSelectedSlotDay] = useState<Date | null>(null);
-  const [slotBlockingLoading, setSlotBlockingLoading] = useState(false);
 
-  const [availability, setAvailability] = useState<Availability[]>([]);
-  const [unavailability, setUnavailability] = useState<Unavailability[]>([]);
+  const {
+    participants,
+  } = useParticipants();
 
-  const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
-  const [editingAvailability, setEditingAvailability] = useState<Availability | null>(null);
-  const [availabilityForm, setAvailabilityForm] = useState<AvailabilityForm>(
-    () => createInitialAvailabilityForm(),
-  );
-
-  const [showUnavailabilityModal, setShowUnavailabilityModal] = useState(false);
-  const [editingUnavailability, setEditingUnavailability] = useState<Unavailability | null>(null);
-  const [unavailabilityForm, setUnavailabilityForm] = useState<UnavailabilityForm>(
-    () => createInitialUnavailabilityForm(),
-  );
-
-  useEffect(() => {
-    const formRef = ref(database, 'form/');
-    const unsubscribe = onValue(formRef, (snapshot) => {
-      const data = snapshot.val();
-
-      if (!data) {
-        setParticipants([]);
-        return;
-      }
-
-      const peopleByKey = new Map<string, Participant>();
-
-      Object.entries(data).forEach(([id, val]: [string, any]) => {
-        const raw = val || {};
-        const fullName = extractResponseValue(raw, ['fullName', 'full_name', 'name', 'firstName', 'lastName']);
-        const email = extractResponseValue(raw, ['email', 'emailAddress', 'userEmail']);
-        const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']).trim();
-        const normalizedIdentifier = userIdentifier.toLowerCase();
-
-        if (!normalizedIdentifier) {
-          return;
-        }
-
-        const result = raw.results;
-        const lang = raw.interfaceLanguageUsed === 'Arabic' ? 'Arabic' : 'English';
-        const primaryGift = result?.[lang]?.primaryGift || '';
-        const memberKey = `identifier_${safeFirebaseKey(normalizedIdentifier)}`;
-        const existing = peopleByKey.get(memberKey);
-        const peopleGroup = extractPeopleDevelopmentGroup(raw);
-
-        if (existing) {
-          peopleByKey.set(memberKey, {
-            ...existing,
-            name: existing.name !== 'N/A' && existing.name ? existing.name : fullName || existing.name,
-            email: existing.email !== 'N/A' && existing.email ? existing.email : email || existing.email,
-            primaryGift: existing.primaryGift || primaryGift,
-            identifier: existing.identifier || userIdentifier,
-            peopleGroup: existing.peopleGroup || peopleGroup,
-            sourceKeys: Array.from(new Set([...existing.sourceKeys, id])),
-          });
-          return;
-        }
-
-        peopleByKey.set(memberKey, {
-          id,
-          name: fullName || 'N/A',
-          email: email || 'N/A',
-          primaryGift,
-          identifier: userIdentifier,
-          memberKey,
-          firstName: getFirstName(fullName || 'N/A'),
-          peopleGroup,
-          sourcePath: 'form',
-          sourceKeys: [id],
-        });
-      });
-
-      const parsed = Array.from(peopleByKey.values())
-        .filter(person => person.identifier.trim())
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-      setParticipants(parsed);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => subscribeToMeetings(setMeetings), []);
-
-  useEffect(() => subscribeToMeetingRequests(setMeetingRequests), []);
-
-  useEffect(() => subscribeToNextGenQuestions(setNextGenQuestions), []);
-
-  useEffect(() => {
-    setNextGenSurveyResultsLoading(true);
-    setNextGenSurveyResultsError('');
-
-    return subscribeToNextGenSurveyResults(
-      results => {
-        setNextGenSurveyResults(results);
-        setNextGenSurveyResultsLoading(false);
-      },
-      error => {
-        console.error(
-          'Failed to load NextGen survey results:',
-          error,
-        );
-
-        setNextGenSurveyResults(
-          createEmptyNextGenSurveyResults(),
-        );
-
-        setNextGenSurveyResultsError(
-          displayLocale === 'ar'
-            ? 'تعذر تحميل نتائج الاستبيان.'
-            : 'Unable to load the survey results.',
-        );
-
-        setNextGenSurveyResultsLoading(false);
-      },
-    );
-  }, [displayLocale]);
-
-  useEffect(() => subscribeToNextGenRegistrations(setNextGenRegistrations), []);
-
-  useEffect(
-    () => subscribeToPeopleDevelopmentMembers(setPeopleDevelopmentMembers),
-    [],
-  );
-
-  useEffect(
-    () => subscribeToPeopleDevelopmentAssignments(setPeopleDevelopmentEntries),
-    [],
-  );
-
-  useEffect(
-    () => subscribeToPeoplePersonalNotes(setPeoplePersonalNotes),
-    [],
-  );
-
-  useEffect(() => subscribeToAvailability(setAvailability), []);
-
-  useEffect(() => subscribeToUnavailability(setUnavailability), []);
-
-  const [newMeeting, setNewMeeting] = useState<Partial<Meeting>>({
-    title: '',
-    description: '',
-    date: format(new Date(), 'yyyy-MM-dd'),
-    startTime: '10:00',
-    endTime: '11:00',
-    location: '',
-    meetLink: '',
-    type: 'service',
+  const {
+    currentDate,
+    setCurrentDate,
+    dateLocale,
+    days,
+  } = useCalendarMonth({
+    locale: displayLocale,
   });
 
-  const days = eachDayOfInterval({
-    start: startOfMonth(currentDate),
-    end: endOfMonth(currentDate),
+  const {
+    meetingRequests,
+    showRequests,
+    setShowRequests,
+    requestDecisionLoading,
+    handleRequestStatus,
+  } = useMeetingRequests({
+    translate: t,
   });
 
-  const resetAvailabilityForm = () => {
-    setAvailabilityForm(createInitialAvailabilityForm());
-  };
-
-  const resetUnavailabilityForm = () => {
-    setUnavailabilityForm(createInitialUnavailabilityForm());
-  };
-
-  const getMeetingDisplayTitle = (meeting: Meeting): string => {
-    const requestName = (meeting as any).requestName;
-
-    if (requestName) {
-      return `${t('calendar.meetingWith')} ${requestName}`;
-    }
-
-    return meeting.title || t('calendar.meeting');
-  };
-
-  const getMeetingRequestReason = (meeting: Meeting): string => {
-    return (meeting as any).requestReason || '';
-  };
-
-  const getMeetingAcknowledged = (meeting: Meeting): boolean => {
-    return Boolean((meeting as any).acknowledged);
-  };
-
-  const openMeetingEditor = (meeting: Meeting) => {
-    setEditingMeeting(meeting);
-    setNewMeeting({ ...meeting });
-    setSelectedParticipants(meeting.participantIds || []);
-    setEmailSent(false);
-    setIsAddOpen(true);
-  };
-
-  const toggleParticipant = (id: string) => {
-    setSelectedParticipants(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    );
-  };
-
-  const sendEmails = async (meetingData: { title: string; date: string; startTime: string; endTime: string; location: string; meetLink: string }) => {
-    if (selectedParticipants.length === 0) return true;
-
-    const selected = participants.filter(participant => selectedParticipants.includes(participant.id));
-    let allSucceeded = true;
-
-    for (const participant of selected) {
-      if (!isUsableEmail(participant.email)) continue;
-
-      const participantName = participant.name || (displayLocale === 'ar' ? 'المشارك' : 'Participant');
-      const meetingDate = format(parseISO(meetingData.date), 'EEEE, MMMM d, yyyy', { locale: dateLocale });
-      const meetingTime = timeRangeToLabel(meetingData.startTime, meetingData.endTime, displayLocale);
-      const safeParticipantName = escapeHtml(participantName);
-      const safeMeetingTitle = escapeHtml(meetingData.title);
-      const safeMeetingDate = escapeHtml(meetingDate);
-      const safeMeetingTime = escapeHtml(meetingTime);
-      const safeMeetingLocation = escapeHtml(meetingData.location || (displayLocale === 'ar' ? 'يحدد لاحقاً' : 'TBA'));
-      const safeMeetingLink = escapeHtml(meetingData.meetLink || '');
-      const onlineLinkHtml = meetingData.meetLink
-        ? `<p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'رابط الاجتماع عبر الإنترنت' : 'Online meeting link'}:</strong> <a href="${safeMeetingLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetingLink}</a></p>`
-        : '';
-
-      const htmlBody = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #f5f4f0; border-radius: 22px;">
-          <div style="background: #8b1e1e; color: white; padding: 16px; border-radius: 14px; text-align: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; font-size: 20px;">${displayLocale === 'ar' ? 'دعوة لاجتماع LINC' : 'LINC Meeting Invitation'}</h1>
-          </div>
-          <p style="color: #333; font-size: 15px;">${displayLocale === 'ar' ? `مرحباً ${safeParticipantName}،` : `Dear ${safeParticipantName},`}</p>
-          <p style="color: #555; font-size: 14px;">${displayLocale === 'ar' ? 'تمت دعوتك لحضور الاجتماع التالي:' : 'You are invited to attend the following meeting:'}</p>
-          <div style="background: white; padding: 16px; border-radius: 14px; border: 1px solid #e5e5e5; margin-bottom: 16px;">
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'الاجتماع' : 'Meeting'}:</strong> ${safeMeetingTitle}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'التاريخ' : 'Date'}:</strong> ${safeMeetingDate}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'الوقت' : 'Time'}:</strong> ${safeMeetingTime}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${displayLocale === 'ar' ? 'المكان' : 'Location'}:</strong> ${safeMeetingLocation}</p>
-            ${onlineLinkHtml}
-          </div>
-          <p style="color: #999; font-size: 12px; margin-top: 24px;">${displayLocale === 'ar' ? 'نتطلع إلى رؤيتك هناك.' : 'We look forward to seeing you there.'}</p>
-        </div>
-      `.trim();
-
-      try {
-        const response = await emailjs.send(
-          EMAILJS_SERVICE_ID,
-          EMAILJS_TEMPLATE_ID,
-          {
-            to_email: participant.email,
-            subject: displayLocale === 'ar'
-              ? `دعوة لاجتماع: ${meetingData.title}`
-              : `Meeting Invitation: ${meetingData.title}`,
-            fullName: participantName,
-            message_html: htmlBody,
-            reply_to: participant.email,
-          },
-          EMAILJS_PUBLIC_KEY,
-        );
-
-        await push(ref(database, 'emailJsSendLogs/'), {
-          recipientEmail: participant.email,
-          subject: displayLocale === 'ar'
-            ? `دعوة لاجتماع: ${meetingData.title}`
-            : `Meeting Invitation: ${meetingData.title}`,
-          fullName: participantName,
-          sentUsing: 'EmailJS',
-          serviceId: EMAILJS_SERVICE_ID,
-          templateId: EMAILJS_TEMPLATE_ID,
-          source: 'calendarParticipantInvitation',
-          meetingDate: meetingData.date,
-          meetingStartTime: meetingData.startTime,
-          meetingEndTime: meetingData.endTime,
-          sentAt: Date.now(),
-          sentAtISO: new Date().toISOString(),
-          emailJsResponse: {
-            status: response.status,
-            text: response.text,
-          },
-        });
-      } catch (error) {
-        allSucceeded = false;
-        console.error(`Failed to send meeting invitation to ${participant.email}:`, error);
-      }
-    }
-
-    return allSucceeded;
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setEmailSent(false);
-
-    try {
-      const startHour = timeToHour(newMeeting.startTime || '00:00');
-      const endHour = timeToHour(newMeeting.endTime || '00:00');
-
-      if (endHour <= startHour) {
-        alert(displayLocale === 'ar' ? 'وقت النهاية يجب أن يكون بعد وقت البداية.' : 'End time must be after start time.');
-        return;
-      }
-
-      const meetingData: Record<string, any> = {
-        title: newMeeting.title || '',
-        date: newMeeting.date || '',
-        startTime: newMeeting.startTime || '',
-        endTime: newMeeting.endTime || '',
-        location: newMeeting.location || '',
-        meetLink: newMeeting.meetLink || '',
-        type: newMeeting.type || 'service',
-        participantIds: selectedParticipants,
-        updatedAt: Date.now(),
-      };
-
-      if (editingMeeting) {
-        const requestFieldsToPreserve = ['requestName', 'requestEmail', 'requestReason', 'sourceRequestId', 'requesterLocale', 'requesterLanguage'];
-
-        requestFieldsToPreserve.forEach(field => {
-          const value = (editingMeeting as any)[field];
-          if (value !== undefined && value !== null && value !== '') {
-            meetingData[field] = value;
-          }
-        });
-
-        const finalizedDetailsChanged =
-          (editingMeeting.date || '') !== meetingData.date ||
-          (editingMeeting.startTime || '') !== meetingData.startTime ||
-          (editingMeeting.endTime || '') !== meetingData.endTime ||
-          (editingMeeting.meetLink || '') !== meetingData.meetLink ||
-          (editingMeeting.location || '') !== meetingData.location;
-
-        if (finalizedDetailsChanged) {
-          meetingData.acknowledged = false;
-          meetingData.acknowledgedAt = null;
-          meetingData.acknowledgedEmail = null;
-        } else {
-          meetingData.acknowledged = Boolean((editingMeeting as any).acknowledged);
-
-          const acknowledgedAt = (editingMeeting as any).acknowledgedAt;
-          if (acknowledgedAt !== undefined && acknowledgedAt !== null && acknowledgedAt !== '') {
-            meetingData.acknowledgedAt = acknowledgedAt;
-          }
-
-          const acknowledgedEmail = (editingMeeting as any).acknowledgedEmail;
-          if (acknowledgedEmail !== undefined && acknowledgedEmail !== null && acknowledgedEmail !== '') {
-            meetingData.acknowledgedEmail = acknowledgedEmail;
-          }
-        }
-
-        const editingMeetingId = editingMeeting.id;
-
-        if (!editingMeetingId) {
-          throw new Error('Cannot update a meeting without an ID.');
-        }
-
-        await updateMeeting(editingMeetingId, meetingData);
-
-        const sourceRequestId = (editingMeeting as any).sourceRequestId;
-        if (sourceRequestId) {
-          await updateMeetingRequest(
-            sourceRequestId,
-            {
-              date: meetingData.date,
-              startTime: meetingData.startTime,
-              endTime: meetingData.endTime,
-              updatedAt: Date.now(),
-            } as any,
-          );
-        }
-      } else {
-        await createMeeting({
-          ...meetingData,
-          acknowledged: false,
-        } as any);
-      }
-
-      const emailSuccess = await sendEmails({
-        title: meetingData.title,
-        date: meetingData.date,
-        startTime: meetingData.startTime,
-        endTime: meetingData.endTime,
-        location: meetingData.location,
-        meetLink: meetingData.meetLink,
-      });
-      setEmailSent(emailSuccess);
-
-      setIsAddOpen(false);
-      setEditingMeeting(null);
-      setSelectedParticipants([]);
-      setNewMeeting({
-        title: '',
-        description: '',
-        date: format(new Date(), 'yyyy-MM-dd'),
-        startTime: '10:00',
-        endTime: '11:00',
-        location: '',
-        meetLink: '',
-        type: 'service',
-      });
-    } catch (err) {
-      console.error(err);
-      alert(t('calendar.failed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (confirm(t('calendar.confirmDelete'))) {
-      setLoading(true);
-
-      try {
-        const meetingToCancel = meetings.find(meeting => meeting.id === id);
-
-        if (meetingToCancel && getMeetingRequestEmail(meetingToCancel)) {
-          await sendMeetingStatusEmailViaEmailJs({
-            kind: 'cancellation',
-            recipientEmail: getMeetingRequestEmail(meetingToCancel),
-            name: (meetingToCancel as any).requestName || '',
-            date: meetingToCancel.date,
-            startTime: meetingToCancel.startTime,
-            endTime: meetingToCancel.endTime,
-            location: meetingToCancel.location || '',
-            requesterLocale: (meetingToCancel as any).requesterLocale || 'en',
-            sourceId: id,
-          });
-        }
-
-        await deleteMeeting(id);
-      } catch (err) {
-        console.error(err);
-        alert(displayLocale === 'ar' ? 'فشل إرسال بريد الإلغاء أو حذف الاجتماع.' : 'Failed to send cancellation email or delete the meeting.');
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
-  const handleCreateAvailability = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      const availabilityData = {
-        date: availabilityForm.date,
-        startTime: availabilityForm.allDay ? '09:00' : availabilityForm.startTime,
-        endTime: availabilityForm.allDay ? '20:00' : availabilityForm.endTime,
-        reason: availabilityForm.reason || '',
-        allDay: availabilityForm.allDay,
-        updatedAt: Date.now(),
-      };
-
-      if (editingAvailability) {
-        await updateAvailability(
-          editingAvailability.id,
-          availabilityData,
-        );
-      } else {
-        const selectedDates = buildAvailabilityDates(
-          availabilityForm,
-        );
-
-        if (selectedDates.length === 0) {
-          alert(t('calendar.noAvailableDatesSelected'));
-          return;
-        }
-
-        await Promise.all(
-          selectedDates.map(date =>
-            createAvailability({
-              ...availabilityData,
-              date,
-            } as any)
-          )
-        );
-      }
-
-      setShowAvailabilityModal(false);
-      setEditingAvailability(null);
-      resetAvailabilityForm();
-    } catch (err) {
-      console.error(err);
-      alert(t('calendar.saveAvailabilityFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteAvailability = async (id: string) => {
-    if (confirm(t('calendar.removeAvailabilityConfirm'))) {
-      try {
-        await deleteAvailability(id);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  };
-
-  const handleCreateUnavailability = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      const unavailabilityData = {
-        date: unavailabilityForm.date,
-        startTime: unavailabilityForm.allDay ? '00:00' : unavailabilityForm.startTime,
-        endTime: unavailabilityForm.allDay ? '23:59' : unavailabilityForm.endTime,
-        reason: unavailabilityForm.reason || '',
-        allDay: unavailabilityForm.allDay,
-        updatedAt: Date.now(),
-      };
-
-      if (editingUnavailability) {
-        await updateUnavailability(
-          editingUnavailability.id,
-          unavailabilityData,
-        );
-      } else {
-        await createUnavailability(
-          unavailabilityData,
-        );
-      }
-
-      setShowUnavailabilityModal(false);
-      setEditingUnavailability(null);
-      resetUnavailabilityForm();
-    } catch (err) {
-      console.error(err);
-      alert(t('calendar.saveUnavailabilityFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleNextGenRegistrationStatus = async (
-    registration: NextGenRegistration,
-    nextStatus: 'approved' | 'rejected',
-  ) => {
-    if (nextGenRegistrationUpdatingId) {
-      return;
-    }
-
-    setNextGenRegistrationUpdatingId(
-      registration.userId,
-    );
-
-    try {
-      await updateNextGenRegistrationStatus({
-        registration,
-        nextStatus,
-      });
-    } catch (err) {
-      console.error(
-        'Failed to update NextGen registration status:',
-        err,
-      );
-
-      alert(
-        displayLocale === 'ar'
-          ? 'فشل تحديث حالة تسجيل NextGen.'
-          : 'Failed to update the NextGen registration status.',
-      );
-    } finally {
-      setNextGenRegistrationUpdatingId(null);
-    }
-  };
-
-  const handleNextGenQuestionSelection = async (
-    question: NextGenQuestion,
-    selected: boolean,
-  ) => {
-    setNextGenSelectionLoadingId(
-      question.id,
-    );
-
-    try {
-      await updateNextGenQuestionSelection({
-        question,
-        selected,
-      });
-    } catch (err) {
-      console.error(
-        'Failed to update NextGen question selection:',
-        err,
-      );
-
-      alert(
-        displayLocale === 'ar'
-          ? 'فشل تحديث اختيار السؤال.'
-          : 'Failed to update the question selection.',
-      );
-    } finally {
-      setNextGenSelectionLoadingId(null);
-    }
-  };
-
-  const handleRequestStatus = async (
-    requestId: string,
-    decision: MeetingRequestDecision,
-  ) => {
-    setLoading(true);
-
-    try {
-      const request = findMeetingRequest(
-        meetingRequests,
-        requestId,
-      );
-
-      if (!request) {
-        alert(t('booking.statusFailed'));
-        return;
-      }
-
-      await processMeetingRequestDecision({
-        request,
-        decision,
-        meetingTitle: t(
-          'calendar.meetingWithPastor',
-        ),
-      });
-    } catch (err) {
-      console.error(err);
-      alert(t('booking.statusFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getDashboardSlotStatus = (
-    day: Date,
-    startHour: number,
-  ): PastorSlotStatus => {
-    return calculatePastorSlotStatus({
-      day,
-      startHour,
-      availability,
-      unavailability,
-      meetings,
-      meetingRequests,
-    });
-  };
-
-  const getDashboardSlotLabel = (
-    status: PastorSlotStatus,
-  ): string => {
-    return t(getPastorSlotTranslationKey(status) as any);
-  };
-
-  const handleToggleSlotBlock = async (
-    day: Date,
-    startHour: number,
-  ) => {
-    const dateStr = getDateString(day);
-    const endHour = startHour + SLOT_BLOCK_DURATION;
-
-    if (
-      isPastorSlotBooked(
-        meetings,
-        meetingRequests,
-        dateStr,
-        startHour,
-        endHour,
-      )
-    ) {
-      return;
-    }
-
-    const existingBlock =
-      getBlockingUnavailabilityForSlot(
-        unavailability,
-        dateStr,
-        startHour,
-        endHour,
-      );
-
-    if (
-      !isPastorSlotInsideAvailability(
-        availability,
-        dateStr,
-        startHour,
-        endHour,
-      ) &&
-      !existingBlock
-    ) {
-      return;
-    }
-
-    setSlotBlockingLoading(true);
-
-    try {
-      if (!existingBlock) {
-        const blockData = {
-          date: dateStr,
-          startTime: hourToTime(startHour),
-          endTime: hourToTime(endHour),
-          reason: 'Slot blocked by pastor',
-          allDay: false,
-          updatedAt: Date.now(),
-        };
-
-        await createUnavailability(blockData);
-        return;
-      }
-
-      const existingRange =
-        getUnavailabilityRange(existingBlock);
-
-      await deleteUnavailability(existingBlock.id);
-
-      if (existingRange.start < startHour) {
-        const earlierBlock = {
-          date: dateStr,
-          startTime: hourToTime(existingRange.start),
-          endTime: hourToTime(startHour),
-          reason:
-            existingBlock.reason ||
-            'Slot blocked by pastor',
-          allDay: false,
-          updatedAt: Date.now(),
-        };
-
-        await createUnavailability(earlierBlock);
-      }
-
-      if (endHour < existingRange.end) {
-        const laterBlock = {
-          date: dateStr,
-          startTime: hourToTime(endHour),
-          endTime: hourToTime(existingRange.end),
-          reason:
-            existingBlock.reason ||
-            'Slot blocked by pastor',
-          allDay: false,
-          updatedAt: Date.now(),
-        };
-
-        await createUnavailability(laterBlock);
-      }
-    } catch (err) {
-      console.error(err);
-      alert(t('calendar.saveUnavailabilityFailed'));
-    } finally {
-      setSlotBlockingLoading(false);
-    }
-  };
-
-  const slotBlockHours = buildSlotBlockHours();
-
-  const getPeopleDevelopmentGroupDisplayLabel = (
-    groupId: PeopleDevelopmentGroupId,
-  ): string => {
-    return getPeopleDevelopmentGroupLabel(
-      groupId,
-      displayLocale,
-    );
-  };
-
-  const getPersonGroup = (
-    person: Participant,
-  ): PeopleDevelopmentGroupId | '' => {
-    return getParticipantPeopleDevelopmentGroup(
-      person,
-      peopleDevelopmentMembers,
-    );
-  };
-
-  const getGroupAssignments = (
-    groupId: PeopleDevelopmentGroupId,
-  ): PeopleDevelopmentEntry[] => {
-    return getPeopleDevelopmentGroupAssignments(
-      peopleDevelopmentEntries,
-      groupId,
-    );
-  };
-
-  const openPeopleAssignmentsPopup = (
-    groupId: PeopleDevelopmentGroupId,
-  ) => {
-    const monthDate = new Date();
-    const monthEntries = getPeopleAssignmentsInMonth(
-      getGroupAssignments(groupId),
-      monthDate,
-    );
-    const firstMonthEntry = monthEntries[0] || null;
-
-    setPeopleAssignmentsPopupGroup(groupId);
-    setPeopleAssignmentsPopupMonth(monthDate);
-    setPeopleAssignmentsPopupSelectedDate(
-      firstMonthEntry
-        ? getPeopleAssignmentDateKey(firstMonthEntry)
-        : '',
-    );
-  };
-
-  const closePeopleAssignmentsPopup = () => {
-    setPeopleAssignmentsPopupGroup(null);
-    setPeopleAssignmentsPopupSelectedDate('');
-  };
-
-  const changePeopleAssignmentsPopupMonth = (
-    nextMonth: Date,
-  ) => {
-    const monthEntries = peopleAssignmentsPopupGroup
-      ? getPeopleAssignmentsInMonth(
-          getGroupAssignments(
-            peopleAssignmentsPopupGroup,
-          ),
-          nextMonth,
-        )
-      : [];
-    const firstMonthEntry = monthEntries[0] || null;
-
-    setPeopleAssignmentsPopupMonth(nextMonth);
-    setPeopleAssignmentsPopupSelectedDate(
-      firstMonthEntry
-        ? getPeopleAssignmentDateKey(firstMonthEntry)
-        : '',
-    );
-  };
-
-  const openPeopleNotePopup = (
-    person: Participant,
-    type: PeoplePersonalNoteType = 'strength',
-  ) => {
-    setSelectedPeopleNotePerson(person);
-    setPeopleNoteType(type);
-    setPeopleNoteText('');
-    setShowPeopleNotePopup(true);
-  };
-
-  const closePeopleNotePopup = () => {
-    if (peopleNoteSaving) return;
-
-    setShowPeopleNotePopup(false);
-    setSelectedPeopleNotePerson(null);
-    setPeopleNoteType('strength');
-    setPeopleNoteText('');
-  };
-
-  const handleSubmitPeoplePersonalNote = async (
-    event: React.FormEvent<HTMLFormElement>,
-  ) => {
-    event.preventDefault();
-
-    if (!selectedPeopleNotePerson) return;
-
-    const text = peopleNoteText.trim();
-
-    if (!text) {
-      alert(
-        displayLocale === 'ar'
-          ? 'اكتب نص الملاحظة أولاً.'
-          : 'Write the note text first.',
-      );
-      return;
-    }
-
-    setPeopleNoteSaving(true);
-
-    try {
-      const assignedGroup = getPersonGroup(
-        selectedPeopleNotePerson,
-      );
-      const groupLabel = assignedGroup
-        ? getPeopleDevelopmentGroupDisplayLabel(
-            assignedGroup,
-          )
-        : '';
-
-      await savePeoplePersonalNote({
-        person: {
-          memberKey:
-            selectedPeopleNotePerson.memberKey,
-          identifier:
-            selectedPeopleNotePerson.identifier,
-          fullName:
-            selectedPeopleNotePerson.name,
-          email:
-            selectedPeopleNotePerson.email,
-          primaryGift:
-            selectedPeopleNotePerson.primaryGift,
-          sourcePath:
-            selectedPeopleNotePerson.sourcePath,
-          sourceKeys:
-            selectedPeopleNotePerson.sourceKeys,
-        },
-        group: assignedGroup,
-        groupLabel,
-        type: peopleNoteType,
-        text,
-        source: 'pastorCalendar',
-      });
-
-      setPeopleNoteText('');
-      setShowPeopleNotePopup(false);
-      setSelectedPeopleNotePerson(null);
-      setPeopleNoteType('strength');
-    } catch (err) {
-      console.error(
-        'Failed to save personal people note:',
-        err,
-      );
-      alert(
-        displayLocale === 'ar'
-          ? 'فشل حفظ الملاحظة الشخصية.'
-          : 'Failed to save the personal note.',
-      );
-    } finally {
-      setPeopleNoteSaving(false);
-    }
-  };
-
-  const handleAssignPersonToGroup = async (
-    person: Participant,
-    group: PeopleDevelopmentGroupId | '',
-  ) => {
-    const currentGroup = getPersonGroup(person);
-
-    if (currentGroup === group) return;
-
-    setPeopleDevelopmentSavingKey(
-      person.memberKey,
-    );
-
-    try {
-      await assignPersonToPeopleDevelopmentGroup({
-        person: {
-          memberKey: person.memberKey,
-          identifier: person.identifier,
-          fullName: person.name,
-          email: person.email,
-          primaryGift: person.primaryGift,
-          sourcePath: person.sourcePath,
-          sourceKeys: person.sourceKeys,
-        },
-        group,
-        groupLabel: group
-          ? getPeopleDevelopmentGroupDisplayLabel(
-              group,
-            )
-          : '',
-      });
-    } catch (err) {
-      console.error(
-        'Failed to update people development group:',
-        err,
-      );
-      alert(
-        displayLocale === 'ar'
-          ? 'فشل تحديث مجموعة الشخص.'
-          : 'Failed to update the person group.',
-      );
-    } finally {
-      setPeopleDevelopmentSavingKey(null);
-      setDraggedPeopleMemberKey(null);
-    }
-  };
-
-  const handleDropPersonOnGroup = async (
-    event: React.DragEvent<HTMLElement>,
-    groupId: PeopleDevelopmentGroupId,
-  ) => {
-    event.preventDefault();
-
-    const memberKey =
-      event.dataTransfer.getData('text/plain') ||
-      draggedPeopleMemberKey;
-
-    const person = participants.find(
-      item => item.memberKey === memberKey,
-    );
-
-    if (person) {
-      await handleAssignPersonToGroup(
-        person,
-        groupId,
-      );
-    }
-  };
-
-  const handlePeopleAssignmentFileChange = (
-    groupId: PeopleDevelopmentGroupId,
-    file: File | null,
-  ) => {
-    if (!file) {
-      setPeopleAssignmentFiles(previous => ({
-        ...previous,
-        [groupId]: null,
-      }));
-      return;
-    }
-
-    const isPdf =
-      file.type === 'application/pdf' ||
-      file.name.toLowerCase().endsWith('.pdf');
-
-    if (!isPdf) {
-      alert(
-        displayLocale === 'ar'
-          ? 'يمكن رفع ملفات PDF فقط حالياً.'
-          : 'Only PDF files can be attached for now.',
-      );
-      setPeopleAssignmentFiles(previous => ({
-        ...previous,
-        [groupId]: null,
-      }));
-      setPeopleAssignmentFileInputResetKeys(
-        previous => ({
-          ...previous,
-          [groupId]:
-            (previous[groupId] || 0) + 1,
-        }),
-      );
-      return;
-    }
-
-    if (
-      file.size >
-      MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES
-    ) {
-      alert(
-        displayLocale === 'ar'
-          ? `حجم ملف PDF يجب ألا يتجاوز ${formatFileSize(
-              MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
-            )}.`
-          : `PDF file size must be ${formatFileSize(
-              MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
-            )} or less.`,
-      );
-      setPeopleAssignmentFiles(previous => ({
-        ...previous,
-        [groupId]: null,
-      }));
-      setPeopleAssignmentFileInputResetKeys(
-        previous => ({
-          ...previous,
-          [groupId]:
-            (previous[groupId] || 0) + 1,
-        }),
-      );
-      return;
-    }
-
-    setPeopleAssignmentFiles(previous => ({
-      ...previous,
-      [groupId]: file,
-    }));
-  };
-
-  const clearPeopleAssignmentFile = (
-    groupId: PeopleDevelopmentGroupId,
-  ) => {
-    setPeopleAssignmentFiles(previous => ({
-      ...previous,
-      [groupId]: null,
-    }));
-    setPeopleAssignmentFileInputResetKeys(
-      previous => ({
-        ...previous,
-        [groupId]:
-          (previous[groupId] || 0) + 1,
-      }),
-    );
-  };
-
-  const getPeopleDevelopmentNotificationRecipients = (
-    groupId: PeopleDevelopmentGroupId,
-  ): Participant[] => {
-    return getPeopleDevelopmentEmailRecipients(
-      participants,
-      peopleDevelopmentMembers,
-      groupId,
-    );
-  };
-
-  const sendPeopleDevelopmentAssignmentNotificationEmails = async (
-    params: {
-      assignmentId: string;
-      groupId: PeopleDevelopmentGroupId;
-      text: string;
-      date: string;
-      createdAt: number;
-      createdAtISO: string;
-      attachments: PeopleDevelopmentAttachment[];
-    },
-  ): Promise<{
-    totalCount: number;
-    sentCount: number;
-    failedCount: number;
-  }> => {
-    const recipients =
-      getPeopleDevelopmentNotificationRecipients(
-        params.groupId,
-      );
-    const groupLabelEn =
-      getPeopleDevelopmentStaticGroupLabel(
-        params.groupId,
-        'en',
-      );
-    const groupLabelAr =
-      getPeopleDevelopmentStaticGroupLabel(
-        params.groupId,
-        'ar',
-      );
-    const appUrl =
-      typeof window !== 'undefined'
-        ? window.location.origin
-        : '';
-    const postedAtLabel = params.createdAt
-      ? new Date(
-          params.createdAt,
-        ).toLocaleString('en-CA', {
-          timeZone: 'America/Toronto',
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : params.createdAtISO || params.date;
-
-    let sentCount = 0;
-    let failedCount = 0;
-
-    for (const recipient of recipients) {
-      const recipientEmail = String(
-        recipient.email || '',
-      ).trim();
-      const recipientName =
-        recipient.name &&
-        recipient.name !== 'N/A'
-          ? recipient.name
-          : recipient.firstName || 'Friend';
-      const subject = `LinC People Development Update - ${groupLabelEn} / تحديث نمو الأشخاص - ${groupLabelAr}`;
-      const htmlBody =
-        buildPeopleDevelopmentAssignmentNotificationEmailHtml(
-          {
-            recipientName,
-            groupLabelEn,
-            groupLabelAr,
-            noteText: params.text,
-            attachments: params.attachments,
-            postedAtLabel,
-            appUrl,
-          },
-        );
-
-      try {
-        const response = await emailjs.send(
-          EMAILJS_SERVICE_ID,
-          EMAILJS_TEMPLATE_ID,
-          {
-            to_email: recipientEmail,
-            subject,
-            fullName: recipientName,
-            message_html: htmlBody,
-            reply_to: '',
-          },
-          EMAILJS_PUBLIC_KEY,
-        );
-
-        sentCount += 1;
-
-        try {
-          await push(
-            ref(database, 'emailJsSendLogs/'),
-            {
-              recipientEmail,
-              subject,
-              fullName: recipientName,
-              sentUsing: 'EmailJS',
-              serviceId: EMAILJS_SERVICE_ID,
-              templateId: EMAILJS_TEMPLATE_ID,
-              source:
-                'peopleDevelopmentAssignmentNotification',
-              assignmentId: params.assignmentId,
-              group: params.groupId,
-              groupLabelEn,
-              groupLabelAr,
-              attachmentNames:
-                params.attachments.map(
-                  attachment =>
-                    attachment.name,
-                ),
-              sentAt: Date.now(),
-              sentAtISO:
-                new Date().toISOString(),
-              emailJsResponse: {
-                status: response.status,
-                text: response.text,
-              },
-            },
-          );
-        } catch (logError) {
-          console.error(
-            'Failed to log People Development notification success:',
-            logError,
-          );
-        }
-      } catch (error) {
-        failedCount += 1;
-        console.error(
-          `Failed to send People Development assignment notification to ${recipientEmail}:`,
-          error,
-        );
-
-        try {
-          await push(
-            ref(database, 'emailJsSendLogs/'),
-            {
-              recipientEmail,
-              subject,
-              fullName: recipientName,
-              sentUsing: 'EmailJS',
-              serviceId: EMAILJS_SERVICE_ID,
-              templateId: EMAILJS_TEMPLATE_ID,
-              source:
-                'peopleDevelopmentAssignmentNotification',
-              assignmentId: params.assignmentId,
-              group: params.groupId,
-              groupLabelEn,
-              groupLabelAr,
-              failed: true,
-              errorMessage:
-                error instanceof Error
-                  ? error.message
-                  : String(error),
-              attemptedAt: Date.now(),
-              attemptedAtISO:
-                new Date().toISOString(),
-            },
-          );
-        } catch (logError) {
-          console.error(
-            'Failed to log People Development notification failure:',
-            logError,
-          );
-        }
-      }
-    }
-
-    return {
-      totalCount: recipients.length,
-      sentCount,
-      failedCount,
-    };
-  };
-
-  const handlePostPeopleDevelopmentAssignment = async (
-    groupId: PeopleDevelopmentGroupId,
-  ) => {
-    const text = (
-      peopleAssignmentDrafts[groupId] || ''
-    ).trim();
-    const selectedFile =
-      peopleAssignmentFiles[groupId];
-
-    if (!text && !selectedFile) {
-      alert(
-        displayLocale === 'ar'
-          ? 'اكتب نص الملاحظة أو أرفق ملف PDF أولاً.'
-          : 'Write a note or attach a PDF first.',
-      );
-      return;
-    }
-
-    setPeopleDevelopmentPostingGroup(groupId);
-
-    try {
-      const attachments:
-        PeopleDevelopmentAttachment[] = [];
-
-      if (selectedFile) {
-        const uploadedAt = Date.now();
-        const uploadedAtISO =
-          new Date(uploadedAt).toISOString();
-        const base64 =
-          await readFileAsBase64(
-            selectedFile,
-          );
-
-        attachments.push({
-          name: selectedFile.name,
-          type:
-            selectedFile.type ||
-            'application/pdf',
-          size: selectedFile.size,
-          encoding: 'base64',
-          storage: 'realtimeDatabase',
-          base64,
-          uploadedAt,
-          uploadedAtISO,
-        });
-      }
-
-      const postedAssignment =
-        await postPeopleDevelopmentAssignment({
-          group: groupId,
-          groupLabel:
-            getPeopleDevelopmentGroupDisplayLabel(
-              groupId,
-            ),
-          text,
-          attachments,
-          source: 'pastorCalendar',
-        });
-
-      const notificationResult =
-        await sendPeopleDevelopmentAssignmentNotificationEmails(
-          {
-            assignmentId:
-              postedAssignment.assignmentId,
-            groupId,
-            text: postedAssignment.text,
-            date: postedAssignment.date,
-            createdAt:
-              postedAssignment.createdAt,
-            createdAtISO:
-              postedAssignment.createdAtISO,
-            attachments:
-              postedAssignment.attachments,
-          },
-        );
-
-      if (
-        notificationResult.totalCount === 0
-      ) {
-        alert(
-          displayLocale === 'ar'
-            ? 'تم حفظ الملاحظة / التكليف، لكن لا يوجد أعضاء في هذه المجموعة لديهم بريد إلكتروني صالح.'
-            : 'Note / assignment saved, but no group members with valid email addresses were found.',
-        );
-      } else if (
-        notificationResult.failedCount > 0
-      ) {
-        alert(
-          displayLocale === 'ar'
-            ? `تم حفظ الملاحظة / التكليف. تم إرسال ${notificationResult.sentCount} بريد، وفشل إرسال ${notificationResult.failedCount}.`
-            : `Note / assignment saved. ${notificationResult.sentCount} email(s) sent, ${notificationResult.failedCount} failed.`,
-        );
-      } else {
-        alert(
-          displayLocale === 'ar'
-            ? `تم حفظ الملاحظة / التكليف وإرسال بريد إلى ${notificationResult.sentCount} عضو/أعضاء في المجموعة.`
-            : `Note / assignment saved and email notifications sent to ${notificationResult.sentCount} group member(s).`,
-        );
-      }
-
-      setPeopleAssignmentDrafts(previous => ({
-        ...previous,
-        [groupId]: '',
-      }));
-      clearPeopleAssignmentFile(groupId);
-    } catch (err) {
-      console.error(
-        'Failed to post people development assignment:',
-        err,
-      );
-      alert(
-        displayLocale === 'ar'
-          ? 'فشل حفظ الملاحظة أو التكليف.'
-          : 'Failed to save the note or assignment.',
-      );
-    } finally {
-      setPeopleDevelopmentPostingGroup(null);
-    }
-  };
-
-  const handleDeletePeopleDevelopmentPost = async (
-    entry: PeopleDevelopmentEntry,
-  ) => {
-    const confirmed = window.confirm(
-      displayLocale === 'ar'
-        ? 'هل أنت متأكد أنك تريد حذف هذا المنشور بالكامل مع جميع ملفاته؟ لا يمكن التراجع عن هذا الإجراء.'
-        : 'Delete this entire post and all of its files? This action cannot be undone.',
-    );
-
-    if (!confirmed) return;
-
-    const deletingKey =
-      `assignment-${entry.id}`;
-    setPeopleDevelopmentDeletingKey(
-      deletingKey,
-    );
-
-    try {
-      await removePeopleDevelopmentAssignment(
-        entry.id,
-      );
-      alert(
-        displayLocale === 'ar'
-          ? 'تم حذف المنشور.'
-          : 'Post deleted.',
-      );
-    } catch (err) {
-      console.error(
-        'Failed to delete People Development post:',
-        err,
-      );
-      alert(
-        displayLocale === 'ar'
-          ? 'فشل حذف المنشور.'
-          : 'Failed to delete the post.',
-      );
-    } finally {
-      setPeopleDevelopmentDeletingKey(null);
-    }
-  };
-
-  const handleDeletePeopleDevelopmentAttachment = async (
-    entry: PeopleDevelopmentEntry,
-    attachmentIndex: number,
-  ) => {
-    const attachment =
-      entry.attachments[attachmentIndex];
-
-    if (!attachment) return;
-
-    const confirmed = window.confirm(
-      displayLocale === 'ar'
-        ? `هل تريد إزالة الملف "${attachment.name}" من هذا المنشور؟`
-        : `Remove the file "${attachment.name}" from this post?`,
-    );
-
-    if (!confirmed) return;
-
-    const deletingKey =
-      `attachment-${entry.id}-${attachmentIndex}`;
-    setPeopleDevelopmentDeletingKey(
-      deletingKey,
-    );
-
-    try {
-      const remainingAttachments =
-        entry.attachments.filter(
-          (_, index) =>
-            index !== attachmentIndex,
-        );
-
-      if (
-        !entry.text.trim() &&
-        remainingAttachments.length === 0
-      ) {
-        await removePeopleDevelopmentAssignment(
-          entry.id,
-        );
-      } else {
-        const updatedAt = Date.now();
-
-        await updatePeopleDevelopmentRecords({
-          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/attachments`]:
-            remainingAttachments,
-          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/hasAttachments`]:
-            remainingAttachments.length > 0,
-          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/updatedAt`]:
-            updatedAt,
-          [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/updatedAtISO`]:
-            new Date(updatedAt).toISOString(),
-        });
-      }
-
-      alert(
-        displayLocale === 'ar'
-          ? 'تمت إزالة الملف.'
-          : 'File removed.',
-      );
-    } catch (err) {
-      console.error(
-        'Failed to remove People Development attachment:',
-        err,
-      );
-      alert(
-        displayLocale === 'ar'
-          ? 'فشل إزالة الملف.'
-          : 'Failed to remove the file.',
-      );
-    } finally {
-      setPeopleDevelopmentDeletingKey(null);
-    }
-  };
-
-  const activePeopleAssignmentsPopupEntries =
-    peopleAssignmentsPopupGroup
-      ? getGroupAssignments(
-          peopleAssignmentsPopupGroup,
-        )
-      : [];
-
-  const selectedPeopleNoteAssignedGroup =
-    selectedPeopleNotePerson
-      ? getPersonGroup(
-          selectedPeopleNotePerson,
-        )
-      : '';
-
-  const selectedPeopleNoteGroupLabel =
-    selectedPeopleNoteAssignedGroup
-      ? getPeopleDevelopmentGroupDisplayLabel(
-          selectedPeopleNoteAssignedGroup,
-        )
-      : '';
-
-  const selectedCount = selectedParticipants.length;
-  const selectedNames = participants
-    .filter(p => selectedParticipants.includes(p.id))
-    .map(p => p.name);
-
-  const availabilityDateCount = buildAvailabilityDates(availabilityForm).length;
-
-  const pendingNextGenRegistrationCount =
-    getNextGenRegistrationsByStatus(
-      nextGenRegistrations,
-      'pending',
-    ).length;
-
-  const peopleNotesTitle = displayLocale === 'ar' ? 'نمو الأشخاص' : 'People Development';
-  const peopleNotesSubtitle = displayLocale === 'ar'
-    ? 'مجموعات الخدمة، التكليفات، وتوزيع الأشخاص'
-    : 'Service groups, assignments, and people placement';
-
-  const selectedSlotDateStr = selectedSlotDay ? getDateString(selectedSlotDay) : '';
-  const selectedDayAvailabilityBlocks = selectedSlotDateStr
-    ? getAvailabilityBlocksForDate(availability, selectedSlotDateStr)
-    : [];
-  const selectedDayMeetings = selectedSlotDateStr
-    ? getMeetingsForDate(meetings, selectedSlotDateStr)
-    : [];
-  const selectedDayOpenSlotHours = selectedSlotDay
-    ? slotBlockHours.filter(hour => getDashboardSlotStatus(selectedSlotDay, hour) === 'available')
-    : [];
+  const {
+    meetings,
+    meetingLoading,
+    isAddOpen,
+    setIsAddOpen,
+    editingMeeting,
+    setEditingMeeting,
+    newMeeting,
+    setNewMeeting,
+    selectedParticipants,
+    setSelectedParticipants,
+    selectedCount,
+    selectedNames,
+    showParticipantDropdown,
+    setShowParticipantDropdown,
+    emailSent,
+    setEmailSent,
+    openMeetingEditor,
+    getMeetingDisplayTitle,
+    getMeetingRequestReason,
+    getMeetingAcknowledged,
+    toggleParticipant,
+    handleSaveMeeting: handleCreate,
+    handleDeleteMeeting: handleDelete,
+  } = useMeetings({
+    participants,
+    locale: displayLocale,
+    translate: t,
+  });
+
+  const {
+    availability,
+    unavailability,
+    availabilityLoading,
+    showAvailabilityModal,
+    setShowAvailabilityModal,
+    editingAvailability,
+    setEditingAvailability,
+    availabilityForm,
+    setAvailabilityForm,
+    availabilityDateCount,
+    showUnavailabilityModal,
+    setShowUnavailabilityModal,
+    editingUnavailability,
+    setEditingUnavailability,
+    unavailabilityForm,
+    setUnavailabilityForm,
+    selectedSlotDay,
+    setSelectedSlotDay,
+    selectedDayAvailabilityBlocks,
+    selectedDayMeetings,
+    selectedDayOpenSlotHours,
+    slotBlockHours,
+    slotBlockingLoading,
+    resetAvailabilityForm,
+    resetUnavailabilityForm,
+    handleSaveAvailability: handleCreateAvailability,
+    handleDeleteAvailability,
+    handleSaveUnavailability: handleCreateUnavailability,
+    getDashboardSlotStatus,
+    getDashboardSlotLabel,
+    handleToggleSlotBlock,
+  } = useAvailability({
+    meetings,
+    meetingRequests,
+    translate: t,
+  });
+
+  const {
+    nextGenQuestions,
+    showNextGenQuestions,
+    setShowNextGenQuestions,
+    nextGenSurveyResults,
+    showNextGenSurveyResults,
+    setShowNextGenSurveyResults,
+    nextGenSurveyResultsLoading,
+    nextGenSurveyResultsError,
+    nextGenRegistrations,
+    showNextGenRegistrations,
+    setShowNextGenRegistrations,
+    nextGenRegistrationSearchTerm,
+    setNextGenRegistrationSearchTerm,
+    nextGenRegistrationStatusFilter,
+    setNextGenRegistrationStatusFilter,
+    nextGenRegistrationUpdatingId,
+    nextGenSelectionLoadingId,
+    pendingNextGenRegistrationCount,
+    handleRegistrationStatus: handleNextGenRegistrationStatus,
+    handleQuestionSelection: handleNextGenQuestionSelection,
+  } = useNextGen({
+    locale: displayLocale,
+  });
+
+  const {
+    showPeopleDevelopment,
+    setShowPeopleDevelopment,
+    peopleDevelopmentMembers,
+    peopleDevelopmentEntries,
+    peoplePersonalNotes,
+    peopleSearchTerm,
+    setPeopleSearchTerm,
+    draggedPeopleMemberKey,
+    setDraggedPeopleMemberKey,
+    peopleDevelopmentSavingKey,
+    peopleDevelopmentPostingGroup,
+    peopleDevelopmentDeletingKey,
+    peopleAssignmentsPopupGroup,
+    peopleAssignmentsPopupMonth,
+    peopleAssignmentsPopupSelectedDate,
+    setPeopleAssignmentsPopupSelectedDate,
+    peopleAssignmentDrafts,
+    peopleAssignmentFiles,
+    peopleAssignmentFileInputResetKeys,
+    peopleGroupSelectDrafts,
+    showPeopleNotePopup,
+    selectedPeopleNotePerson,
+    peopleNoteType,
+    setPeopleNoteType,
+    peopleNoteText,
+    setPeopleNoteText,
+    peopleNoteSaving,
+    peopleNotesTitle,
+    peopleNotesSubtitle,
+    activeAssignmentsPopupEntries: activePeopleAssignmentsPopupEntries,
+    selectedPeopleNoteAssignedGroup,
+    selectedPeopleNoteGroupLabel,
+    setAssignmentDraft,
+    setGroupSelectDraft,
+    openAssignmentsPopup: openPeopleAssignmentsPopup,
+    closeAssignmentsPopup: closePeopleAssignmentsPopup,
+    changeAssignmentsPopupMonth: changePeopleAssignmentsPopupMonth,
+    openPeopleNotePopup,
+    closePeopleNotePopup,
+    submitPeoplePersonalNote: handleSubmitPeoplePersonalNote,
+    assignPersonToGroup: handleAssignPersonToGroup,
+    dropPersonOnGroup: handleDropPersonOnGroup,
+    changeAssignmentFile: handlePeopleAssignmentFileChange,
+    clearAssignmentFile: clearPeopleAssignmentFile,
+    postAssignment: handlePostPeopleDevelopmentAssignment,
+    deleteAssignment: handleDeletePeopleDevelopmentPost,
+    deleteAssignmentAttachment: handleDeletePeopleDevelopmentAttachment,
+  } = usePeopleDevelopment({
+    participants,
+    locale: displayLocale,
+  });
+
+  const loading =
+    meetingLoading ||
+    requestDecisionLoading ||
+    availabilityLoading;
 
   return (
     <>
@@ -2167,12 +572,7 @@ export default function PastorDashboard() {
           }
           onDropMember={handleDropPersonOnGroup}
           onAssignPerson={handleAssignPersonToGroup}
-          onDraftTextChange={(groupId, value) =>
-            setPeopleAssignmentDrafts(previous => ({
-              ...previous,
-              [groupId]: value,
-            }))
-          }
+          onDraftTextChange={setAssignmentDraft}
           onFileChange={
             handlePeopleAssignmentFileChange
           }
@@ -2180,15 +580,7 @@ export default function PastorDashboard() {
           onPostAssignment={
             handlePostPeopleDevelopmentAssignment
           }
-          onGroupSelectDraftChange={(
-            groupId,
-            memberKey,
-          ) =>
-            setPeopleGroupSelectDrafts(previous => ({
-              ...previous,
-              [groupId]: memberKey,
-            }))
-          }
+          onGroupSelectDraftChange={setGroupSelectDraft}
           onOpenAssignments={
             openPeopleAssignmentsPopup
           }
