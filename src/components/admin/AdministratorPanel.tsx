@@ -5,6 +5,7 @@ import {
   ArrowUp,
   BarChart3,
   CalendarDays,
+  Camera,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   Loader2,
   LockKeyhole,
   LogOut,
+  RefreshCw,
   Save,
   Search,
   ShieldCheck,
@@ -588,6 +590,40 @@ const attendanceResponsiveStyles = `
       width: 100% !important;
       height: auto !important;
     }
+
+    .attendance-person-edit-modal {
+      width: 100% !important;
+      max-width: 100% !important;
+      max-height: calc(100dvh - 20px) !important;
+      border-radius: 20px !important;
+    }
+
+    .attendance-person-edit-modal-header {
+      padding: 16px 14px !important;
+    }
+
+    .attendance-person-edit-modal-body {
+      padding: 14px !important;
+    }
+
+    .attendance-person-edit-modal .attendance-photo-editor {
+      margin-bottom: 22px !important;
+    }
+
+    .attendance-camera-actions {
+      width: 100% !important;
+      justify-content: center !important;
+    }
+
+    .attendance-live-camera {
+      padding: 12px !important;
+      border-radius: 18px !important;
+    }
+
+    .attendance-live-camera video {
+      max-height: 48vh !important;
+      border-radius: 14px !important;
+    }
   }
 `;
 
@@ -606,7 +642,18 @@ function AttendanceManagement() {
   const [personForm, setPersonForm] = useState<AttendancePersonForm>(emptyPersonForm);
   const [isSavingPerson, setIsSavingPerson] = useState(false);
   const [isReadingPersonPhoto, setIsReadingPersonPhoto] = useState(false);
+  const [isPersonEditModalOpen, setIsPersonEditModalOpen] = useState(false);
+  const [isPersonCameraOpen, setIsPersonCameraOpen] = useState(false);
+  const [isStartingPersonCamera, setIsStartingPersonCamera] = useState(false);
+  const [personCameraError, setPersonCameraError] = useState('');
+  const [personCameraFacingMode, setPersonCameraFacingMode] = useState<'user' | 'environment'>('environment');
+
   const personPhotoInputRef = useRef<HTMLInputElement>(null);
+  const personCameraCaptureInputRef = useRef<HTMLInputElement>(null);
+  const personCameraVideoRef = useRef<HTMLVideoElement>(null);
+  const personCameraStreamRef = useRef<MediaStream | null>(null);
+  const personEditModalRef = useRef<HTMLDivElement>(null);
+  const isSavingPersonRef = useRef(false);
 
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date());
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState('');
@@ -649,8 +696,13 @@ function AttendanceManagement() {
     photoDescription: isArabic
       ? 'اختياري. يتم حفظ الصورة بصيغة Base64 داخل سجل الشخص.'
       : 'Optional. The image is stored as Base64 inside the person record.',
-    selectPhoto: isArabic ? 'اختيار صورة' : 'Select Photo',
+    selectPhoto: isArabic ? 'رفع صورة' : 'Upload Photo',
     replacePhoto: isArabic ? 'استبدال الصورة' : 'Replace Photo',
+    takePhoto: isArabic ? 'التقاط صورة' : 'Take Photo',
+    openLiveCamera: isArabic ? 'فتح الكاميرا المباشرة' : 'Open Live Camera',
+    capturePhoto: isArabic ? 'التقاط الآن' : 'Capture Now',
+    switchCamera: isArabic ? 'تبديل الكاميرا' : 'Switch Camera',
+    closeCamera: isArabic ? 'إغلاق الكاميرا' : 'Close Camera',
     removePhoto: isArabic ? 'حذف الصورة' : 'Remove Photo',
     readingPhoto: isArabic ? 'جار تجهيز الصورة...' : 'Preparing photo...',
     invalidPhotoType: isArabic
@@ -662,6 +714,19 @@ function AttendanceManagement() {
     failedReadPhoto: isArabic
       ? 'تعذر قراءة الصورة المختارة.'
       : 'The selected photo could not be read.',
+    editPerson: isArabic ? 'تعديل بيانات الشخص' : 'Edit Person',
+    editPersonDescription: isArabic
+      ? 'عدّل البيانات أو الصورة ثم احفظ التغييرات.'
+      : 'Update the person details or photo, then save the changes.',
+    cameraUnavailable: isArabic
+      ? 'الكاميرا المباشرة غير متاحة في هذا المتصفح. استخدم زر التقاط صورة أو رفع صورة.'
+      : 'Live camera is unavailable in this browser. Use Take Photo or Upload Photo instead.',
+    cameraPermissionError: isArabic
+      ? 'تعذر تشغيل الكاميرا. تأكد من منح المتصفح إذن الكاميرا، أو استخدم زر التقاط صورة.'
+      : 'The camera could not start. Allow camera permission, or use the Take Photo button instead.',
+    cameraNotReady: isArabic
+      ? 'الكاميرا ليست جاهزة بعد. حاول مرة أخرى خلال لحظة.'
+      : 'The camera is not ready yet. Try again in a moment.',
     daysOfAttendance: isArabic ? 'أيام الحضور' : 'Days of Attendance',
     daysStoredOnly: isArabic
       ? 'يتم حفظ هذا الحقل تلقائياً ولا يتم إدخاله عند إضافة الشخص.'
@@ -1016,12 +1081,33 @@ function AttendanceManagement() {
     return () => unsubscribe();
   }, [text.failedLoadPeople]);
 
+  const stopPersonCameraStream = () => {
+    personCameraStreamRef.current?.getTracks().forEach(track => track.stop());
+    personCameraStreamRef.current = null;
+
+    if (personCameraVideoRef.current) {
+      personCameraVideoRef.current.srcObject = null;
+    }
+  };
+
   const resetPersonForm = () => {
+    stopPersonCameraStream();
+    setIsPersonCameraOpen(false);
+    setPersonCameraError('');
     setSelectedPersonId('');
     setPersonForm(emptyPersonForm);
+    setIsPersonEditModalOpen(false);
+  };
+
+  const closePersonEditor = () => {
+    if (isSavingPerson) return;
+    resetPersonForm();
   };
 
   const handleSelectPerson = (person: AttendancePerson) => {
+    stopPersonCameraStream();
+    setIsPersonCameraOpen(false);
+    setPersonCameraError('');
     setSelectedPersonId(person.firebaseId);
     setPersonForm({
       firstName: person.firstName,
@@ -1031,6 +1117,11 @@ function AttendanceManagement() {
       phoneNumber: person.phoneNumber,
       email: person.email,
       photoBase64: person.photoBase64,
+    });
+    setIsPersonEditModalOpen(true);
+
+    window.requestAnimationFrame(() => {
+      personEditModalRef.current?.focus();
     });
   };
 
@@ -1067,6 +1158,84 @@ function AttendanceManagement() {
     } finally {
       setIsReadingPersonPhoto(false);
     }
+  };
+
+  const openPersonCamera = () => {
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== 'function'
+    ) {
+      setPersonCameraError(text.cameraUnavailable);
+      return;
+    }
+
+    setPersonCameraError('');
+    setIsPersonCameraOpen(true);
+  };
+
+  const closePersonCamera = () => {
+    stopPersonCameraStream();
+    setIsPersonCameraOpen(false);
+    setIsStartingPersonCamera(false);
+    setPersonCameraError('');
+  };
+
+  const switchPersonCamera = () => {
+    setPersonCameraFacingMode(previous =>
+      previous === 'environment' ? 'user' : 'environment'
+    );
+  };
+
+  const capturePersonPhotoFromLiveCamera = () => {
+    const video = personCameraVideoRef.current;
+
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setPersonCameraError(text.cameraNotReady);
+      return;
+    }
+
+    const maximumDimension = 1200;
+    const scale = Math.min(
+      1,
+      maximumDimension / Math.max(video.videoWidth, video.videoHeight)
+    );
+    const canvas = document.createElement('canvas');
+
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      setPersonCameraError(text.failedReadPhoto);
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    let photoDataUrl = canvas.toDataURL('image/jpeg', 0.86);
+    const encodedPhoto = photoDataUrl.split(',')[1] || '';
+    const estimatedPhotoBytes = Math.ceil((encodedPhoto.length * 3) / 4);
+
+    if (estimatedPhotoBytes > MAX_IMAGE_SIZE_BYTES) {
+      photoDataUrl = canvas.toDataURL('image/jpeg', 0.68);
+    }
+
+    const compressedPhoto = photoDataUrl.split(',')[1] || '';
+    const compressedPhotoBytes = Math.ceil((compressedPhoto.length * 3) / 4);
+
+    if (compressedPhotoBytes > MAX_IMAGE_SIZE_BYTES) {
+      setPersonCameraError(text.photoTooLarge);
+      return;
+    }
+
+    setPersonForm(previous => ({
+      ...previous,
+      photoBase64: photoDataUrl,
+    }));
+
+    closePersonCamera();
   };
 
   const removePersonPhoto = () => {
@@ -1182,202 +1351,111 @@ function AttendanceManagement() {
     }
   };
 
-  return (
-    <div
-      dir={dir}
-      className="attendance-page-root"
-      style={{
-        minHeight: 'auto',
-        padding: '0',
-        fontFamily: 'Arial, sans-serif',
-        background: 'transparent',
-      }}
-    >
-      <style>{attendanceResponsiveStyles}</style>
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '980px',
-          margin: '0 auto',
-        }}
-      >
-        <div
-          className="attendance-main-card"
-          style={{
-            background: 'white',
-            borderRadius: '28px',
-            padding: '40px',
-            boxShadow: '0 12px 35px rgba(139, 30, 30, 0.14)',
-            border: '1px solid rgba(139, 30, 30, 0.12)',
-            textAlign: 'center',
-          }}
-        >
-          <h1
-            style={{
-              margin: '0 0 12px',
-              color: '#8b1e1e',
-              fontSize: '32px',
-              fontWeight: 800,
-            }}
-          >
-            {text.pageTitle}
-          </h1>
+  useEffect(() => {
+    isSavingPersonRef.current = isSavingPerson;
+  }, [isSavingPerson]);
 
-          <p
-            style={{
-              margin: '0 0 32px',
-              color: '#666',
-              fontSize: '17px',
-              lineHeight: 1.6,
-            }}
-          >
-            {text.pageDescription}
-          </p>
+  useEffect(() => {
+    if (!isPersonEditModalOpen) return;
 
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-              maxWidth: '520px',
-              margin: '0 auto',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setActivePanel('people')}
-              style={{
-                width: '100%',
-                minHeight: '58px',
-                border: '2px solid #8b1e1e',
-                borderRadius: '999px',
-                background: activePanel === 'people' ? '#8b1e1e' : 'white',
-                color: activePanel === 'people' ? 'white' : '#8b1e1e',
-                fontSize: '18px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                boxShadow: activePanel === 'people' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
-              }}
-            >
-              <UserPlus size={20} />
-              {text.addModifyPerson}
-            </button>
+    const scrollPosition = window.scrollY;
+    const body = document.body;
+    const previousBodyStyles = {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+    };
 
-            <button
-              type="button"
-              onClick={() => setActivePanel('attendance')}
-              style={{
-                width: '100%',
-                minHeight: '58px',
-                border: '2px solid #8b1e1e',
-                borderRadius: '999px',
-                background: activePanel === 'attendance' ? '#8b1e1e' : 'white',
-                color: activePanel === 'attendance' ? 'white' : '#8b1e1e',
-                fontSize: '18px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                boxShadow: activePanel === 'attendance' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
-              }}
-            >
-              <ClipboardList size={20} />
-              {text.takeAttendance}
-            </button>
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollPosition}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
 
-            <button
-              type="button"
-              onClick={() => setActivePanel('analysis')}
-              style={{
-                width: '100%',
-                minHeight: '58px',
-                border: '2px solid #8b1e1e',
-                borderRadius: '999px',
-                background: activePanel === 'analysis' ? '#8b1e1e' : 'white',
-                color: activePanel === 'analysis' ? 'white' : '#8b1e1e',
-                fontSize: '18px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                boxShadow: activePanel === 'analysis' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
-              }}
-            >
-              <BarChart3 size={20} />
-              {text.analysis}
-            </button>
-          </div>
-        </div>
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isSavingPersonRef.current) {
+        resetPersonForm();
+      }
+    };
 
-        {activePanel === 'people' && (
-          <section
-            style={{
-              marginTop: '28px',
-              background: 'white',
-              borderRadius: '28px',
-              padding: '32px',
-              boxShadow: '0 12px 35px rgba(139, 30, 30, 0.10)',
-              border: '1px solid rgba(139, 30, 30, 0.10)',
-            }}
-          >
-            <div
-              className="attendance-section-header"
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: '16px',
-                marginBottom: '28px',
-              }}
-            >
-              <div>
-                <h2
-                  style={{
-                    margin: '0 0 8px',
-                    color: '#8b1e1e',
-                    fontSize: '26px',
-                    fontWeight: 800,
-                  }}
-                >
-                  {text.peopleTitle}
-                </h2>
-                <p
-                  style={{
-                    margin: 0,
-                    color: '#666',
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {text.peopleDescription}
-                </p>
-              </div>
+    document.addEventListener('keydown', handleEscape);
 
-              <button
-                type="button"
-                onClick={() => setActivePanel('menu')}
-                style={{
-                  border: 'none',
-                  borderRadius: '999px',
-                  background: '#f5f4f0',
-                  color: '#641414',
-                  padding: '12px 18px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {text.backToMenu}
-              </button>
-            </div>
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      body.style.overflow = previousBodyStyles.overflow;
+      body.style.position = previousBodyStyles.position;
+      body.style.top = previousBodyStyles.top;
+      body.style.left = previousBodyStyles.left;
+      body.style.right = previousBodyStyles.right;
+      body.style.width = previousBodyStyles.width;
+      window.scrollTo(0, scrollPosition);
+    };
+  }, [isPersonEditModalOpen]);
 
+  useEffect(() => {
+    if (!isPersonCameraOpen) return;
+
+    let isCancelled = false;
+
+    const startCamera = async () => {
+      setIsStartingPersonCamera(true);
+      setPersonCameraError('');
+      stopPersonCameraStream();
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: personCameraFacingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+
+        if (isCancelled) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        personCameraStreamRef.current = stream;
+
+        const video = personCameraVideoRef.current;
+
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
+        }
+      } catch (error) {
+        console.error('Failed to start person camera:', error);
+
+        if (!isCancelled) {
+          setPersonCameraError(text.cameraPermissionError);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsStartingPersonCamera(false);
+        }
+      }
+    };
+
+    void startCamera();
+
+    return () => {
+      isCancelled = true;
+      stopPersonCameraStream();
+    };
+  }, [
+    isPersonCameraOpen,
+    personCameraFacingMode,
+    text.cameraPermissionError,
+  ]);
+
+  const renderPersonEditor = (isModal: boolean) => (
+    <>
             <div
               className="attendance-photo-editor"
               style={{
@@ -1454,7 +1532,17 @@ function AttendanceManagement() {
                   style={{ display: 'none' }}
                 />
 
+                <input
+                  ref={personCameraCaptureInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePersonPhotoSelected}
+                  style={{ display: 'none' }}
+                />
+
                 <div
+                  className="attendance-camera-actions"
                   style={{
                     display: 'flex',
                     flexWrap: 'wrap',
@@ -1494,6 +1582,54 @@ function AttendanceManagement() {
                         : text.selectPhoto}
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={() => personCameraCaptureInputRef.current?.click()}
+                    disabled={isReadingPersonPhoto}
+                    style={{
+                      minHeight: '44px',
+                      border: '2px solid #8b1e1e',
+                      borderRadius: '999px',
+                      background: 'white',
+                      color: '#8b1e1e',
+                      padding: '0 18px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <Camera size={17} />
+                    {text.takePhoto}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={openPersonCamera}
+                    disabled={isReadingPersonPhoto}
+                    style={{
+                      minHeight: '44px',
+                      border: '1px solid rgba(139, 30, 30, 0.20)',
+                      borderRadius: '999px',
+                      background: '#fff7f7',
+                      color: '#641414',
+                      padding: '0 18px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <Camera size={17} />
+                    {text.openLiveCamera}
+                  </button>
+
                   {personForm.photoBase64 && (
                     <button
                       type="button"
@@ -1520,8 +1656,181 @@ function AttendanceManagement() {
                     </button>
                   )}
                 </div>
+
+                {personCameraError && !isPersonCameraOpen && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '12px 14px',
+                      borderRadius: '14px',
+                      background: '#fff1f2',
+                      color: '#b91c1c',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {personCameraError}
+                  </div>
+                )}
               </div>
             </div>
+
+            {isPersonCameraOpen && (
+              <div
+                className="attendance-live-camera"
+                style={{
+                  marginBottom: '28px',
+                  padding: '18px',
+                  borderRadius: '22px',
+                  background: '#181818',
+                  color: 'white',
+                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.22)',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'relative',
+                    overflow: 'hidden',
+                    borderRadius: '18px',
+                    background: '#050505',
+                    minHeight: '220px',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <video
+                    ref={personCameraVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    style={{
+                      width: '100%',
+                      maxHeight: '58vh',
+                      objectFit: 'contain',
+                      display: 'block',
+                    }}
+                  />
+
+                  {isStartingPersonCamera && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'grid',
+                        placeItems: 'center',
+                        background: 'rgba(0, 0, 0, 0.56)',
+                      }}
+                    >
+                      <Loader2 size={34} className="animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {personCameraError && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '12px 14px',
+                      borderRadius: '14px',
+                      background: 'rgba(185, 28, 28, 0.22)',
+                      color: '#fecaca',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {personCameraError}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    marginTop: '14px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={capturePersonPhotoFromLiveCamera}
+                    disabled={isStartingPersonCamera || !!personCameraError}
+                    style={{
+                      minHeight: '46px',
+                      border: 'none',
+                      borderRadius: '999px',
+                      background: 'white',
+                      color: '#641414',
+                      padding: '0 20px',
+                      fontSize: '14px',
+                      fontWeight: 900,
+                      cursor:
+                        isStartingPersonCamera || !!personCameraError
+                          ? 'not-allowed'
+                          : 'pointer',
+                      opacity:
+                        isStartingPersonCamera || !!personCameraError ? 0.55 : 1,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <Camera size={18} />
+                    {text.capturePhoto}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={switchPersonCamera}
+                    disabled={isStartingPersonCamera}
+                    style={{
+                      minHeight: '46px',
+                      border: '1px solid rgba(255, 255, 255, 0.38)',
+                      borderRadius: '999px',
+                      background: 'transparent',
+                      color: 'white',
+                      padding: '0 18px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: isStartingPersonCamera ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <RefreshCw size={17} />
+                    {text.switchCamera}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={closePersonCamera}
+                    style={{
+                      minHeight: '46px',
+                      border: '1px solid rgba(255, 255, 255, 0.38)',
+                      borderRadius: '999px',
+                      background: 'transparent',
+                      color: 'white',
+                      padding: '0 18px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <X size={17} />
+                    {text.closeCamera}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <h3
               style={{
@@ -1742,14 +2051,14 @@ function AttendanceManagement() {
                 {isSavingPerson ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 {isSavingPerson
                   ? text.saving
-                  : selectedPersonId
+                  : isModal
                     ? text.updatePerson
                     : text.savePerson}
               </button>
 
               <button
                 type="button"
-                onClick={resetPersonForm}
+                onClick={isModal ? closePersonEditor : resetPersonForm}
                 style={{
                   width: '100%',
                   minHeight: '50px',
@@ -1762,9 +2071,209 @@ function AttendanceManagement() {
                   cursor: 'pointer',
                 }}
               >
-                {selectedPersonId ? text.newPerson : text.reset}
+                {isModal ? text.close : text.reset}
               </button>
             </div>
+    </>
+  );
+
+  return (
+    <div
+      dir={dir}
+      className="attendance-page-root"
+      style={{
+        minHeight: 'auto',
+        padding: '0',
+        fontFamily: 'Arial, sans-serif',
+        background: 'transparent',
+      }}
+    >
+      <style>{attendanceResponsiveStyles}</style>
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '980px',
+          margin: '0 auto',
+        }}
+      >
+        <div
+          className="attendance-main-card"
+          style={{
+            background: 'white',
+            borderRadius: '28px',
+            padding: '40px',
+            boxShadow: '0 12px 35px rgba(139, 30, 30, 0.14)',
+            border: '1px solid rgba(139, 30, 30, 0.12)',
+            textAlign: 'center',
+          }}
+        >
+          <h1
+            style={{
+              margin: '0 0 12px',
+              color: '#8b1e1e',
+              fontSize: '32px',
+              fontWeight: 800,
+            }}
+          >
+            {text.pageTitle}
+          </h1>
+
+          <p
+            style={{
+              margin: '0 0 32px',
+              color: '#666',
+              fontSize: '17px',
+              lineHeight: 1.6,
+            }}
+          >
+            {text.pageDescription}
+          </p>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              maxWidth: '520px',
+              margin: '0 auto',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActivePanel('people')}
+              style={{
+                width: '100%',
+                minHeight: '58px',
+                border: '2px solid #8b1e1e',
+                borderRadius: '999px',
+                background: activePanel === 'people' ? '#8b1e1e' : 'white',
+                color: activePanel === 'people' ? 'white' : '#8b1e1e',
+                fontSize: '18px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: activePanel === 'people' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
+              }}
+            >
+              <UserPlus size={20} />
+              {text.addModifyPerson}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActivePanel('attendance')}
+              style={{
+                width: '100%',
+                minHeight: '58px',
+                border: '2px solid #8b1e1e',
+                borderRadius: '999px',
+                background: activePanel === 'attendance' ? '#8b1e1e' : 'white',
+                color: activePanel === 'attendance' ? 'white' : '#8b1e1e',
+                fontSize: '18px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: activePanel === 'attendance' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
+              }}
+            >
+              <ClipboardList size={20} />
+              {text.takeAttendance}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActivePanel('analysis')}
+              style={{
+                width: '100%',
+                minHeight: '58px',
+                border: '2px solid #8b1e1e',
+                borderRadius: '999px',
+                background: activePanel === 'analysis' ? '#8b1e1e' : 'white',
+                color: activePanel === 'analysis' ? 'white' : '#8b1e1e',
+                fontSize: '18px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                boxShadow: activePanel === 'analysis' ? '0 8px 24px rgba(139, 30, 30, 0.22)' : 'none',
+              }}
+            >
+              <BarChart3 size={20} />
+              {text.analysis}
+            </button>
+          </div>
+        </div>
+
+        {activePanel === 'people' && (
+          <section
+            style={{
+              marginTop: '28px',
+              background: 'white',
+              borderRadius: '28px',
+              padding: '32px',
+              boxShadow: '0 12px 35px rgba(139, 30, 30, 0.10)',
+              border: '1px solid rgba(139, 30, 30, 0.10)',
+            }}
+          >
+            <div
+              className="attendance-section-header"
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '16px',
+                marginBottom: '28px',
+              }}
+            >
+              <div>
+                <h2
+                  style={{
+                    margin: '0 0 8px',
+                    color: '#8b1e1e',
+                    fontSize: '26px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {text.peopleTitle}
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    color: '#666',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {text.peopleDescription}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActivePanel('menu')}
+                style={{
+                  border: 'none',
+                  borderRadius: '999px',
+                  background: '#f5f4f0',
+                  color: '#641414',
+                  padding: '12px 18px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {text.backToMenu}
+              </button>
+            </div>
+
+            {!selectedPersonId && renderPersonEditor(false)}
 
             <div
               style={{
@@ -1955,21 +2464,6 @@ function AttendanceManagement() {
                         </div>
                       </div>
 
-                      {(person.arabicFirstName || person.arabicLastName) && (
-                        <div
-                          dir="rtl"
-                          style={{
-                            color: '#8b1e1e',
-                            fontSize: '16px',
-                            fontWeight: 800,
-                            marginBottom: '6px',
-                            textAlign: 'right',
-                          }}
-                        >
-                          {person.arabicFirstName} {person.arabicLastName}
-                        </div>
-                      )}
-
                       <div
                         style={{
                           color: '#777',
@@ -1996,6 +2490,128 @@ function AttendanceManagement() {
               )}
             </div>
           </section>
+        )}
+
+        {isPersonEditModalOpen && selectedPersonId && (
+          <div
+            className="attendance-person-edit-overlay"
+            role="presentation"
+            onMouseDown={event => {
+              if (
+                event.target === event.currentTarget &&
+                !isSavingPerson
+              ) {
+                closePersonEditor();
+              }
+            }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10000,
+              padding: '24px',
+              background: 'rgba(28, 12, 12, 0.62)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              display: 'grid',
+              placeItems: 'center',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              ref={personEditModalRef}
+              className="attendance-person-edit-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="attendance-person-edit-title"
+              tabIndex={-1}
+              onMouseDown={event => event.stopPropagation()}
+              style={{
+                width: 'min(920px, 100%)',
+                maxHeight: 'calc(100dvh - 48px)',
+                overflow: 'hidden',
+                borderRadius: '28px',
+                background: 'white',
+                boxShadow: '0 28px 90px rgba(0, 0, 0, 0.38)',
+                border: '1px solid rgba(255, 255, 255, 0.38)',
+                display: 'flex',
+                flexDirection: 'column',
+                outline: 'none',
+              }}
+            >
+              <div
+                className="attendance-person-edit-modal-header"
+                style={{
+                  flex: '0 0 auto',
+                  padding: '22px 24px',
+                  borderBottom: '1px solid #eee',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  background: '#fffafa',
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <h2
+                    id="attendance-person-edit-title"
+                    style={{
+                      margin: '0 0 5px',
+                      color: '#8b1e1e',
+                      fontSize: '24px',
+                      fontWeight: 900,
+                    }}
+                  >
+                    {text.editPerson}
+                  </h2>
+                  <p
+                    style={{
+                      margin: 0,
+                      color: '#666',
+                      fontSize: '14px',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {text.editPersonDescription}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closePersonEditor}
+                  disabled={isSavingPerson}
+                  aria-label={text.close}
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    flex: '0 0 44px',
+                    border: 'none',
+                    borderRadius: '50%',
+                    background: '#f5f4f0',
+                    color: '#641414',
+                    cursor: isSavingPerson ? 'not-allowed' : 'pointer',
+                    opacity: isSavingPerson ? 0.55 : 1,
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <X size={22} />
+                </button>
+              </div>
+
+              <div
+                className="attendance-person-edit-modal-body"
+                style={{
+                  flex: '1 1 auto',
+                  minHeight: 0,
+                  overflowY: 'auto',
+                  overscrollBehavior: 'contain',
+                  padding: '24px',
+                }}
+              >
+                {renderPersonEditor(true)}
+              </div>
+            </div>
+          </div>
         )}
 
         {activePanel === 'attendance' && (
