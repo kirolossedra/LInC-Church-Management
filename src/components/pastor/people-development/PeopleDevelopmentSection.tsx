@@ -1,8 +1,12 @@
-import type {
-  DragEvent,
+import {
+  useEffect,
+  useState,
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 
 import {
+  ArrowUpRight,
   ChevronDown,
   ChevronUp,
   GripVertical,
@@ -11,10 +15,12 @@ import {
   ThumbsDown,
   ThumbsUp,
   Users,
+  X,
 } from 'lucide-react';
 
 import {
   PEOPLE_DEVELOPMENT_GROUPS,
+  type PeopleDevelopmentGroupDefinition,
 } from './peopleDevelopment.constants';
 
 import PeopleDevelopmentGroupPanel from './PeopleDevelopmentGroupPanel';
@@ -184,6 +190,13 @@ export default function PeopleDevelopmentSection({
   const isArabic =
     locale === 'ar';
 
+  const [
+    selectedGroupId,
+    setSelectedGroupId,
+  ] = useState<PeopleDevelopmentGroupId | null>(
+    null,
+  );
+
   const visibleParticipants =
     searchPeopleDevelopmentParticipants(
       participants,
@@ -205,6 +218,12 @@ export default function PeopleDevelopmentSection({
     participants.length -
     assignedCount;
 
+  const selectedGroup =
+    PEOPLE_DEVELOPMENT_GROUPS.find(
+      group =>
+        group.id === selectedGroupId,
+    ) || null;
+
   const getParticipantGroup = (
     participant: PeopleDevelopmentParticipant,
   ): PeopleDevelopmentGroupId | '' =>
@@ -220,6 +239,68 @@ export default function PeopleDevelopmentSection({
       groupId,
       locale,
     );
+
+  const getGroupParticipants = (
+    groupId: PeopleDevelopmentGroupId,
+  ): PeopleDevelopmentParticipant[] =>
+    getPeopleDevelopmentGroupParticipants(
+      participants,
+      members,
+      groupId,
+    );
+
+  const getGroupAssignments = (
+    groupId: PeopleDevelopmentGroupId,
+  ): PeopleDevelopmentEntry[] =>
+    getPeopleDevelopmentGroupAssignments(
+      assignments,
+      groupId,
+    );
+
+  const closeGroupPopup = () => {
+    setSelectedGroupId(null);
+  };
+
+  useEffect(() => {
+    if (!expanded) {
+      setSelectedGroupId(null);
+    }
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!selectedGroupId) {
+      return;
+    }
+
+    const previousOverflow =
+      document.body.style.overflow;
+
+    const handleKeyDown = (
+      event: KeyboardEvent,
+    ) => {
+      if (event.key === 'Escape') {
+        closeGroupPopup();
+      }
+    };
+
+    document.body.style.overflow =
+      'hidden';
+
+    window.addEventListener(
+      'keydown',
+      handleKeyDown,
+    );
+
+    return () => {
+      document.body.style.overflow =
+        previousOverflow;
+
+      window.removeEventListener(
+        'keydown',
+        handleKeyDown,
+      );
+    };
+  }, [selectedGroupId]);
 
   const handleDragStart = (
     event: DragEvent<HTMLElement>,
@@ -261,6 +342,117 @@ export default function PeopleDevelopmentSection({
     onGroupSelectDraftChange(
       groupId,
       '',
+    );
+  };
+
+  const handleGroupCardKeyDown = (
+    event: ReactKeyboardEvent<HTMLElement>,
+    groupId: PeopleDevelopmentGroupId,
+  ) => {
+    if (
+      event.key === 'Enter' ||
+      event.key === ' '
+    ) {
+      event.preventDefault();
+      setSelectedGroupId(groupId);
+    }
+  };
+
+  const renderGroupCard = (
+    group: PeopleDevelopmentGroupDefinition,
+  ) => {
+    const groupParticipants =
+      getGroupParticipants(group.id);
+
+    const groupAssignments =
+      getGroupAssignments(group.id);
+
+    return (
+      <article
+        key={group.id}
+        role="button"
+        tabIndex={0}
+        aria-label={
+          isArabic
+            ? `فتح مجموعة ${group.labelAr}`
+            : `Open ${group.labelEn} group`
+        }
+        onClick={() =>
+          setSelectedGroupId(group.id)
+        }
+        onKeyDown={event =>
+          handleGroupCardKeyDown(
+            event,
+            group.id,
+          )
+        }
+        onDragOver={event =>
+          event.preventDefault()
+        }
+        onDrop={event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          void onDropMember(
+            event,
+            group.id,
+          );
+        }}
+        className={`group relative cursor-pointer overflow-hidden rounded-2xl border-2 p-4 text-start transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-violet-200 ${group.cardClass}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h5 className="truncate text-base font-black">
+              {isArabic
+                ? group.labelAr
+                : group.labelEn}
+            </h5>
+
+            <p className="mt-1 line-clamp-2 text-sm opacity-75">
+              {isArabic
+                ? group.descriptionAr
+                : group.descriptionEn}
+            </p>
+          </div>
+
+          <span
+            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-black ${group.badgeClass}`}
+          >
+            {groupParticipants.length}
+          </span>
+        </div>
+
+        {draggedMemberKey && (
+          <div className="mt-3 rounded-xl border border-dashed border-current/30 bg-white/55 px-3 py-2 text-center text-xs font-black">
+            {isArabic
+              ? 'أفلت هنا للإضافة'
+              : 'Drop here to assign'}
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-current/10 pt-3 text-xs font-black">
+          <span className="opacity-70">
+            {isArabic
+              ? `${groupAssignments.length} منشور`
+              : `${groupAssignments.length} post${
+                  groupAssignments.length === 1
+                    ? ''
+                    : 's'
+                }`}
+          </span>
+
+          <span className="flex items-center gap-1 transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5">
+            {isArabic
+              ? 'فتح'
+              : 'Open'}
+
+            <ArrowUpRight
+              size={15}
+              className="rtl:-scale-x-100"
+            />
+          </span>
+        </div>
+      </article>
     );
   };
 
@@ -332,8 +524,8 @@ export default function PeopleDevelopmentSection({
 
                 <p className="mt-1 text-sm text-gray-500">
                   {isArabic
-                    ? 'اسحب الشخص إلى مجموعة أو استخدم قائمة الإضافة داخل المجموعة.'
-                    : 'Drag a person into a group or use the add-person selector inside each group.'}
+                    ? 'اسحب الشخص إلى بطاقة المجموعة أو افتح المجموعة لإدارته.'
+                    : 'Drag a person onto a group card or open the group to manage it.'}
                 </p>
               </div>
 
@@ -557,95 +749,155 @@ export default function PeopleDevelopmentSection({
 
               <p className="mt-1 text-sm text-gray-500">
                 {isArabic
-                  ? 'كل مجموعة لها أعضاء وملاحظات وتكليفات وسجل منشورات مستقل.'
-                  : 'Each group has its own members, notes, assignments, and post history.'}
+                  ? 'اختر مجموعة لفتح مساحة العمل الكاملة الخاصة بها.'
+                  : 'Select a group to open its complete workspace.'}
               </p>
             </div>
 
-            <div className="grid gap-5 xl:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               {PEOPLE_DEVELOPMENT_GROUPS.map(
-                group => (
-                  <PeopleDevelopmentGroupPanel
-                    key={group.id}
-                    group={group}
-                    participants={
-                      participants
-                    }
-                    groupParticipants={getPeopleDevelopmentGroupParticipants(
-                      participants,
-                      members,
-                      group.id,
-                    )}
-                    assignments={getPeopleDevelopmentGroupAssignments(
-                      assignments,
-                      group.id,
-                    )}
-                    draftText={
-                      assignmentDrafts[
-                        group.id
-                      ] || ''
-                    }
-                    selectedFile={
-                      assignmentFiles[
-                        group.id
-                      ] || null
-                    }
-                    fileInputResetKey={
-                      assignmentFileInputResetKeys[
-                        group.id
-                      ] || 0
-                    }
-                    selectedMemberKey={
-                      groupSelectDrafts[
-                        group.id
-                      ] || ''
-                    }
-                    posting={
-                      postingGroup ===
-                      group.id
-                    }
-                    savingMemberKey={
-                      savingMemberKey
-                    }
-                    draggedMemberKey={
-                      draggedMemberKey
-                    }
-                    locale={locale}
-                    getParticipantGroup={
-                      getParticipantGroup
-                    }
-                    getGroupLabel={
-                      getGroupLabel
-                    }
-                    onDropMember={
-                      onDropMember
-                    }
-                    onDraftTextChange={
-                      onDraftTextChange
-                    }
-                    onFileChange={
-                      onFileChange
-                    }
-                    onClearFile={
-                      onClearFile
-                    }
-                    onPostAssignment={
-                      onPostAssignment
-                    }
-                    onSelectedMemberKeyChange={
-                      onGroupSelectDraftChange
-                    }
-                    onAssignSelectedMember={
-                      handleAssignSelectedMember
-                    }
-                    onOpenAssignments={
-                      onOpenAssignments
-                    }
-                  />
-                ),
+                renderGroupCard,
               )}
             </div>
           </section>
+        </div>
+      )}
+
+      {selectedGroup && (
+        <div
+          className="fixed inset-0 z-[45] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-6"
+          onClick={closeGroupPopup}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`people-development-group-${selectedGroup.id}`}
+            onClick={event =>
+              event.stopPropagation()
+            }
+            className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl"
+          >
+            <div
+              className={`flex items-start justify-between gap-4 border-b p-4 sm:p-5 ${selectedGroup.softClass}`}
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4
+                    id={`people-development-group-${selectedGroup.id}`}
+                    className="text-xl font-black"
+                  >
+                    {isArabic
+                      ? selectedGroup.labelAr
+                      : selectedGroup.labelEn}
+                  </h4>
+
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-xs font-black ${selectedGroup.badgeClass}`}
+                  >
+                    {
+                      getGroupParticipants(
+                        selectedGroup.id,
+                      ).length
+                    }
+                  </span>
+                </div>
+
+                <p className="mt-1 text-sm opacity-75">
+                  {isArabic
+                    ? selectedGroup.descriptionAr
+                    : selectedGroup.descriptionEn}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeGroupPopup}
+                className="shrink-0 rounded-full border border-current/15 bg-white/75 p-2 transition hover:bg-white"
+                title={
+                  isArabic
+                    ? 'إغلاق'
+                    : 'Close'
+                }
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-3 sm:p-5">
+              <PeopleDevelopmentGroupPanel
+                group={selectedGroup}
+                participants={participants}
+                groupParticipants={getGroupParticipants(
+                  selectedGroup.id,
+                )}
+                assignments={getGroupAssignments(
+                  selectedGroup.id,
+                )}
+                draftText={
+                  assignmentDrafts[
+                    selectedGroup.id
+                  ] || ''
+                }
+                selectedFile={
+                  assignmentFiles[
+                    selectedGroup.id
+                  ] || null
+                }
+                fileInputResetKey={
+                  assignmentFileInputResetKeys[
+                    selectedGroup.id
+                  ] || 0
+                }
+                selectedMemberKey={
+                  groupSelectDrafts[
+                    selectedGroup.id
+                  ] || ''
+                }
+                posting={
+                  postingGroup ===
+                  selectedGroup.id
+                }
+                savingMemberKey={
+                  savingMemberKey
+                }
+                draggedMemberKey={
+                  draggedMemberKey
+                }
+                locale={locale}
+                getParticipantGroup={
+                  getParticipantGroup
+                }
+                getGroupLabel={
+                  getGroupLabel
+                }
+                onDropMember={
+                  onDropMember
+                }
+                onDraftTextChange={
+                  onDraftTextChange
+                }
+                onFileChange={
+                  onFileChange
+                }
+                onClearFile={
+                  onClearFile
+                }
+                onPostAssignment={
+                  onPostAssignment
+                }
+                onSelectedMemberKeyChange={
+                  onGroupSelectDraftChange
+                }
+                onAssignSelectedMember={
+                  handleAssignSelectedMember
+                }
+                onOpenAssignments={
+                  onOpenAssignments
+                }
+              />
+            </div>
+          </div>
         </div>
       )}
     </section>
