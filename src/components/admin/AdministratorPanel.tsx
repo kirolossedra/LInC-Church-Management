@@ -27,13 +27,23 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { get, onValue, push, ref, set, update } from 'firebase/database';
+import { get, onValue, push, ref, runTransaction, set, update } from 'firebase/database';
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  type User,
+} from 'firebase/auth';
 import { database } from '../../firebase';
 import fiveServicePathwaysYaml from '../forms/five-service-pathways.yml?raw';
 import spiritualGiftsDiscoveryYaml from '../forms/spiritual-gifts-discovery.yml?raw';
 import { useI18n } from '../../i18n';
 
-const ADMIN_PASSWORD = '9999';
+const FIREBASE_AUTH = getAuth();
+const ADMIN_HIERARCHY_PATH = 'administration/adminHierarchy';
+const ADMIN_CHIEF_UID_PATH = `${ADMIN_HIERARCHY_PATH}/chiefUid`;
+const ADMIN_USERS_PATH = `${ADMIN_HIERARCHY_PATH}/users`;
 const CAROUSEL_PATH = 'landingPage/carousel';
 const ASSESSMENT_FORMS_CONTROL_PATH = 'assessmentPage/forms';
 const MAX_IMAGE_SIZE_BYTES = 3_000_000;
@@ -85,6 +95,118 @@ interface PendingUpload {
   dataUrl: string;
   altEn: string;
   altAr: string;
+}
+
+type AdminRole = 'chief' | 'administrator';
+type AdminStatus = 'pending' | 'active' | 'suspended';
+
+interface AdminAuthority {
+  manageAssessmentForms: boolean;
+  manageCarousel: boolean;
+  manageAttendance: boolean;
+}
+
+interface AdminAccount {
+  uid: string;
+  email: string;
+  role: AdminRole;
+  status: AdminStatus;
+  authority: AdminAuthority;
+  firstSignedInAt: number;
+  lastSignedInAt: number;
+  approvedAt?: number;
+  approvedByUid?: string;
+  updatedAt?: number;
+}
+
+const EMPTY_ADMIN_AUTHORITY: AdminAuthority = {
+  manageAssessmentForms: false,
+  manageCarousel: false,
+  manageAttendance: false,
+};
+
+const FULL_ADMIN_AUTHORITY: AdminAuthority = {
+  manageAssessmentForms: true,
+  manageCarousel: true,
+  manageAttendance: true,
+};
+
+function normalizeAdminAuthority(value: unknown): AdminAuthority {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...EMPTY_ADMIN_AUTHORITY };
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    manageAssessmentForms: record.manageAssessmentForms === true,
+    manageCarousel: record.manageCarousel === true,
+    manageAttendance: record.manageAttendance === true,
+  };
+}
+
+function normalizeAdminAccount(uid: string, value: unknown): AdminAccount | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const record = value as Record<string, unknown>;
+  const email = typeof record.email === 'string' ? record.email.trim() : '';
+  const role: AdminRole = record.role === 'chief' ? 'chief' : 'administrator';
+  const status: AdminStatus =
+    record.status === 'active' || record.status === 'suspended'
+      ? record.status
+      : 'pending';
+
+  return {
+    uid,
+    email,
+    role,
+    status,
+    authority:
+      role === 'chief'
+        ? { ...FULL_ADMIN_AUTHORITY }
+        : normalizeAdminAuthority(record.authority),
+    firstSignedInAt: normalizeNumber(record.firstSignedInAt),
+    lastSignedInAt: normalizeNumber(record.lastSignedInAt),
+    approvedAt: normalizeNumber(record.approvedAt) || undefined,
+    approvedByUid:
+      typeof record.approvedByUid === 'string'
+        ? record.approvedByUid
+        : undefined,
+    updatedAt: normalizeNumber(record.updatedAt) || undefined,
+  };
+}
+
+function firebaseAuthenticationErrorMessage(error: unknown): string {
+  const errorCode =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+      : '';
+
+  if (
+    errorCode === 'auth/invalid-credential' ||
+    errorCode === 'auth/user-not-found' ||
+    errorCode === 'auth/wrong-password'
+  ) {
+    return 'The email or password is incorrect.';
+  }
+
+  if (errorCode === 'auth/invalid-email') {
+    return 'Enter a valid email address.';
+  }
+
+  if (errorCode === 'auth/user-disabled') {
+    return 'This Firebase Authentication account has been disabled.';
+  }
+
+  if (errorCode === 'auth/too-many-requests') {
+    return 'Too many failed attempts. Try again later.';
+  }
+
+  if (errorCode === 'auth/network-request-failed') {
+    return 'The sign-in request failed because of a network problem.';
+  }
+
+  return 'Firebase Authentication could not sign you in.';
 }
 
 const ASSESSMENT_FORM_DEFINITIONS = [
@@ -4247,10 +4369,20 @@ function AttendanceManagement() {
 }
 
 export default function AdministratorPanel() {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isUnlocked, setIsUnlocked] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isAuthResolving, setIsAuthResolving] = useState(true);
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isInitializingAdmin, setIsInitializingAdmin] = useState(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [adminAccount, setAdminAccount] = useState<AdminAccount | null>(null);
+  const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>([]);
+  const [authorityDrafts, setAuthorityDrafts] = useState<
+    Record<string, AdminAuthority>
+  >({});
+  const [savingAdminUid, setSavingAdminUid] = useState<string | null>(null);
 
   const [carouselEnabled, setCarouselEnabled] = useState(true);
   const [photos, setPhotos] = useState<CarouselPhoto[]>([]);
@@ -4274,6 +4406,197 @@ export default function AdministratorPanel() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isChief = adminAccount?.role === 'chief';
+  const isUnlocked =
+    !!authUser &&
+    !!adminAccount &&
+    (adminAccount.role === 'chief' || adminAccount.status === 'active');
+  const canManageAssessmentForms =
+    isChief ||
+    (adminAccount?.status === 'active' &&
+      adminAccount.authority.manageAssessmentForms);
+  const canManageCarousel =
+    isChief ||
+    (adminAccount?.status === 'active' && adminAccount.authority.manageCarousel);
+  const canManageAttendance =
+    isChief ||
+    (adminAccount?.status === 'active' && adminAccount.authority.manageAttendance);
+
+  const sortedAdminAccounts = useMemo(() => {
+    return [...adminAccounts].sort((a, b) => {
+      if (a.role !== b.role) return a.role === 'chief' ? -1 : 1;
+      if (a.firstSignedInAt !== b.firstSignedInAt) {
+        return a.firstSignedInAt - b.firstSignedInAt;
+      }
+      return a.email.localeCompare(b.email);
+    });
+  }, [adminAccounts]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(FIREBASE_AUTH, (user) => {
+      setAuthUser(user);
+      setIsAuthResolving(false);
+
+      if (!user) {
+        setAdminAccount(null);
+        setAdminAccounts([]);
+        setAuthorityDrafts({});
+        setIsInitializingAdmin(false);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
+
+    let cancelled = false;
+    let unsubscribeProfile: (() => void) | null = null;
+
+    const initializeAdminProfile = async () => {
+      setIsInitializingAdmin(true);
+      setLoginError('');
+
+      try {
+        const chiefClaim = await runTransaction(
+          ref(database, ADMIN_CHIEF_UID_PATH),
+          (currentChiefUid) => currentChiefUid || authUser.uid,
+          { applyLocally: false }
+        );
+
+        const chiefUid = String(chiefClaim.snapshot.val() || '');
+        const isClaimedChief = chiefUid === authUser.uid;
+        const accountRef = ref(database, `${ADMIN_USERS_PATH}/${authUser.uid}`);
+        const existingSnapshot = await get(accountRef);
+        const existingAccount = normalizeAdminAccount(
+          authUser.uid,
+          existingSnapshot.val()
+        );
+        const now = Date.now();
+        const normalizedEmail = (authUser.email || '').trim().toLowerCase();
+
+        if (!existingAccount) {
+          const newAccount = {
+            uid: authUser.uid,
+            email: normalizedEmail,
+            role: isClaimedChief ? ('chief' as const) : ('administrator' as const),
+            status: isClaimedChief ? ('active' as const) : ('pending' as const),
+            authority: isClaimedChief
+              ? { ...FULL_ADMIN_AUTHORITY }
+              : { ...EMPTY_ADMIN_AUTHORITY },
+            firstSignedInAt: now,
+            lastSignedInAt: now,
+            updatedAt: now,
+            ...(isClaimedChief
+              ? {
+                  approvedAt: now,
+                  approvedByUid: authUser.uid,
+                }
+              : {}),
+          };
+
+          await set(accountRef, newAccount);
+        } else {
+          const updates: Record<string, unknown> = {
+            email: normalizedEmail || existingAccount.email,
+            lastSignedInAt: now,
+            updatedAt: now,
+          };
+
+          if (isClaimedChief) {
+            updates.role = 'chief';
+            updates.status = 'active';
+            updates.authority = FULL_ADMIN_AUTHORITY;
+            updates.approvedAt = existingAccount.approvedAt || now;
+            updates.approvedByUid = authUser.uid;
+          } else if (existingAccount.role === 'chief') {
+            updates.role = 'administrator';
+            updates.status = 'pending';
+            updates.authority = EMPTY_ADMIN_AUTHORITY;
+          }
+
+          await update(accountRef, updates);
+        }
+
+        if (cancelled) return;
+
+        unsubscribeProfile = onValue(
+          accountRef,
+          (snapshot) => {
+            if (cancelled) return;
+
+            const account = normalizeAdminAccount(authUser.uid, snapshot.val());
+            setAdminAccount(account);
+            setIsInitializingAdmin(false);
+          },
+          (error) => {
+            console.error('Failed to load administrator account:', error);
+
+            if (!cancelled) {
+              setAdminAccount(null);
+              setLoginError(
+                'Your Firebase account signed in, but the administrator profile could not be loaded from Realtime Database.'
+              );
+              setIsInitializingAdmin(false);
+            }
+          }
+        );
+      } catch (error) {
+        console.error('Failed to initialize administrator hierarchy:', error);
+
+        if (!cancelled) {
+          setAdminAccount(null);
+          setLoginError(
+            'Your Firebase account signed in, but the administrator hierarchy could not be initialized. Check the Realtime Database rules.'
+          );
+          setIsInitializingAdmin(false);
+        }
+      }
+    };
+
+    void initializeAdminProfile();
+
+    return () => {
+      cancelled = true;
+      unsubscribeProfile?.();
+    };
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!isChief) {
+      setAdminAccounts([]);
+      setAuthorityDrafts({});
+      return;
+    }
+
+    const unsubscribe = onValue(
+      ref(database, ADMIN_USERS_PATH),
+      (snapshot) => {
+        const rawAccounts = snapshot.val() as Record<string, unknown> | null;
+        const loadedAccounts = Object.entries(rawAccounts || {})
+          .map(([uid, value]) => normalizeAdminAccount(uid, value))
+          .filter((account): account is AdminAccount => account !== null);
+
+        setAdminAccounts(loadedAccounts);
+        setAuthorityDrafts(
+          Object.fromEntries(
+            loadedAccounts.map((account) => [
+              account.uid,
+              { ...account.authority },
+            ])
+          )
+        );
+      },
+      (error) => {
+        console.error('Failed to load administrator hierarchy:', error);
+        setErrorMessage('The administrator hierarchy could not be loaded.');
+      }
+    );
+
+    return unsubscribe;
+  }, [isChief]);
+
   const totalStoredSize = useMemo(
     () => photos.reduce((total, photo) => total + photo.url.length, 0),
     [photos]
@@ -4288,7 +4611,12 @@ export default function AdministratorPanel() {
   }, [totalStoredSize]);
 
   useEffect(() => {
-    if (!isUnlocked) return;
+    if (!canManageCarousel) {
+      setLoadingSettings(false);
+      setPhotos([]);
+      setPendingUploads([]);
+      return;
+    }
 
     setLoadingSettings(true);
     setErrorMessage('');
@@ -4317,10 +4645,14 @@ export default function AdministratorPanel() {
     );
 
     return unsubscribe;
-  }, [isUnlocked]);
+  }, [canManageCarousel]);
 
   useEffect(() => {
-    if (!isUnlocked) return;
+    if (!canManageAssessmentForms) {
+      setLoadingAssessmentForms(false);
+      setAssessmentFormStates({});
+      return;
+    }
 
     setLoadingAssessmentForms(true);
 
@@ -4363,36 +4695,139 @@ export default function AdministratorPanel() {
     );
 
     return unsubscribe;
-  }, [isUnlocked]);
+  }, [canManageAssessmentForms]);
 
   const clearMessages = () => {
     setStatusMessage('');
     setErrorMessage('');
   };
 
-  const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoginError('');
 
-    if (password === ADMIN_PASSWORD) {
-      setIsUnlocked(true);
-      setPassword('');
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
+      setLoginError('Enter both your email and password.');
       return;
     }
 
-    setLoginError('Incorrect administrator password.');
+    setIsSigningIn(true);
+
+    try {
+      await signInWithEmailAndPassword(
+        FIREBASE_AUTH,
+        normalizedEmail,
+        password
+      );
+      setPassword('');
+    } catch (error) {
+      console.error('Firebase administrator sign-in failed:', error);
+      setLoginError(firebaseAuthenticationErrorMessage(error));
+    } finally {
+      setIsSigningIn(false);
+    }
   };
 
-  const handleLogout = () => {
-    setIsUnlocked(false);
-    setPassword('');
-    setLoginError('');
-    setPhotos([]);
-    setPendingUploads([]);
-    setAssessmentFormStates({});
-    setSavingAssessmentFormId(null);
-    setStatusMessage('');
-    setErrorMessage('');
+  const handleLogout = async () => {
+    try {
+      await signOut(FIREBASE_AUTH);
+    } catch (error) {
+      console.error('Firebase administrator sign-out failed:', error);
+    } finally {
+      setEmail('');
+      setPassword('');
+      setLoginError('');
+      setAdminAccount(null);
+      setAdminAccounts([]);
+      setAuthorityDrafts({});
+      setPhotos([]);
+      setPendingUploads([]);
+      setAssessmentFormStates({});
+      setSavingAssessmentFormId(null);
+      setStatusMessage('');
+      setErrorMessage('');
+    }
+  };
+
+  const updateAuthorityDraft = (
+    uid: string,
+    field: keyof AdminAuthority,
+    enabled: boolean
+  ) => {
+    setAuthorityDrafts((current) => ({
+      ...current,
+      [uid]: {
+        ...(current[uid] || EMPTY_ADMIN_AUTHORITY),
+        [field]: enabled,
+      },
+    }));
+  };
+
+  const handleSaveAdminAuthority = async (account: AdminAccount) => {
+    if (!isChief || !authUser || account.role === 'chief') return;
+
+    const authority = authorityDrafts[account.uid] || {
+      ...EMPTY_ADMIN_AUTHORITY,
+    };
+    const hasAtLeastOneAuthority = Object.values(authority).some(Boolean);
+
+    if (!hasAtLeastOneAuthority) {
+      setErrorMessage(
+        'Select at least one authority before activating this administrator.'
+      );
+      return;
+    }
+
+    clearMessages();
+    setSavingAdminUid(account.uid);
+
+    try {
+      const now = Date.now();
+
+      await update(ref(database, `${ADMIN_USERS_PATH}/${account.uid}`), {
+        role: 'administrator',
+        status: 'active',
+        authority,
+        approvedAt: now,
+        approvedByUid: authUser.uid,
+        updatedAt: now,
+      });
+
+      setStatusMessage(
+        `${account.email || 'The administrator'} is active with the selected authority.`
+      );
+    } catch (error) {
+      console.error('Failed to save administrator authority:', error);
+      setErrorMessage('The administrator authority could not be saved.');
+    } finally {
+      setSavingAdminUid(null);
+    }
+  };
+
+  const handleSuspendAdmin = async (account: AdminAccount) => {
+    if (!isChief || account.role === 'chief') return;
+
+    clearMessages();
+    setSavingAdminUid(account.uid);
+
+    try {
+      await update(ref(database, `${ADMIN_USERS_PATH}/${account.uid}`), {
+        status: 'suspended',
+        authority: EMPTY_ADMIN_AUTHORITY,
+        updatedAt: Date.now(),
+      });
+
+      setStatusMessage(
+        `${account.email || 'The administrator'} has been suspended.`
+      );
+    } catch (error) {
+      console.error('Failed to suspend administrator:', error);
+      setErrorMessage('The administrator could not be suspended.');
+    } finally {
+      setSavingAdminUid(null);
+    }
   };
 
   const handleAssessmentFormStateChange = async (
@@ -4718,7 +5153,22 @@ export default function AdministratorPanel() {
     }
   };
 
-  if (!isUnlocked) {
+  if (isAuthResolving || (authUser && isInitializingAdmin && !adminAccount)) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#f5f4f0] px-5">
+        <div className="text-center text-[#641414]">
+          <Loader2 size={38} className="mx-auto mb-4 animate-spin" />
+          <p className="font-extrabold">
+            {isAuthResolving
+              ? 'Checking Firebase Authentication'
+              : 'Preparing administrator access'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
     return (
       <div className="min-h-screen bg-[#f5f4f0] px-5 py-10">
         <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-md items-center justify-center">
@@ -4738,40 +5188,115 @@ export default function AdministratorPanel() {
                 Administrator Panel
               </h1>
               <p className="mt-3 text-sm leading-relaxed text-stone-500">
-                Enter the temporary administrator password to manage landing-page content.
+                Sign in with a Firebase Authentication email and password. The first successful account becomes Chief.
               </p>
             </div>
 
-            <div className="mt-8">
-              <label
-                htmlFor="administrator-password"
-                className="mb-2 block text-sm font-bold text-stone-700"
-              >
-                Administrator password
+            <div className="mt-8 space-y-5">
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold text-stone-700">
+                  Email address
+                </span>
+                <input
+                  id="administrator-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  autoComplete="username"
+                  disabled={isSigningIn}
+                  className="w-full rounded-2xl border-2 border-stone-200 bg-white px-4 py-3.5 text-base text-stone-900 outline-none transition focus:border-[#8b1e1e] disabled:cursor-not-allowed disabled:opacity-60"
+                  placeholder="admin@example.com"
+                />
               </label>
 
-              <div className="relative">
-                <input
-                  id="administrator-password"
-                  type={showPassword ? 'text' : 'password'}
-                  inputMode="numeric"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="current-password"
-                  className="w-full rounded-2xl border-2 border-stone-200 bg-white px-4 py-3.5 pr-12 text-lg tracking-[0.25em] text-stone-900 outline-none transition focus:border-[#8b1e1e]"
-                  placeholder="••••"
-                />
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold text-stone-700">
+                  Password
+                </span>
 
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full text-stone-500 transition hover:bg-stone-100"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
-                </button>
-              </div>
+                <div className="relative">
+                  <input
+                    id="administrator-password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    disabled={isSigningIn}
+                    className="w-full rounded-2xl border-2 border-stone-200 bg-white px-4 py-3.5 pr-12 text-base text-stone-900 outline-none transition focus:border-[#8b1e1e] disabled:cursor-not-allowed disabled:opacity-60"
+                    placeholder="Enter your password"
+                  />
 
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    disabled={isSigningIn}
+                    className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full text-stone-500 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                  </button>
+                </div>
+              </label>
+
+              {loginError && (
+                <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                  {loginError}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSigningIn}
+              className="mt-6 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-[#8b1e1e] px-6 font-bold text-white shadow-[0_10px_25px_rgba(139,30,30,0.22)] transition hover:-translate-y-0.5 hover:bg-[#761919] active:translate-y-0 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSigningIn ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : (
+                <ShieldCheck size={20} />
+              )}
+              {isSigningIn ? 'Signing In' : 'Sign In'}
+            </button>
+
+            <p className="mt-5 text-center text-xs leading-relaxed text-stone-400">
+              Email/password accounts must already exist in Firebase Authentication.
+            </p>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isUnlocked) {
+    const isSuspended = adminAccount?.status === 'suspended';
+
+    return (
+      <div className="min-h-screen bg-[#f5f4f0] px-5 py-10">
+        <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-xl items-center justify-center">
+          <div className="w-full rounded-[28px] border border-[#8b1e1e]/10 bg-white p-7 text-center shadow-[0_24px_70px_rgba(73,20,20,0.14)] sm:p-9">
+            <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-full bg-[#f8eeee] text-[#8b1e1e]">
+              {isSuspended ? <LockKeyhole size={28} /> : <Users size={28} />}
+            </div>
+
+            <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.22em] text-[#8b1e1e]/55">
+              Firebase account authenticated
+            </p>
+            <h1 className="text-3xl font-extrabold text-[#641414]">
+              {isSuspended ? 'Administrator Access Suspended' : 'Chief Approval Required'}
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-stone-500">
+              {isSuspended
+                ? 'The Chief has suspended this administrator profile. You cannot open the panel until the Chief activates it again.'
+                : 'Your email and password were accepted. The Chief must now select your authority and activate your administrator profile.'}
+            </p>
+
+            <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-left">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-stone-400">
+                Signed-in account
+              </p>
+              <p className="mt-1 break-all font-bold text-stone-800">
+                {authUser.email || adminAccount?.email || 'Unknown email'}
+              </p>
               {loginError && (
                 <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
                   {loginError}
@@ -4780,17 +5305,14 @@ export default function AdministratorPanel() {
             </div>
 
             <button
-              type="submit"
-              className="mt-6 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-[#8b1e1e] px-6 font-bold text-white shadow-[0_10px_25px_rgba(139,30,30,0.22)] transition hover:-translate-y-0.5 hover:bg-[#761919] active:translate-y-0 active:scale-[0.99]"
+              type="button"
+              onClick={handleLogout}
+              className="mt-6 inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-full border-2 border-[#8b1e1e] bg-white px-6 font-bold text-[#8b1e1e] transition hover:bg-[#f8eeee]"
             >
-              <ShieldCheck size={20} />
-              Open Administrator Panel
+              <LogOut size={18} />
+              Sign Out
             </button>
-
-            <p className="mt-5 text-center text-xs leading-relaxed text-stone-400">
-              Temporary client-side password protection. Replace this with Firebase Authentication before production.
-            </p>
-          </form>
+          </div>
         </div>
       </div>
     );
@@ -4812,13 +5334,33 @@ export default function AdministratorPanel() {
             </p>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border-2 border-[#8b1e1e]/20 bg-white px-5 text-sm font-bold text-[#8b1e1e] transition hover:bg-[#f8eeee]"
-          >
-            <LogOut size={17} />
-            Lock Panel
-          </button>
+          <div className="flex flex-col gap-3 sm:items-end">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-2.5 sm:text-right">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-extrabold ${
+                    isChief
+                      ? 'bg-amber-100 text-amber-900'
+                      : 'bg-[#f8eeee] text-[#8b1e1e]'
+                  }`}
+                >
+                  {isChief ? 'Chief' : 'Administrator'}
+                </span>
+                <span className="break-all text-sm font-bold text-stone-700">
+                  {adminAccount?.email || authUser.email}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border-2 border-[#8b1e1e]/20 bg-white px-5 text-sm font-bold text-[#8b1e1e] transition hover:bg-[#f8eeee]"
+            >
+              <LogOut size={17} />
+              Sign Out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -4846,6 +5388,191 @@ export default function AdministratorPanel() {
           </div>
         )}
 
+        {isChief && (
+          <section className="overflow-hidden rounded-[28px] border border-amber-200 bg-white shadow-[0_16px_45px_rgba(73,20,20,0.08)]">
+            <div className="border-b border-amber-100 bg-amber-50/60 px-6 py-5 sm:px-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="mb-1 text-xs font-extrabold uppercase tracking-[0.18em] text-amber-700/70">
+                    Chief Controls
+                  </p>
+                  <h2 className="text-2xl font-extrabold text-[#641414]">
+                    Administrator Hierarchy
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-sm leading-relaxed text-stone-500">
+                    The first Firebase account that successfully signed in claimed the Chief role. Every later account remains pending until you select its authority and activate it.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm">
+                  <p className="font-extrabold text-amber-900">Chief account</p>
+                  <p className="mt-1 break-all font-semibold text-stone-600">
+                    {adminAccount?.email || authUser.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5 p-6 sm:p-8">
+              {sortedAdminAccounts.filter((account) => account.role !== 'chief').length === 0 ? (
+                <div className="rounded-2xl border-2 border-dashed border-stone-300 bg-stone-50 px-5 py-10 text-center">
+                  <Users size={30} className="mx-auto mb-3 text-stone-400" />
+                  <h3 className="font-extrabold text-stone-800">
+                    No additional administrators yet
+                  </h3>
+                  <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-stone-500">
+                    When another Firebase email/password account signs in successfully, it will appear here as pending.
+                  </p>
+                </div>
+              ) : (
+                sortedAdminAccounts
+                  .filter((account) => account.role !== 'chief')
+                  .map((account) => {
+                    const draft =
+                      authorityDrafts[account.uid] || EMPTY_ADMIN_AUTHORITY;
+                    const isSaving = savingAdminUid === account.uid;
+
+                    return (
+                      <article
+                        key={account.uid}
+                        className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6"
+                      >
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="break-all text-lg font-extrabold text-[#641414]">
+                              {account.email || 'Firebase account without email'}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-stone-400">
+                              First successful sign-in:{' '}
+                              {account.firstSignedInAt
+                                ? new Date(account.firstSignedInAt).toLocaleString()
+                                : 'Unknown'}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-extrabold ${
+                              account.status === 'active'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : account.status === 'suspended'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {account.status === 'active'
+                              ? 'Active'
+                              : account.status === 'suspended'
+                                ? 'Suspended'
+                                : 'Pending'}
+                          </span>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 md:grid-cols-3">
+                          {(
+                            [
+                              {
+                                key: 'manageAssessmentForms',
+                                title: 'Assessment Forms',
+                                description: 'Show, disable, or hide assessments.',
+                              },
+                              {
+                                key: 'manageCarousel',
+                                title: 'Landing Carousel',
+                                description: 'Control visibility, photos, and ordering.',
+                              },
+                              {
+                                key: 'manageAttendance',
+                                title: 'Attendance',
+                                description: 'Manage people, attendance, and analysis.',
+                              },
+                            ] as const
+                          ).map((authorityOption) => {
+                            const selected = draft[authorityOption.key];
+
+                            return (
+                              <label
+                                key={authorityOption.key}
+                                className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${
+                                  selected
+                                    ? 'border-[#8b1e1e] bg-[#f8eeee]'
+                                    : 'border-stone-200 bg-stone-50 hover:border-stone-300'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  disabled={isSaving}
+                                  onChange={(event) =>
+                                    updateAuthorityDraft(
+                                      account.uid,
+                                      authorityOption.key,
+                                      event.target.checked
+                                    )
+                                  }
+                                  className="mt-1 h-4 w-4 accent-[#8b1e1e]"
+                                />
+                                <span>
+                                  <span className="block text-sm font-extrabold text-stone-800">
+                                    {authorityOption.title}
+                                  </span>
+                                  <span className="mt-1 block text-xs leading-relaxed text-stone-500">
+                                    {authorityOption.description}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+
+                        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveAdminAuthority(account)}
+                            disabled={isSaving}
+                            className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full bg-[#8b1e1e] px-5 text-sm font-extrabold text-white transition hover:bg-[#761919] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isSaving ? (
+                              <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                              <ShieldCheck size={18} />
+                            )}
+                            Save Authority & Activate
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSuspendAdmin(account)}
+                            disabled={isSaving || account.status === 'suspended'}
+                            className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full border-2 border-red-200 bg-red-50 px-5 text-sm font-extrabold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <LockKeyhole size={17} />
+                            Suspend
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })
+              )}
+            </div>
+          </section>
+        )}
+
+        {!isChief &&
+          !canManageAssessmentForms &&
+          !canManageCarousel &&
+          !canManageAttendance && (
+            <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-6 text-center shadow-sm sm:p-8">
+              <ShieldCheck size={30} className="mx-auto mb-3 text-amber-700" />
+              <h2 className="text-xl font-extrabold text-amber-950">
+                No authority assigned
+              </h2>
+              <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-amber-900/75">
+                Your profile is active, but it currently has no enabled administration areas. The Chief can update your authority.
+              </p>
+            </section>
+          )}
+
+        {canManageAssessmentForms && (
         <section className="overflow-hidden rounded-[28px] border border-[#8b1e1e]/10 bg-white shadow-[0_16px_45px_rgba(73,20,20,0.08)]">
           <div className="border-b border-stone-100 px-6 py-5 sm:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -5023,7 +5750,10 @@ export default function AdministratorPanel() {
             )}
           </div>
         </section>
+        )}
 
+        {canManageCarousel && (
+          <>
         <section className="overflow-hidden rounded-[28px] border border-[#8b1e1e]/10 bg-white shadow-[0_16px_45px_rgba(73,20,20,0.08)]">
           <div className="border-b border-stone-100 px-6 py-5 sm:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -5362,7 +6092,10 @@ export default function AdministratorPanel() {
             )}
           </div>
         </section>
+          </>
+        )}
 
+        {canManageAttendance && (
         <section className="overflow-hidden rounded-[28px] border border-[#8b1e1e]/10 bg-white shadow-[0_16px_45px_rgba(73,20,20,0.08)]">
           <div className="border-b border-stone-100 px-6 py-5 sm:px-8">
             <div>
@@ -5382,6 +6115,7 @@ export default function AdministratorPanel() {
             <AttendanceManagement />
           </div>
         </section>
+        )}
 
       </main>
     </div>
