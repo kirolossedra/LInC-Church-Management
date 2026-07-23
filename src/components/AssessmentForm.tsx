@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import emailjs from '@emailjs/browser';
 import { database } from '../firebase';
-import { ref, push, get, update, remove } from 'firebase/database';
+import { ref, push, get, update, remove, onValue } from 'firebase/database';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
@@ -17,6 +17,7 @@ const USER_LINKAGE_PASSCODE = '9910';
 const SUPPORTED_LINKAGE_FORM_IDS = ['0', '1'];
 const IDENTIFIER_EMAIL_SUBJECT = 'LinC Mentorship Identifier';
 const DIRECT_SIGNUP_FORM_ID = 'directSignup';
+const ASSESSMENT_FORMS_CONTROL_PATH = 'assessmentPage/forms';
 
 type Lang = 'en' | 'ar';
 type InterfaceLang = 'English' | 'Arabic';
@@ -24,6 +25,7 @@ type AnswerValue = string | number;
 type Answers = Record<string, AnswerValue>;
 type LocalText = { en?: string; ar?: string };
 type CalculationValue = Record<string, number> | RankedItem[] | ResultItem | null;
+type AssessmentFormAvailability = 'active' | 'disabled' | 'hidden';
 
 interface FieldDef {
   id: string;
@@ -139,6 +141,58 @@ interface LinkageRow {
   createdAt: number;
   createdAtEasternTime: string;
   raw: Record<string, unknown>;
+}
+
+
+function normalizeAssessmentFormAvailability(value: unknown): AssessmentFormAvailability {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === 'hidden') return 'hidden';
+    if (
+      normalized === 'disabled' ||
+      normalized === 'grayed' ||
+      normalized === 'greyed' ||
+      normalized === 'unavailable'
+    ) {
+      return 'disabled';
+    }
+
+    return 'active';
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return 'active';
+  }
+
+  const record = value as Record<string, unknown>;
+  const configuredState =
+    record.state ??
+    record.status ??
+    record.displayState ??
+    record.availability;
+
+  if (configuredState !== undefined) {
+    return normalizeAssessmentFormAvailability(configuredState);
+  }
+
+  if (record.visible === false) return 'hidden';
+  if (record.enabled === false || record.clickable === false) return 'disabled';
+
+  return 'active';
+}
+
+function normalizeAssessmentFormControls(
+  value: unknown,
+): Record<string, AssessmentFormAvailability> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([formId, control]) => [
+      formId,
+      normalizeAssessmentFormAvailability(control),
+    ]),
+  );
 }
 
 const FORMS = [fiveServicePathwaysYaml, spiritualGiftsDiscoveryYaml]
@@ -929,7 +983,13 @@ export default function AssessmentForm() {
   const isArabicUI = dir === 'rtl';
 
   const [selectedFormId, setSelectedFormId] = useState<string | null>(null);
+  const [formAvailabilityById, setFormAvailabilityById] = useState<
+    Record<string, AssessmentFormAvailability>
+  >({});
   const selectedForm = FORMS.find(item => item.id === selectedFormId) || null;
+  const visibleForms = FORMS.filter(
+    item => (formAvailabilityById[item.id] || 'active') !== 'hidden',
+  );
   const [answersByForm, setAnswersByForm] = useState<Record<string, Answers>>(() =>
     Object.fromEntries(FORMS.map(item => [item.id, initialAnswers(item)])),
   );
@@ -957,6 +1017,44 @@ export default function AssessmentForm() {
   const [directSignupError, setDirectSignupError] = useState<string | null>(null);
   const [directSignupMessage, setDirectSignupMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    const controlsRef = ref(database, ASSESSMENT_FORMS_CONTROL_PATH);
+
+    const unsubscribe = onValue(
+      controlsRef,
+      snapshot => {
+        setFormAvailabilityById(
+          normalizeAssessmentFormControls(snapshot.val()),
+        );
+      },
+      listenerError => {
+        console.error(
+          'Unable to load assessment-form visibility controls:',
+          listenerError,
+        );
+
+        // A missing or unreadable configuration preserves the current behavior:
+        // every YAML-backed assessment form remains visible and clickable.
+        setFormAvailabilityById({});
+      },
+    );
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!selectedFormId) return;
+
+    const availability = formAvailabilityById[selectedFormId] || 'active';
+
+    if (availability !== 'active') {
+      setSelectedFormId(null);
+      setSubmitted(false);
+      setError(null);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [formAvailabilityById, selectedFormId]);
+
   const answers = selectedForm ? answersByForm[selectedForm.id] || initialAnswers(selectedForm) : {};
   const result = useMemo(
     () => selectedForm ? buildResult(selectedForm, answers, t, langCode) : null,
@@ -975,6 +1073,9 @@ export default function AssessmentForm() {
   };
 
   const selectForm = (formId: string) => {
+    const availability = formAvailabilityById[formId] || 'active';
+    if (availability !== 'active') return;
+
     setActivePage('assessmentChoices');
     setSelectedFormId(formId);
     setSubmitted(false);
@@ -1925,7 +2026,7 @@ export default function AssessmentForm() {
   }
 
   if (!selectedForm) {
-    const firstForm = FORMS[0];
+    const firstForm = visibleForms[0] || FORMS[0];
 
     return (
       <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -2011,33 +2112,72 @@ export default function AssessmentForm() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px]">
-            {FORMS.map((item, index) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => selectForm(item.id)}
-                className="group relative text-start min-h-[190px] bg-[#fffafa] border-2 border-[rgba(139,30,30,0.16)] rounded-[22px] p-[22px] cursor-pointer shadow-[0_8px_18px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[2px] hover:border-[#8b1e1e] hover:shadow-[0_12px_28px_rgba(139,30,30,0.16)]"
-              >
-                <div
-                  className="absolute top-4 w-9 h-9 rounded-full bg-[#8b1e1e] text-white grid place-items-center text-[1rem] font-bold shadow-[0_8px_18px_rgba(139,30,30,0.24)]"
-                  style={dir === 'rtl' ? { right: '16px' } : { left: '16px' }}
+            {visibleForms.map((item, index) => {
+              const availability = formAvailabilityById[item.id] || 'active';
+              const isDisabled = availability === 'disabled';
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => selectForm(item.id)}
+                  aria-disabled={isDisabled}
+                  className={`group relative text-start min-h-[190px] border-2 rounded-[22px] p-[22px] shadow-[0_8px_18px_rgba(0,0,0,0.05)] transition-all ${
+                    isDisabled
+                      ? 'cursor-not-allowed bg-stone-100 border-stone-200 opacity-65 grayscale'
+                      : 'cursor-pointer bg-[#fffafa] border-[rgba(139,30,30,0.16)] hover:-translate-y-[2px] hover:border-[#8b1e1e] hover:shadow-[0_12px_28px_rgba(139,30,30,0.16)]'
+                  }`}
                 >
-                  {index + 1}
-                </div>
+                  <div
+                    className={`absolute top-4 w-9 h-9 rounded-full text-white grid place-items-center text-[1rem] font-bold ${
+                      isDisabled
+                        ? 'bg-stone-400 shadow-none'
+                        : 'bg-[#8b1e1e] shadow-[0_8px_18px_rgba(139,30,30,0.24)]'
+                    }`}
+                    style={dir === 'rtl' ? { right: '16px' } : { left: '16px' }}
+                  >
+                    {index + 1}
+                  </div>
 
-                <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center mb-5 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
-                  <ClipboardList size={22} />
-                </div>
+                  {isDisabled && (
+                    <span
+                      className="absolute top-4 rounded-full bg-stone-200 px-3 py-1 text-[11px] font-bold text-stone-600"
+                      style={dir === 'rtl' ? { left: '16px' } : { right: '16px' }}
+                    >
+                      {isArabicUI ? 'غير متاح حالياً' : 'Currently unavailable'}
+                    </span>
+                  )}
 
-                <div className="text-[#8b1e1e] text-[1.28rem] font-bold mb-3">
-                  {cardTitle(item, t, langCode)}
-                </div>
+                  <div
+                    className={`w-12 h-12 rounded-[16px] text-white grid place-items-center mb-5 ${
+                      isDisabled
+                        ? 'bg-stone-400 shadow-none'
+                        : 'bg-[#8b1e1e] shadow-[0_8px_18px_rgba(139,30,30,0.22)]'
+                    }`}
+                    style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}
+                  >
+                    <ClipboardList size={22} />
+                  </div>
 
-                <p className="m-0 text-[#666] text-sm leading-relaxed">
-                  {cardDescription(item, t, langCode)}
-                </p>
-              </button>
-            ))}
+                  <div
+                    className={`text-[1.28rem] font-bold mb-3 ${
+                      isDisabled ? 'text-stone-500' : 'text-[#8b1e1e]'
+                    }`}
+                  >
+                    {cardTitle(item, t, langCode)}
+                  </div>
+
+                  <p
+                    className={`m-0 text-sm leading-relaxed ${
+                      isDisabled ? 'text-stone-500' : 'text-[#666]'
+                    }`}
+                  >
+                    {cardDescription(item, t, langCode)}
+                  </p>
+                </button>
+              );
+            })}
 
             <button
               type="button"
@@ -2048,7 +2188,7 @@ export default function AssessmentForm() {
                 className="absolute top-4 w-9 h-9 rounded-full bg-[#8b1e1e] text-white grid place-items-center text-[1rem] font-bold shadow-[0_8px_18px_rgba(139,30,30,0.24)]"
                 style={dir === 'rtl' ? { right: '16px' } : { left: '16px' }}
               >
-                {FORMS.length + 1}
+                {visibleForms.length + 1}
               </div>
 
               <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center mb-5 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
