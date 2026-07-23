@@ -521,8 +521,6 @@ export default function useAvailability({
           reason:
             'Slot blocked by pastor',
           allDay: false,
-          updatedAt:
-            Date.now(),
         });
 
         return;
@@ -556,8 +554,6 @@ export default function useAvailability({
             existingBlock.reason ||
             'Slot blocked by pastor',
           allDay: false,
-          updatedAt:
-            Date.now(),
         });
       }
 
@@ -580,8 +576,6 @@ export default function useAvailability({
             existingBlock.reason ||
             'Slot blocked by pastor',
           allDay: false,
-          updatedAt:
-            Date.now(),
         });
       }
     } catch (error) {
