@@ -19,7 +19,7 @@ import { database } from '../../firebase';
 
 const ADMIN_PASSWORD = '9999';
 const CAROUSEL_PATH = 'landingPage/carousel';
-const MAX_IMAGE_SIZE_BYTES = 1_500_000;
+const MAX_IMAGE_SIZE_BYTES = 3_000_000;
 const MAX_CAROUSEL_PHOTOS = 12;
 
 interface CarouselPhoto {
