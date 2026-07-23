@@ -197,6 +197,11 @@ export default function PeopleDevelopmentSection({
     null,
   );
 
+  const [
+    peopleListExpanded,
+    setPeopleListExpanded,
+  ] = useState(true);
+
   const visibleParticipants =
     searchPeopleDevelopmentParticipants(
       participants,
@@ -513,47 +518,88 @@ export default function PeopleDevelopmentSection({
 
       {expanded && (
         <div className="mt-6 space-y-6">
-          <section className="rounded-3xl border border-gray-100 bg-stone-50 p-4 sm:p-5">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h4 className="text-base font-black text-gray-900">
-                  {isArabic
-                    ? 'الأشخاص'
-                    : 'People'}
-                </h4>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {isArabic
-                    ? 'اسحب الشخص إلى بطاقة المجموعة أو افتح المجموعة لإدارته.'
-                    : 'Drag a person onto a group card or open the group to manage it.'}
-                </p>
-              </div>
-
-              <label className="relative block w-full sm:max-w-sm">
-                <Search
-                  size={16}
-                  className="pointer-events-none absolute start-4 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-
-                <input
-                  type="search"
-                  value={searchTerm}
-                  onChange={event =>
-                    onSearchTermChange(
-                      event.target.value,
+          <section className="overflow-visible rounded-3xl border border-gray-100 bg-stone-50 p-4 sm:p-5">
+            <div className="sticky top-2 z-20 mb-4 rounded-2xl border border-gray-200 bg-stone-50/95 p-3 shadow-sm backdrop-blur sm:p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPeopleListExpanded(
+                      previous => !previous,
                     )
                   }
-                  placeholder={
-                    isArabic
-                      ? 'ابحث بالاسم أو البريد أو المعرّف...'
-                      : 'Search by name, email, or identifier...'
-                  }
-                  className="w-full rounded-xl border border-gray-200 bg-white py-3 pe-4 ps-11 text-sm outline-none transition focus:border-violet-400"
-                />
-              </label>
+                  className="flex min-w-0 items-center justify-between gap-3 text-start sm:flex-1"
+                  aria-expanded={peopleListExpanded}
+                >
+                  <div className="min-w-0">
+                    <h4 className="flex items-center gap-2 text-base font-black text-gray-900">
+                      {isArabic
+                        ? 'الأشخاص'
+                        : 'People'}
+
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-black text-violet-700">
+                        {visibleParticipants.length}
+                      </span>
+                    </h4>
+
+                    <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+                      {isArabic
+                        ? 'اسحب الشخص إلى بطاقة المجموعة أو افتح المجموعة لإدارته.'
+                        : 'Drag a person onto a group card or open the group to manage it.'}
+                    </p>
+                  </div>
+
+                  <span className="flex shrink-0 items-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs font-black text-violet-700 transition hover:bg-violet-50">
+                    {peopleListExpanded
+                      ? isArabic
+                        ? 'طي القائمة'
+                        : 'Collapse list'
+                      : isArabic
+                        ? 'عرض القائمة'
+                        : 'Show list'}
+
+                    {peopleListExpanded ? (
+                      <ChevronUp size={16} />
+                    ) : (
+                      <ChevronDown size={16} />
+                    )}
+                  </span>
+                </button>
+
+                {peopleListExpanded && (
+                  <label className="relative block w-full sm:max-w-sm">
+                    <Search
+                      size={16}
+                      className="pointer-events-none absolute start-4 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+
+                    <input
+                      type="search"
+                      value={searchTerm}
+                      onChange={event =>
+                        onSearchTermChange(
+                          event.target.value,
+                        )
+                      }
+                      placeholder={
+                        isArabic
+                          ? 'ابحث بالاسم أو البريد أو المعرّف...'
+                          : 'Search by name, email, or identifier...'
+                      }
+                      className="w-full rounded-xl border border-gray-200 bg-white py-3 pe-4 ps-11 text-sm outline-none transition focus:border-violet-400"
+                    />
+                  </label>
+                )}
+              </div>
             </div>
 
-            {participants.length === 0 ? (
+            {!peopleListExpanded ? (
+              <div className="rounded-2xl border border-dashed border-violet-200 bg-white px-5 py-5 text-center text-sm font-black text-violet-700">
+                {isArabic
+                  ? 'قائمة الأشخاص مطوية. استخدم الزر الثابت أعلاه لعرضها.'
+                  : 'The people list is collapsed. Use the sticky control above to show it.'}
+              </div>
+            ) : participants.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
                 {isArabic
                   ? 'لا يوجد أشخاص متاحون حتى الآن.'
