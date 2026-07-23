@@ -237,6 +237,7 @@ interface AttendancePerson {
   arabicLastName: string;
   phoneNumber: string;
   email: string;
+  photoBase64: string;
   daysOfAttendance: string;
   createdAt: number;
   updatedAt: number;
@@ -249,6 +250,7 @@ interface AttendancePersonForm {
   arabicLastName: string;
   phoneNumber: string;
   email: string;
+  photoBase64: string;
 }
 
 interface CalendarDay {
@@ -276,6 +278,31 @@ function normalizeNumber(value: unknown): number {
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 }
 
+function normalizePersonPhotoSource(value: unknown): string {
+  if (typeof value !== 'string') return '';
+
+  const source = value.trim();
+  if (!source) return '';
+
+  if (
+    /^data:image\/[a-z0-9.+-]+;base64,/i.test(source) ||
+    /^(https?:|blob:|\/)/i.test(source)
+  ) {
+    return source;
+  }
+
+  const compactBase64 = source.replace(/\s/g, '');
+
+  if (
+    compactBase64.length >= 32 &&
+    /^[a-z0-9+/]+={0,2}$/i.test(compactBase64)
+  ) {
+    return `data:image/jpeg;base64,${compactBase64}`;
+  }
+
+  return '';
+}
+
 function normalizePerson(firebaseId: string, value: any): AttendancePerson {
   return {
     firebaseId,
@@ -285,6 +312,9 @@ function normalizePerson(firebaseId: string, value: any): AttendancePerson {
     arabicLastName: String(value?.arabicLastName || '').trim(),
     phoneNumber: String(value?.phoneNumber || '').trim(),
     email: String(value?.email || '').trim(),
+    photoBase64: normalizePersonPhotoSource(
+      value?.photoBase64 ?? value?.photoDataUrl ?? value?.photoUrl ?? value?.photo
+    ),
     daysOfAttendance: String(value?.daysOfAttendance || '').trim(),
     createdAt: normalizeNumber(value?.createdAt),
     updatedAt: normalizeNumber(value?.updatedAt),
@@ -377,6 +407,7 @@ const emptyPersonForm: AttendancePersonForm = {
   arabicLastName: '',
   phoneNumber: '',
   email: '',
+  photoBase64: '',
 };
 
 
@@ -518,6 +549,28 @@ const attendanceResponsiveStyles = `
       min-width: 0 !important;
     }
 
+    .attendance-person-identity {
+      align-items: center !important;
+      gap: 12px !important;
+    }
+
+    .attendance-person-photo {
+      width: 68px !important;
+      height: 68px !important;
+      flex-basis: 68px !important;
+    }
+
+    .attendance-photo-editor {
+      align-items: center !important;
+      flex-direction: column !important;
+      text-align: center !important;
+    }
+
+    .attendance-photo-preview {
+      width: 132px !important;
+      height: 132px !important;
+    }
+
     .attendance-modal-overlay {
       padding: 10px !important;
     }
@@ -552,6 +605,8 @@ function AttendanceManagement() {
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [personForm, setPersonForm] = useState<AttendancePersonForm>(emptyPersonForm);
   const [isSavingPerson, setIsSavingPerson] = useState(false);
+  const [isReadingPersonPhoto, setIsReadingPersonPhoto] = useState(false);
+  const personPhotoInputRef = useRef<HTMLInputElement>(null);
 
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date());
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState('');
@@ -590,6 +645,23 @@ function AttendanceManagement() {
     arabicLastName: isArabic ? 'اسم العائلة بالعربية' : 'Arabic Last Name',
     phoneNumber: isArabic ? 'رقم الهاتف' : 'Phone Number',
     email: isArabic ? 'البريد الإلكتروني' : 'Email',
+    personPhoto: isArabic ? 'صورة الشخص' : 'Person Photo',
+    photoDescription: isArabic
+      ? 'اختياري. يتم حفظ الصورة بصيغة Base64 داخل سجل الشخص.'
+      : 'Optional. The image is stored as Base64 inside the person record.',
+    selectPhoto: isArabic ? 'اختيار صورة' : 'Select Photo',
+    replacePhoto: isArabic ? 'استبدال الصورة' : 'Replace Photo',
+    removePhoto: isArabic ? 'حذف الصورة' : 'Remove Photo',
+    readingPhoto: isArabic ? 'جار تجهيز الصورة...' : 'Preparing photo...',
+    invalidPhotoType: isArabic
+      ? 'اختر ملف صورة صالحاً.'
+      : 'Choose a valid image file.',
+    photoTooLarge: isArabic
+      ? `يجب ألا يتجاوز حجم الصورة ${(MAX_IMAGE_SIZE_BYTES / 1_000_000).toFixed(1)} ميجابايت.`
+      : `The image must not exceed ${(MAX_IMAGE_SIZE_BYTES / 1_000_000).toFixed(1)} MB.`,
+    failedReadPhoto: isArabic
+      ? 'تعذر قراءة الصورة المختارة.'
+      : 'The selected photo could not be read.',
     daysOfAttendance: isArabic ? 'أيام الحضور' : 'Days of Attendance',
     daysStoredOnly: isArabic
       ? 'يتم حفظ هذا الحقل تلقائياً ولا يتم إدخاله عند إضافة الشخص.'
@@ -958,7 +1030,50 @@ function AttendanceManagement() {
       arabicLastName: person.arabicLastName,
       phoneNumber: person.phoneNumber,
       email: person.email,
+      photoBase64: person.photoBase64,
     });
+  };
+
+  const handlePersonPhotoSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const selectedFile = event.target.files?.[0] ?? null;
+    event.target.value = '';
+
+    if (!selectedFile) return;
+
+    if (!selectedFile.type.startsWith('image/')) {
+      alert(text.invalidPhotoType);
+      return;
+    }
+
+    if (selectedFile.size > MAX_IMAGE_SIZE_BYTES) {
+      alert(text.photoTooLarge);
+      return;
+    }
+
+    setIsReadingPersonPhoto(true);
+
+    try {
+      const dataUrl = await fileToDataUrl(selectedFile);
+
+      setPersonForm((previous) => ({
+        ...previous,
+        photoBase64: dataUrl,
+      }));
+    } catch (error) {
+      console.error('Failed to read attendance person photo:', error);
+      alert(text.failedReadPhoto);
+    } finally {
+      setIsReadingPersonPhoto(false);
+    }
+  };
+
+  const removePersonPhoto = () => {
+    setPersonForm((previous) => ({
+      ...previous,
+      photoBase64: '',
+    }));
   };
 
   const handleSavePerson = async () => {
@@ -989,6 +1104,7 @@ function AttendanceManagement() {
         arabicLastName: cleanedArabicLastName,
         phoneNumber: cleanedPhoneNumber,
         email: cleanedEmail,
+        photoBase64: personForm.photoBase64,
         daysOfAttendance: existingPerson?.daysOfAttendance || '',
         createdAt: existingPerson?.createdAt || now,
         updatedAt: now,
@@ -1051,6 +1167,7 @@ function AttendanceManagement() {
         arabicLastName: person.arabicLastName,
         phoneNumber: person.phoneNumber,
         email: person.email,
+        photoBase64: person.photoBase64,
         daysOfAttendance: updatedDaysOfAttendance,
         createdAt: person.createdAt || now,
         updatedAt: now,
@@ -1259,6 +1376,151 @@ function AttendanceManagement() {
               >
                 {text.backToMenu}
               </button>
+            </div>
+
+            <div
+              className="attendance-photo-editor"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '22px',
+                marginBottom: '28px',
+                padding: '20px',
+                borderRadius: '22px',
+                border: '1px solid rgba(139, 30, 30, 0.12)',
+                background: '#fffafa',
+              }}
+            >
+              <div
+                className="attendance-photo-preview"
+                style={{
+                  width: '150px',
+                  height: '150px',
+                  flex: '0 0 150px',
+                  overflow: 'hidden',
+                  borderRadius: '24px',
+                  border: personForm.photoBase64
+                    ? '2px solid rgba(139, 30, 30, 0.22)'
+                    : '2px dashed rgba(139, 30, 30, 0.24)',
+                  background: personForm.photoBase64 ? '#f5f4f0' : '#f8eeee',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                {personForm.photoBase64 ? (
+                  <img
+                    src={personForm.photoBase64}
+                    alt={text.personPhoto}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <UserPlus size={42} color="#8b1e1e" />
+                )}
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <h3
+                  style={{
+                    margin: '0 0 8px',
+                    color: '#641414',
+                    fontSize: '18px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {text.personPhoto}
+                </h3>
+
+                <p
+                  style={{
+                    margin: '0 0 14px',
+                    color: '#666',
+                    fontSize: '14px',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {text.photoDescription}
+                </p>
+
+                <input
+                  ref={personPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePersonPhotoSelected}
+                  style={{ display: 'none' }}
+                />
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => personPhotoInputRef.current?.click()}
+                    disabled={isReadingPersonPhoto}
+                    style={{
+                      minHeight: '44px',
+                      border: 'none',
+                      borderRadius: '999px',
+                      background: '#8b1e1e',
+                      color: 'white',
+                      padding: '0 18px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
+                      opacity: isReadingPersonPhoto ? 0.65 : 1,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    {isReadingPersonPhoto ? (
+                      <Loader2 size={17} className="animate-spin" />
+                    ) : (
+                      <ImagePlus size={17} />
+                    )}
+                    {isReadingPersonPhoto
+                      ? text.readingPhoto
+                      : personForm.photoBase64
+                        ? text.replacePhoto
+                        : text.selectPhoto}
+                  </button>
+
+                  {personForm.photoBase64 && (
+                    <button
+                      type="button"
+                      onClick={removePersonPhoto}
+                      disabled={isReadingPersonPhoto}
+                      style={{
+                        minHeight: '44px',
+                        border: '1px solid #fecaca',
+                        borderRadius: '999px',
+                        background: '#fff1f2',
+                        color: '#b91c1c',
+                        padding: '0 18px',
+                        fontSize: '14px',
+                        fontWeight: 800,
+                        cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <Trash2 size={17} />
+                      {text.removePhoto}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <h3
@@ -1643,13 +1905,54 @@ function AttendanceManagement() {
                     >
                       <div
                         style={{
-                          color: '#641414',
-                          fontSize: '17px',
-                          fontWeight: 800,
-                          marginBottom: '6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
                         }}
                       >
-                        {person.firstName} {person.lastName}
+                        {person.photoBase64 && (
+                          <img
+                            src={person.photoBase64}
+                            alt={`${person.firstName} ${person.lastName}`}
+                            style={{
+                              width: '54px',
+                              height: '54px',
+                              flex: '0 0 54px',
+                              objectFit: 'cover',
+                              borderRadius: '16px',
+                              border: '1px solid rgba(139, 30, 30, 0.16)',
+                              background: '#f5f4f0',
+                            }}
+                          />
+                        )}
+
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              color: '#641414',
+                              fontSize: '17px',
+                              fontWeight: 800,
+                              marginBottom: '6px',
+                            }}
+                          >
+                            {person.firstName} {person.lastName}
+                          </div>
+
+                          {(person.arabicFirstName || person.arabicLastName) && (
+                            <div
+                              dir="rtl"
+                              style={{
+                                color: '#8b1e1e',
+                                fontSize: '16px',
+                                fontWeight: 800,
+                                marginBottom: '6px',
+                                textAlign: 'right',
+                              }}
+                            >
+                              {person.arabicFirstName} {person.arabicLastName}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {(person.arabicFirstName || person.arabicLastName) && (
@@ -2058,52 +2361,87 @@ function AttendanceManagement() {
                         alignItems: 'center',
                       }}
                     >
-                      <div style={{ textAlign: dir === 'rtl' ? 'right' : 'left' }}>
-                        <div
-                          style={{
-                            color: '#641414',
-                            fontSize: '17px',
-                            fontWeight: 800,
-                            marginBottom: '6px',
-                          }}
-                        >
-                          {person.firstName} {person.lastName}
-                        </div>
-
-                        {(person.arabicFirstName || person.arabicLastName) && (
-                          <div
-                            dir="rtl"
+                      <div
+                        className="attendance-person-identity"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '16px',
+                          minWidth: 0,
+                        }}
+                      >
+                        {person.photoBase64 && (
+                          <img
+                            className="attendance-person-photo"
+                            src={person.photoBase64}
+                            alt={`${person.firstName} ${person.lastName}`}
                             style={{
-                              color: '#8b1e1e',
-                              fontSize: '16px',
-                              fontWeight: 800,
-                              marginBottom: '6px',
-                              textAlign: 'right',
+                              width: '84px',
+                              height: '84px',
+                              flex: '0 0 84px',
+                              objectFit: 'cover',
+                              borderRadius: '22px',
+                              border: alreadyAttended
+                                ? '2px solid #15803d'
+                                : '2px solid rgba(139, 30, 30, 0.16)',
+                              background: '#f5f4f0',
+                              boxShadow: '0 6px 18px rgba(73, 20, 20, 0.10)',
                             }}
-                          >
-                            {person.arabicFirstName} {person.arabicLastName}
-                          </div>
+                          />
                         )}
 
                         <div
                           style={{
-                            color: '#777',
-                            fontSize: '14px',
-                            lineHeight: 1.6,
+                            minWidth: 0,
+                            textAlign: dir === 'rtl' ? 'right' : 'left',
                           }}
                         >
-                          {person.phoneNumber || '—'} · {person.email || '—'}
-                        </div>
+                          <div
+                            style={{
+                              color: '#641414',
+                              fontSize: '17px',
+                              fontWeight: 800,
+                              marginBottom: '6px',
+                            }}
+                          >
+                            {person.firstName} {person.lastName}
+                          </div>
 
-                        <div
-                          style={{
-                            color: '#8b1e1e',
-                            fontSize: '13px',
-                            fontWeight: 700,
-                            marginTop: '6px',
-                          }}
-                        >
-                          {text.daysOfAttendance}: {person.daysOfAttendance || '—'}
+                          {(person.arabicFirstName || person.arabicLastName) && (
+                            <div
+                              dir="rtl"
+                              style={{
+                                color: '#8b1e1e',
+                                fontSize: '16px',
+                                fontWeight: 800,
+                                marginBottom: '6px',
+                                textAlign: 'right',
+                              }}
+                            >
+                              {person.arabicFirstName} {person.arabicLastName}
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              color: '#777',
+                              fontSize: '14px',
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            {person.phoneNumber || '—'} · {person.email || '—'}
+                          </div>
+
+                          <div
+                            style={{
+                              color: '#8b1e1e',
+                              fontSize: '13px',
+                              fontWeight: 700,
+                              marginTop: '6px',
+                            }}
+                          >
+                            {text.daysOfAttendance}: {person.daysOfAttendance || '—'}
+                          </div>
                         </div>
                       </div>
 
