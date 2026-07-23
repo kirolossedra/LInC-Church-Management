@@ -40,7 +40,7 @@
 % ============================================================
 \newcommand{\DocumentTitle}{LINC Ministry Portal}
 \newcommand{\DocumentSubtitle}{Current-State Technical Assessment, Target Architecture, and Enterprise Modernization Plan}
-\newcommand{\DocumentVersion}{1.0}
+\newcommand{\DocumentVersion}{1.1}
 \newcommand{\DocumentStatus}{Architecture Baseline and Modernization Specification}
 \newcommand{\DocumentAuthor}{Kirolos Sedra}
 \newcommand{\DocumentAffiliation}{T-TLabs / LINC Ministry}
@@ -284,7 +284,8 @@ Review basis & Source-code inspection of the provided React, Firebase, YAML, ser
 \rowcolor{primary}
 \textcolor{white}{\textbf{Version}} & \textcolor{white}{\textbf{Date}} & \textcolor{white}{\textbf{Author}} & \textcolor{white}{\textbf{Change Summary}} \\
 \midrule
-1.0 & \today & \DocumentAuthor & Initial enterprise documentation baseline covering current-state analysis, target architecture, security model, migration plan, and delivery roadmap. \\
+1.1 & July 22, 2026 & \DocumentAuthor & Added the implemented landing-page floating action dock: scroll-triggered promotion of hero actions, viewport-safe responsive layout, return animation, reduced-motion behavior, and related testing and acceptance requirements. \\
+1.0 & July 22, 2026 & \DocumentAuthor & Initial enterprise documentation baseline covering current-state analysis, target architecture, security model, migration plan, and delivery roadmap. \\
 \bottomrule
 \end{tabularx}
 \caption{Document revision history}
@@ -312,7 +313,7 @@ This document is an architecture and modernization baseline. It deliberately des
 
 The LINC Ministry Portal has evolved from a bilingual spiritual-gifts assessment into a broad ministry operations platform. Its current feature set includes configurable assessments, public meeting requests, Pastor calendar management, NextGen participation, attendance tracking, People Development groups, confidential pastoral notes, bilingual presentation, email notifications, and several administrative functions.
 
-The implementation demonstrates substantial product discovery and domain knowledge. It also contains several useful transactional ideas, such as Firebase transactions for unique NextGen identifiers and voting. However, the system has grown through incremental frontend additions without a governing backend boundary or unified domain model. The result is a feature-rich but structurally fragile application.
+The implementation demonstrates substantial product discovery and domain knowledge. It also contains several useful transactional ideas, such as Firebase transactions for unique NextGen identifiers and voting. The landing page now additionally includes a responsive, scroll-aware floating action dock that preserves access to the six primary actions after the original hero buttons leave the viewport and restores the normal layout when the user scrolls back to the top. However, the system has grown through incremental frontend additions without a governing backend boundary or unified domain model. The result is a feature-rich but structurally fragile application.
 
 \begin{criticalbox}[-- Primary Architectural Finding]
 The current two-tier model, in which the React frontend reads and writes Firebase data directly, is not suitable as the long-term architecture for a system containing confidential pastoral records, attendance history, participant identities, administrative permissions, booking decisions, and externally triggered notifications.
@@ -507,6 +508,7 @@ The current codebase includes or references the following capabilities:
   \item Group PDF access.
   \item Pastoral strengths, growth, and follow-up notes.
   \item Shared navigation, legal pages, and help content.
+  \item A responsive floating landing-page action dock that appears after the hero actions leave the viewport and returns them to their original layout when the user scrolls upward.
 \end{itemize}
 \end{multicols}
 
@@ -555,7 +557,7 @@ The current system is a browser-based React application built with TypeScript an
 \textcolor{white}{\textbf{Layer}} & \textcolor{white}{\textbf{Technology}} & \textcolor{white}{\textbf{Current Use}} \\
 \midrule
 Frontend & React, TypeScript, Vite & Page rendering, business logic, data access, validation, role checks, transactions, email calls, PDF generation, and direct database mutation. \\
-UI & Tailwind-style utility classes, Motion, Lucide icons & Responsive bilingual interfaces and animations. \\
+UI & Tailwind-style utility classes, Motion, AnimatePresence, Lucide icons, IntersectionObserver & Responsive bilingual interfaces, hero animations, carousel interactions, and a scroll-triggered floating action dock with reduced-motion support. \\
 Identity & Firebase Authentication & Google and email/password flows are present; Google is not operationally required. \\
 Database & Firebase Realtime Database & Main storage for assessments, meetings, requests, availability, NextGen, attendance, groups, and notes. \\
 Storage & Base64 in Realtime Database; bucket configured & PDFs are embedded in database records; Firebase Storage is configured but not consistently used. \\
@@ -605,9 +607,19 @@ The current organization leads to:
 
 \section{Public Landing Page}
 
-The landing page is active and visually mature, but it is hard-coded and positions the entire product as an assessment. It exposes primary entry points for assessment, booking, group notes, NextGen, attendance, and staff login. There is no implemented carousel, Bible-verse manager, content publishing workflow, or Admin Mode.
+The landing page is active and visually mature, but it is hard-coded and positions the entire product as an assessment. It exposes six primary entry points: assessment, staff login, meeting booking, group notes, attendance, and NextGen activities. The page includes a presentation carousel using local placeholder shape tiles, but it does not yet include an administrator-managed carousel, Bible-verse manager, content publishing workflow, or Admin Mode.
 
-\textbf{Disposition:} retain the visual foundation, broaden product identity, extract sections, and connect published content to a secured content-management API.
+A responsive floating action dock is now implemented. The original hero action area is observed using \texttt{IntersectionObserver}. Once that area has fully passed above the viewport, the same six actions are promoted into a fixed top navigation dock. When the user scrolls back until the original actions re-enter the viewport, the dock exits and the buttons resume their normal hero layout. The transition uses \texttt{AnimatePresence} and a spring animation, with an opacity-only fallback when the operating system requests reduced motion.
+
+The floating dock is constrained to the viewport using full-width outer positioning, bounded horizontal padding, and a centered \texttt{max-w-5xl} container. On phones, actions use a two-column grid with wrapping text, a viewport-relative maximum height, and vertical overflow protection. On larger screens, the actions use a centered wrapping flex layout. The container applies backdrop blur, visible separation from page content, and pointer-event isolation so only the dock itself captures interaction.
+
+\begin{infobox}[-- Implemented Interaction Contract]
+The dock appears only after the original action group has moved above the viewport; it must not cover or replace the original buttons while they are visible. All six routes remain available in both layouts, English and Arabic directionality is preserved, the dock never exceeds the screen width, and scrolling back to the hero restores the original presentation without a page reload.
+\end{infobox}
+
+The current implementation duplicates some action-button markup between the hero and floating layouts. During component extraction, route, icon, label, and style metadata should be centralized in a shared action definition so the two presentations cannot drift.
+
+\textbf{Disposition:} retain the visual foundation and floating action-dock behavior, broaden product identity, extract landing sections and shared action definitions, and connect published content to a secured content-management API.
 
 \section{Assessment Engine}
 
@@ -861,7 +873,7 @@ Base64 PDF persistence & \statusremove & Stop creating new base64 file records; 
 \rowcolor{primary}
 \textcolor{white}{\textbf{Module}} & \textcolor{white}{\textbf{Status}} & \textcolor{white}{\textbf{Modernization Direction}} \\
 \midrule
-Landing page & \statusrefactor & Rebrand as portal, extract sections, add published content, carousel, verses, and feature flags. \\
+Landing page & \statusrefactor & Preserve the implemented floating action dock, rebrand as portal, extract sections and shared action definitions, and add managed content, carousel, verses, and feature flags. \\
 Assessment engine & \statusrefactor & Keep YAML renderer; move validation, submission, linking, and email to backend. \\
 Booking calendar & \statusrefactor & Keep one interface; consume sanitized API; use atomic backend reservations. \\
 Pastor calendar & \statusrefactor & Split into focused modules and services. \\
@@ -964,6 +976,9 @@ The frontend shall:
   \item Perform convenience validation while treating backend validation as authoritative.
   \item Use typed request and response models generated from an API contract where practical.
   \item Avoid embedding service secrets, database paths, privileged recipient lists, or workflow decisions.
+  \item Preserve context-aware navigation behaviors such as the landing-page floating action dock without allowing fixed elements to exceed the viewport or obscure critical content.
+  \item Respect \texttt{prefers-reduced-motion}, keyboard navigation, focus visibility, RTL direction, and screen-reader labels for animated navigation.
+  \item Centralize action metadata so normal and floating presentations share routes, icons, labels, and capability or feature-flag rules.
 \end{itemize}
 
 \section{Backend Responsibilities}
@@ -1461,6 +1476,8 @@ The modernization shall include:
   \item Color contrast validation.
   \item Screen-reader announcements for async status.
   \item Accessible calendar and modal behavior.
+  \item Scroll-triggered navigation that remains reachable by keyboard, does not trap focus, and does not cover the viewport on small screens.
+  \item Motion fallbacks that replace spring travel with a short opacity transition when reduced motion is requested.
 \end{itemize}
 
 \section{Navigation and Workspaces}
@@ -1542,7 +1559,7 @@ Integration & Real database and provider adapters in test environment & Unique c
 Contract & API request/response compatibility & OpenAPI schema, frontend client generation, error codes. \\
 End-to-end & User journeys across frontend and backend & Assessment submission, booking, Pastor approval, NextGen vote, attendance correction. \\
 Security & Authorization and abuse cases & Privilege escalation, IDOR, rate limits, token expiry, cross-group access. \\
-Accessibility & Keyboard and assistive technology behavior & Calendars, forms, modals, alerts, RTL navigation. \\
+Accessibility & Keyboard and assistive technology behavior & Calendars, forms, modals, alerts, RTL navigation, floating action dock, reduced-motion behavior. \\
 Performance & Load and response-time behavior & Public slots, assessment submission, reporting, file access. \\
 Migration & Historical data correctness & Counts, checksums, identity merges, rollback. \\
 \bottomrule
@@ -1565,6 +1582,9 @@ The initial critical suite shall prove:
   \item Deleted or disabled features are inaccessible by direct URL and API.
   \item Email failure does not corrupt domain state.
   \item Published content is immutable except through new versions.
+  \item The floating action dock appears only after the original hero actions pass above the viewport and disappears when they return.
+  \item Every floating action remains inside the viewport and usable at narrow mobile widths in both English and Arabic.
+  \item Reduced-motion mode avoids spring translation while preserving the dock state change and navigation access.
 \end{itemize}
 
 \section{Definition of Done}
@@ -1761,6 +1781,7 @@ At least quarterly, review:
   \item Create General Admin and Testing Admin workspaces.
   \item Implement capability delegation policy.
   \item Add carousel, Bible verses, landing sections, feature flags, and navigation controls.
+  \item Extract the implemented floating action dock into a maintainable landing-navigation component with centralized action metadata and responsive regression tests.
   \item Add drafts, preview, publish, scheduling, version history, and rollback.
   \item Upload images through object storage.
 \end{itemize}
@@ -1881,6 +1902,7 @@ The modernization is architecturally complete when:
 \begin{itemize}
   \item Public content is managed through drafts and publishing.
   \item Carousel and Bible verses support English and Arabic.
+  \item The floating landing-page action dock preserves all six actions, stays within the viewport at supported widths, respects RTL and reduced-motion settings, and returns cleanly to the original hero layout.
   \item Disabled features are hidden and inaccessible.
   \item Pastor, General Admin, Testing Admin, and attendance experiences are clearly distinguished.
   \item Legal pages accurately describe retained data and services.
@@ -2090,6 +2112,7 @@ C-12 & Critical workflows have automated end-to-end coverage. & CI test report. 
 C-13 & Backups and restore procedures are tested. & Restore exercise report. \\
 C-14 & Architecture, API, operations, and user guides are complete. & Documentation index. \\
 C-15 & No critical or high security findings remain open. & Security review report. \\
+C-16 & The floating landing-page action dock is viewport-safe, direction-aware, reduced-motion compatible, and synchronized with the original action set. & Responsive end-to-end test matrix and accessibility verification. \\
 \bottomrule
 \caption{Enterprise readiness checklist}
 \end{longtable}
@@ -2106,7 +2129,7 @@ C-15 & No critical or high security findings remain open. & Security review repo
   \item A backend TypeScript stack is preferred to align with the existing codebase and owner expertise.
   \item Pastor decisions must remain distinct from technical administration.
   \item Existing historical data must be preserved unless a documented retention decision permits deletion.
-  \item The future carousel and Bible-verse manager are planned capabilities, not existing production features.
+  \item The landing page currently includes a local placeholder presentation carousel and an implemented floating action dock; the future administrator-managed carousel and Bible-verse manager remain planned content-management capabilities rather than existing production administration features.
 \end{itemize}
 
 \section{Open Verification Items}
