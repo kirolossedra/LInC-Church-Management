@@ -13,6 +13,7 @@ import NextGenActivities from './pages/NextGenActivities';
 import PeopleNotesPage from './pages/PeopleNotesPage';
 import AttendancePage from './pages/AttendancePage';
 import CongregationGroupNotes from './pages/CongregationGroupNotes';
+import AdministratorPanel from './components/admin/AdministratorPanel';
 import { auth, signInWithGoogle, signInWithEmail, signUpWithEmail } from './firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { database } from './firebase';
@@ -399,6 +400,9 @@ function AppRoutes() {
           </Layout>
         }
       />
+
+
+      <Route path="/administrator" element={<AdministratorPanel />} />
 
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/tos" element={<TermsOfService />} />
