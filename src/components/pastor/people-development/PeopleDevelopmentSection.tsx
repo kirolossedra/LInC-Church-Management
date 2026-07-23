@@ -398,17 +398,17 @@ export default function PeopleDevelopmentSection({
             group.id,
           );
         }}
-        className={`group relative cursor-pointer overflow-hidden rounded-2xl border-2 p-4 text-start transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-violet-200 ${group.cardClass}`}
+        className={`group relative min-h-[56px] cursor-pointer overflow-hidden rounded-xl border-2 p-2.5 text-start transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-violet-200 sm:min-h-0 sm:rounded-2xl sm:p-4 ${group.cardClass}`}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center justify-between gap-2 sm:items-start sm:gap-3">
           <div className="min-w-0">
-            <h5 className="truncate text-base font-black">
+            <h5 className="truncate text-sm font-black leading-tight sm:text-base">
               {isArabic
                 ? group.labelAr
                 : group.labelEn}
             </h5>
 
-            <p className="mt-1 line-clamp-2 text-sm opacity-75">
+            <p className="hidden sm:mt-1 sm:line-clamp-2 sm:block sm:text-sm sm:opacity-75">
               {isArabic
                 ? group.descriptionAr
                 : group.descriptionEn}
@@ -416,21 +416,21 @@ export default function PeopleDevelopmentSection({
           </div>
 
           <span
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-black ${group.badgeClass}`}
+            className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-black sm:px-2.5 sm:py-1 sm:text-xs ${group.badgeClass}`}
           >
             {groupParticipants.length}
           </span>
         </div>
 
         {draggedMemberKey && (
-          <div className="mt-3 rounded-xl border border-dashed border-current/30 bg-white/55 px-3 py-2 text-center text-xs font-black">
+          <div className="mt-3 hidden rounded-xl border border-dashed border-current/30 bg-white/55 px-3 py-2 text-center text-xs font-black sm:block">
             {isArabic
               ? 'أفلت هنا للإضافة'
               : 'Drop here to assign'}
           </div>
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-current/10 pt-3 text-xs font-black">
+        <div className="mt-4 hidden items-center justify-between gap-3 border-t border-current/10 pt-3 text-xs font-black sm:flex">
           <span className="opacity-70">
             {isArabic
               ? `${groupAssignments.length} منشور`
@@ -740,21 +740,21 @@ export default function PeopleDevelopmentSection({
           </section>
 
           <section>
-            <div className="mb-4">
+            <div className="mb-2 sm:mb-4">
               <h4 className="text-base font-black text-gray-900">
                 {isArabic
                   ? 'مجموعات نمو الأشخاص'
                   : 'People Development Groups'}
               </h4>
 
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 hidden text-sm text-gray-500 sm:block">
                 {isArabic
                   ? 'اختر مجموعة لفتح مساحة العمل الكاملة الخاصة بها.'
                   : 'Select a group to open its complete workspace.'}
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-3 xl:grid-cols-5">
               {PEOPLE_DEVELOPMENT_GROUPS.map(
                 renderGroupCard,
               )}
