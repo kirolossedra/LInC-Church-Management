@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { onValue, ref } from 'firebase/database';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import {
   ClipboardList,
@@ -16,6 +17,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
+import { database } from '../firebase';
 
 type ShapeKind = 'circle' | 'blob-a' | 'blob-b' | 'hex' | 'square';
 type ShapeTone = 'a' | 'b';
@@ -23,6 +25,19 @@ type ShapeTone = 'a' | 'b';
 interface CarouselShape {
   kind: ShapeKind;
   tone: ShapeTone;
+}
+
+interface CarouselPhoto {
+  id: string;
+  url: string;
+  altEn: string;
+  altAr: string;
+  order: number;
+}
+
+interface CarouselDatabaseValue {
+  enabled?: boolean;
+  photos?: unknown;
 }
 
 // Pure placeholder shapes for the carousel — no icons, no names, nothing to
@@ -71,12 +86,76 @@ function ShapeTile({ shape, index }: { shape: CarouselShape; index: number }) {
   );
 }
 
+
+function normalizeCarouselPhotos(value: unknown): CarouselPhoto[] {
+  if (!value || typeof value !== 'object') return [];
+
+  const entries = Array.isArray(value)
+    ? value.map((photo, index) => [String(index), photo] as const)
+    : Object.entries(value as Record<string, unknown>);
+
+  return entries
+    .map(([id, rawPhoto], index): CarouselPhoto | null => {
+      if (typeof rawPhoto === 'string') {
+        const url = rawPhoto.trim();
+        if (!url) return null;
+
+        return {
+          id,
+          url,
+          altEn: 'LINC community',
+          altAr: 'مجتمع LINC',
+          order: index,
+        };
+      }
+
+      if (!rawPhoto || typeof rawPhoto !== 'object') return null;
+
+      const photo = rawPhoto as Record<string, unknown>;
+      const url = typeof photo.url === 'string' ? photo.url.trim() : '';
+      if (!url) return null;
+
+      return {
+        id,
+        url,
+        altEn: typeof photo.altEn === 'string' && photo.altEn.trim() ? photo.altEn.trim() : 'LINC community',
+        altAr: typeof photo.altAr === 'string' && photo.altAr.trim() ? photo.altAr.trim() : 'مجتمع LINC',
+        order: typeof photo.order === 'number' && Number.isFinite(photo.order) ? photo.order : index,
+      };
+    })
+    .filter((photo): photo is CarouselPhoto => photo !== null)
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+
+function PhotoTile({ photo, index, isAr }: { photo: CarouselPhoto; index: number; isAr: boolean }) {
+  const [failedToLoad, setFailedToLoad] = useState(false);
+
+  if (failedToLoad) {
+    return <ShapeTile shape={CAROUSEL_SHAPES[index % CAROUSEL_SHAPES.length]} index={index} />;
+  }
+
+  return (
+    <div className="relative w-full aspect-square overflow-hidden rounded-[28px] bg-[#f5f4f0] border border-[#8b1e1e]/10 shadow-sm">
+      <img
+        src={photo.url}
+        alt={isAr ? photo.altAr : photo.altEn}
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailedToLoad(true)}
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const { t, dir, locale, setLocale } = useI18n();
   const [scrollY, setScrollY] = useState(0);
   const [nextGenButtonClicked, setNextGenButtonClicked] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [carouselEnabled, setCarouselEnabled] = useState(true);
+  const [carouselPhotos, setCarouselPhotos] = useState<CarouselPhoto[]>([]);
   const [showFloatingActions, setShowFloatingActions] = useState(false);
   const actionAreaRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -104,6 +183,29 @@ export default function LandingPage() {
     const handleScroll = () => setScrollY(window.scrollY);
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+
+  useEffect(() => {
+    const carouselRef = ref(database, 'landingPage/carousel');
+
+    return onValue(
+      carouselRef,
+      (snapshot) => {
+        const value = snapshot.val() as CarouselDatabaseValue | null;
+
+        // Missing configuration keeps the current carousel visible.
+        setCarouselEnabled(value?.enabled !== false);
+        setCarouselPhotos(normalizeCarouselPhotos(value?.photos));
+      },
+      (error) => {
+        console.error('Failed to load the landing-page carousel configuration:', error);
+
+        // Database failures preserve the existing placeholder experience.
+        setCarouselEnabled(true);
+        setCarouselPhotos([]);
+      }
+    );
   }, []);
 
   useEffect(() => {
@@ -139,7 +241,15 @@ export default function LandingPage() {
     );
     slides.forEach((s) => observer.observe(s));
     return () => observer.disconnect();
-  }, [locale]);
+  }, [locale, carouselEnabled, carouselPhotos]);
+
+  const carouselSlideCount = carouselPhotos.length > 0 ? carouselPhotos.length : CAROUSEL_SHAPES.length;
+
+  useEffect(() => {
+    if (activeSlide >= carouselSlideCount) {
+      setActiveSlide(Math.max(carouselSlideCount - 1, 0));
+    }
+  }, [activeSlide, carouselSlideCount]);
 
   const scrollToSlide = (index: number) => {
     const container = scrollerRef.current;
@@ -147,7 +257,7 @@ export default function LandingPage() {
     target?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   };
   const goPrev = () => scrollToSlide(Math.max(activeSlide - 1, 0));
-  const goNext = () => scrollToSlide(Math.min(activeSlide + 1, CAROUSEL_SHAPES.length - 1));
+  const goNext = () => scrollToSlide(Math.min(activeSlide + 1, carouselSlideCount - 1));
 
   const Arrow = isAr ? <ArrowRight size={20} className="rotate-180" /> : <ArrowRight size={20} />;
 
@@ -460,72 +570,79 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Community carousel — every tile is an invented shape (circle, blob,
-          hexagon, rounded square) filled with a faint dotted texture drawn
-          in inline SVG. Nothing here is imported or named; drop a real
-          <img> into a ShapeTile once photography exists. */}
-      <section className="py-16 sm:py-20 bg-white overflow-hidden">
-        <div className="max-w-5xl mx-auto px-5 sm:px-6 mb-8 sm:mb-10 flex items-end justify-between gap-4">
-          <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
-            <p className="text-[#999] uppercase tracking-[0.2em] text-xs font-bold mb-2">
-              {isAr ? 'مجتمعنا' : 'Our Community'}
-            </p>
-            <h2 style={{ fontFamily: displayFont }} className="text-[clamp(1.5rem,3.6vw,2rem)] font-bold text-[#8b1e1e]">
-              {isAr ? 'حياة الخدمة معًا' : 'Ministry Life, Together'}
-            </h2>
+      {carouselEnabled && (
+        <section className="py-16 sm:py-20 bg-white overflow-hidden">
+          <div className="max-w-5xl mx-auto px-5 sm:px-6 mb-8 sm:mb-10 flex items-end justify-between gap-4">
+            <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
+              <p className="text-[#999] uppercase tracking-[0.2em] text-xs font-bold mb-2">
+                {isAr ? 'مجتمعنا' : 'Our Community'}
+              </p>
+              <h2 style={{ fontFamily: displayFont }} className="text-[clamp(1.5rem,3.6vw,2rem)] font-bold text-[#8b1e1e]">
+                {isAr ? 'حياة الخدمة معًا' : 'Ministry Life, Together'}
+              </h2>
+            </div>
+            <div className="hidden sm:flex gap-2 shrink-0">
+              <button
+                onClick={goPrev}
+                aria-label={isAr ? 'السابق' : 'Previous'}
+                className="w-11 h-11 grid place-items-center rounded-full border-2 border-[#8b1e1e]/20 text-[#8b1e1e] transition-colors hover:bg-[#f8eeee] disabled:opacity-30"
+                disabled={activeSlide === 0}
+              >
+                {dir === 'rtl' ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+              </button>
+              <button
+                onClick={goNext}
+                aria-label={isAr ? 'التالي' : 'Next'}
+                className="w-11 h-11 grid place-items-center rounded-full border-2 border-[#8b1e1e]/20 text-[#8b1e1e] transition-colors hover:bg-[#f8eeee] disabled:opacity-30"
+                disabled={activeSlide === carouselSlideCount - 1}
+              >
+                {dir === 'rtl' ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+              </button>
+            </div>
           </div>
-          <div className="hidden sm:flex gap-2 shrink-0">
-            <button
-              onClick={goPrev}
-              aria-label={isAr ? 'السابق' : 'Previous'}
-              className="w-11 h-11 grid place-items-center rounded-full border-2 border-[#8b1e1e]/20 text-[#8b1e1e] transition-colors hover:bg-[#f8eeee] disabled:opacity-30"
-              disabled={activeSlide === 0}
-            >
-              {dir === 'rtl' ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-            </button>
-            <button
-              onClick={goNext}
-              aria-label={isAr ? 'التالي' : 'Next'}
-              className="w-11 h-11 grid place-items-center rounded-full border-2 border-[#8b1e1e]/20 text-[#8b1e1e] transition-colors hover:bg-[#f8eeee] disabled:opacity-30"
-              disabled={activeSlide === CAROUSEL_SHAPES.length - 1}
-            >
-              {dir === 'rtl' ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
-            </button>
+
+          <div
+            ref={scrollerRef}
+            dir={dir}
+            className="flex gap-4 sm:gap-5 overflow-x-auto px-5 sm:px-6 pb-4 snap-x snap-mandatory scroll-px-5 sm:scroll-px-6 no-scrollbar"
+          >
+            {carouselPhotos.length > 0
+              ? carouselPhotos.map((photo, i) => (
+                  <motion.div
+                    key={photo.id}
+                    data-slide-index={i}
+                    whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+                    className="snap-center shrink-0 w-[72vw] sm:w-[280px]"
+                  >
+                    <PhotoTile photo={photo} index={i} isAr={isAr} />
+                  </motion.div>
+                ))
+              : CAROUSEL_SHAPES.map((shape, i) => (
+                  <motion.div
+                    key={`${shape.kind}-${shape.tone}-${i}`}
+                    data-slide-index={i}
+                    whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+                    className="snap-center shrink-0 w-[72vw] sm:w-[280px]"
+                  >
+                    <ShapeTile shape={shape} index={i} />
+                  </motion.div>
+                ))}
           </div>
-        </div>
 
-        <div
-          ref={scrollerRef}
-          dir={dir}
-          className="flex gap-4 sm:gap-5 overflow-x-auto px-5 sm:px-6 pb-4 snap-x snap-mandatory scroll-px-5 sm:scroll-px-6 no-scrollbar"
-        >
-          {CAROUSEL_SHAPES.map((shape, i) => (
-            <motion.div
-              key={i}
-              data-slide-index={i}
-              whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-              className="snap-center shrink-0 w-[72vw] sm:w-[280px]"
-            >
-              <ShapeTile shape={shape} index={i} />
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Dots — the primary progress indicator on phones, where the
-            arrow buttons are hidden to keep the row uncluttered */}
-        <div className="flex justify-center gap-2 mt-4">
-          {CAROUSEL_SHAPES.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => scrollToSlide(i)}
-              aria-label={`${isAr ? 'الشريحة' : 'Slide'} ${i + 1}`}
-              className={`h-2 rounded-full transition-all ${
-                activeSlide === i ? 'w-6 bg-[#8b1e1e]' : 'w-2 bg-[#8b1e1e]/20'
-              }`}
-            />
-          ))}
-        </div>
-      </section>
+          <div className="flex justify-center gap-2 mt-4">
+            {Array.from({ length: carouselSlideCount }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => scrollToSlide(i)}
+                aria-label={`${isAr ? 'الشريحة' : 'Slide'} ${i + 1}`}
+                className={`h-2 rounded-full transition-all ${
+                  activeSlide === i ? 'w-6 bg-[#8b1e1e]' : 'w-2 bg-[#8b1e1e]/20'
+                }`}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="py-16 sm:py-20 px-5 sm:px-6 bg-[#8b1e1e] text-white text-center">
         <motion.div initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }}>
