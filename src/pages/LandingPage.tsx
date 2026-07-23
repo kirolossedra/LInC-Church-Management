@@ -41,6 +41,8 @@ interface CarouselDatabaseValue {
   photos?: unknown;
 }
 
+const CAROUSEL_AUTO_ADVANCE_MS = 4_500;
+
 // Pure placeholder shapes for the carousel — no icons, no names, nothing to
 // swap out later except dropping a real <img> into each tile once
 // photography exists. Shape + a faint dot pattern is all invented locally.
@@ -88,6 +90,29 @@ function ShapeTile({ shape, index }: { shape: CarouselShape; index: number }) {
 }
 
 
+function normalizeImageSource(value: string): string {
+  const source = value.trim();
+  if (!source) return '';
+
+  if (
+    /^data:image\/[a-z0-9.+-]+;base64,/i.test(source) ||
+    /^(https?:|blob:|\/)/i.test(source)
+  ) {
+    return source;
+  }
+
+  const compactBase64 = source.replace(/\s/g, '');
+
+  if (
+    compactBase64.length >= 32 &&
+    /^[a-z0-9+/]+={0,2}$/i.test(compactBase64)
+  ) {
+    return `data:image/jpeg;base64,${compactBase64}`;
+  }
+
+  return source;
+}
+
 function normalizeCarouselPhotos(value: unknown): CarouselPhoto[] {
   if (!value || typeof value !== 'object') return [];
 
@@ -98,7 +123,7 @@ function normalizeCarouselPhotos(value: unknown): CarouselPhoto[] {
   return entries
     .map(([id, rawPhoto], index): CarouselPhoto | null => {
       if (typeof rawPhoto === 'string') {
-        const url = rawPhoto.trim();
+        const url = normalizeImageSource(rawPhoto);
         if (!url) return null;
 
         return {
@@ -113,34 +138,111 @@ function normalizeCarouselPhotos(value: unknown): CarouselPhoto[] {
       if (!rawPhoto || typeof rawPhoto !== 'object') return null;
 
       const photo = rawPhoto as Record<string, unknown>;
-      const url = typeof photo.url === 'string' ? photo.url.trim() : '';
+      const rawSource =
+        typeof photo.url === 'string'
+          ? photo.url
+          : typeof photo.dataUrl === 'string'
+            ? photo.dataUrl
+            : '';
+      const url = normalizeImageSource(rawSource);
+
       if (!url) return null;
 
       return {
         id,
         url,
-        altEn: typeof photo.altEn === 'string' && photo.altEn.trim() ? photo.altEn.trim() : 'LINC community',
-        altAr: typeof photo.altAr === 'string' && photo.altAr.trim() ? photo.altAr.trim() : 'مجتمع LINC',
-        order: typeof photo.order === 'number' && Number.isFinite(photo.order) ? photo.order : index,
+        altEn:
+          typeof photo.altEn === 'string' && photo.altEn.trim()
+            ? photo.altEn.trim()
+            : 'LINC community',
+        altAr:
+          typeof photo.altAr === 'string' && photo.altAr.trim()
+            ? photo.altAr.trim()
+            : 'مجتمع LINC',
+        order:
+          typeof photo.order === 'number' && Number.isFinite(photo.order)
+            ? photo.order
+            : index,
       };
     })
     .filter((photo): photo is CarouselPhoto => photo !== null)
     .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 }
 
-function PhotoTile({ photo, index, isAr }: { photo: CarouselPhoto; index: number; isAr: boolean }) {
+function useDecodedImageSource(source: string): string {
+  const [decodedSource, setDecodedSource] = useState(source);
+
+  useEffect(() => {
+    setDecodedSource(source);
+
+    if (!source.startsWith('data:image/')) return;
+
+    try {
+      const commaIndex = source.indexOf(',');
+      if (commaIndex < 0) return;
+
+      const metadata = source.slice(0, commaIndex);
+      const encodedData = source.slice(commaIndex + 1);
+      const mimeMatch = metadata.match(/^data:(image\/[a-z0-9.+-]+);base64$/i);
+
+      if (!mimeMatch) return;
+
+      const binaryData = window.atob(encodedData);
+      const bytes = new Uint8Array(binaryData.length);
+
+      for (let index = 0; index < binaryData.length; index += 1) {
+        bytes[index] = binaryData.charCodeAt(index);
+      }
+
+      const objectUrl = URL.createObjectURL(
+        new Blob([bytes], { type: mimeMatch[1] })
+      );
+
+      setDecodedSource(objectUrl);
+
+      return () => {
+        URL.revokeObjectURL(objectUrl);
+      };
+    } catch (error) {
+      console.error('Failed to decode a Base64 carousel image:', error);
+      setDecodedSource(source);
+    }
+  }, [source]);
+
+  return decodedSource;
+}
+
+function PhotoTile({
+  photo,
+  index,
+  isAr,
+}: {
+  photo: CarouselPhoto;
+  index: number;
+  isAr: boolean;
+}) {
   const [failedToLoad, setFailedToLoad] = useState(false);
+  const decodedSource = useDecodedImageSource(photo.url);
+
+  useEffect(() => {
+    setFailedToLoad(false);
+  }, [decodedSource]);
 
   if (failedToLoad) {
-    return <ShapeTile shape={CAROUSEL_SHAPES[index % CAROUSEL_SHAPES.length]} index={index} />;
+    return (
+      <ShapeTile
+        shape={CAROUSEL_SHAPES[index % CAROUSEL_SHAPES.length]}
+        index={index}
+      />
+    );
   }
 
   return (
-    <div className="relative w-full aspect-square overflow-hidden rounded-[28px] bg-[#f5f4f0] border border-[#8b1e1e]/10 shadow-sm">
+    <div className="relative w-full aspect-square overflow-hidden rounded-[28px] bg-[#f5f4f0] border border-[#8b1e1e]/10 shadow-[0_18px_45px_rgba(73,20,20,0.14)]">
       <img
-        src={photo.url}
+        src={decodedSource}
         alt={isAr ? photo.altAr : photo.altEn}
-        loading="lazy"
+        loading="eager"
         decoding="async"
         onError={() => setFailedToLoad(true)}
         className="absolute inset-0 h-full w-full object-cover"
@@ -157,9 +259,10 @@ export default function LandingPage() {
   const [activeSlide, setActiveSlide] = useState(0);
   const [carouselEnabled, setCarouselEnabled] = useState(true);
   const [carouselPhotos, setCarouselPhotos] = useState<CarouselPhoto[]>([]);
+  const [carouselDirection, setCarouselDirection] = useState(1);
+  const [carouselPaused, setCarouselPaused] = useState(false);
   const [showFloatingActions, setShowFloatingActions] = useState(false);
   const actionAreaRef = useRef<HTMLDivElement>(null);
-  const scrollerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
 
   const isAr = locale === 'ar';
@@ -225,26 +328,10 @@ export default function LandingPage() {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const container = scrollerRef.current;
-    if (!container) return;
-    const slides = Array.from(container.querySelectorAll<HTMLElement>('[data-slide-index]'));
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio > 0.6) {
-            const target = entry.target as HTMLElement;
-            setActiveSlide(Number(target.dataset.slideIndex));
-          }
-        });
-      },
-      { root: container, threshold: [0.6] }
-    );
-    slides.forEach((s) => observer.observe(s));
-    return () => observer.disconnect();
-  }, [locale, carouselEnabled, carouselPhotos]);
-
-  const carouselSlideCount = carouselPhotos.length > 0 ? carouselPhotos.length : CAROUSEL_SHAPES.length;
+  const carouselSlideCount =
+    carouselPhotos.length > 0
+      ? carouselPhotos.length
+      : CAROUSEL_SHAPES.length;
 
   useEffect(() => {
     if (activeSlide >= carouselSlideCount) {
@@ -252,13 +339,55 @@ export default function LandingPage() {
     }
   }, [activeSlide, carouselSlideCount]);
 
-  const scrollToSlide = (index: number) => {
-    const container = scrollerRef.current;
-    const target = container?.querySelector<HTMLElement>(`[data-slide-index="${index}"]`);
-    target?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  useEffect(() => {
+    if (
+      !carouselEnabled ||
+      carouselPaused ||
+      carouselSlideCount <= 1 ||
+      prefersReducedMotion
+    ) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setCarouselDirection(1);
+      setActiveSlide((current) => (current + 1) % carouselSlideCount);
+    }, CAROUSEL_AUTO_ADVANCE_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    carouselEnabled,
+    carouselPaused,
+    carouselSlideCount,
+    prefersReducedMotion,
+  ]);
+
+  const goToSlide = (index: number) => {
+    if (index === activeSlide) return;
+
+    setCarouselDirection(index > activeSlide ? 1 : -1);
+    setActiveSlide(index);
   };
-  const goPrev = () => scrollToSlide(Math.max(activeSlide - 1, 0));
-  const goNext = () => scrollToSlide(Math.min(activeSlide + 1, carouselSlideCount - 1));
+
+  const goPrev = () => {
+    setCarouselDirection(-1);
+    setActiveSlide(
+      (current) => (current - 1 + carouselSlideCount) % carouselSlideCount
+    );
+  };
+
+  const goNext = () => {
+    setCarouselDirection(1);
+    setActiveSlide((current) => (current + 1) % carouselSlideCount);
+  };
+
+  const activeCarouselPhoto =
+    carouselPhotos.length > 0 ? carouselPhotos[activeSlide] : null;
+  const activeCarouselShape =
+    CAROUSEL_SHAPES[activeSlide % CAROUSEL_SHAPES.length];
+  const activeCarouselKey = activeCarouselPhoto
+    ? `photo-${activeCarouselPhoto.id}`
+    : `shape-${activeSlide}-${activeCarouselShape.kind}-${activeCarouselShape.tone}`;
 
   const Arrow = isAr ? <ArrowRight size={20} className="rotate-180" /> : <ArrowRight size={20} />;
 
@@ -284,6 +413,32 @@ export default function LandingPage() {
   const heroItem: Variants = {
     hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 18 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } },
+  };
+
+  const carouselSlideVariants: Variants = {
+    enter: (direction: number) => ({
+      opacity: 0,
+      x: prefersReducedMotion ? 0 : direction * 72,
+      scale: prefersReducedMotion ? 1 : 0.96,
+    }),
+    center: {
+      opacity: 1,
+      x: 0,
+      scale: 1,
+      transition: {
+        duration: prefersReducedMotion ? 0.15 : 0.55,
+        ease: 'easeOut',
+      },
+    },
+    exit: (direction: number) => ({
+      opacity: 0,
+      x: prefersReducedMotion ? 0 : direction * -72,
+      scale: prefersReducedMotion ? 1 : 0.96,
+      transition: {
+        duration: prefersReducedMotion ? 0.15 : 0.4,
+        ease: 'easeIn',
+      },
+    }),
   };
 
   return (
@@ -573,75 +728,101 @@ export default function LandingPage() {
       </section>
 
       {carouselEnabled && (
-        <section className="py-16 sm:py-20 bg-white overflow-hidden">
-          <div className="max-w-5xl mx-auto px-5 sm:px-6 mb-8 sm:mb-10 flex items-end justify-between gap-4">
-            <div className={dir === 'rtl' ? 'text-right' : 'text-left'}>
-              <p className="text-[#999] uppercase tracking-[0.2em] text-xs font-bold mb-2">
+        <section className="overflow-hidden bg-white px-5 py-16 sm:px-6 sm:py-20">
+          <div className="mx-auto max-w-5xl text-center">
+            <div className="mb-8 sm:mb-10">
+              <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-[#999]">
                 {isAr ? 'مجتمعنا' : 'Our Community'}
               </p>
-              <h2 style={{ fontFamily: displayFont }} className="text-[clamp(1.5rem,3.6vw,2rem)] font-bold text-[#8b1e1e]">
+              <h2
+                style={{ fontFamily: displayFont }}
+                className="text-[clamp(1.5rem,3.6vw,2rem)] font-bold text-[#8b1e1e]"
+              >
                 {isAr ? 'حياة الخدمة معًا' : 'Ministry Life, Together'}
               </h2>
             </div>
-            <div className="hidden sm:flex gap-2 shrink-0">
+
+            <div
+              className="relative mx-auto flex w-full max-w-[540px] items-center justify-center px-12 sm:px-16"
+              onMouseEnter={() => setCarouselPaused(true)}
+              onMouseLeave={() => setCarouselPaused(false)}
+              onFocusCapture={() => setCarouselPaused(true)}
+              onBlurCapture={() => setCarouselPaused(false)}
+            >
               <button
+                type="button"
                 onClick={goPrev}
-                aria-label={isAr ? 'السابق' : 'Previous'}
-                className="w-11 h-11 grid place-items-center rounded-full border-2 border-[#8b1e1e]/20 text-[#8b1e1e] transition-colors hover:bg-[#f8eeee] disabled:opacity-30"
-                disabled={activeSlide === 0}
+                aria-label={isAr ? 'الصورة السابقة' : 'Previous photo'}
+                className="absolute left-0 z-10 grid h-11 w-11 place-items-center rounded-full border-2 border-[#8b1e1e]/20 bg-white text-[#8b1e1e] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#f8eeee] hover:shadow-md active:translate-y-0"
               >
-                {dir === 'rtl' ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+                {dir === 'rtl' ? (
+                  <ChevronRight size={20} />
+                ) : (
+                  <ChevronLeft size={20} />
+                )}
               </button>
+
+              <div className="w-full max-w-[400px] overflow-hidden rounded-[30px]">
+                <AnimatePresence
+                  initial={false}
+                  mode="wait"
+                  custom={carouselDirection}
+                >
+                  <motion.div
+                    key={activeCarouselKey}
+                    custom={carouselDirection}
+                    variants={carouselSlideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    className="w-full"
+                  >
+                    {activeCarouselPhoto ? (
+                      <PhotoTile
+                        photo={activeCarouselPhoto}
+                        index={activeSlide}
+                        isAr={isAr}
+                      />
+                    ) : (
+                      <ShapeTile
+                        shape={activeCarouselShape}
+                        index={activeSlide}
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
               <button
+                type="button"
                 onClick={goNext}
-                aria-label={isAr ? 'التالي' : 'Next'}
-                className="w-11 h-11 grid place-items-center rounded-full border-2 border-[#8b1e1e]/20 text-[#8b1e1e] transition-colors hover:bg-[#f8eeee] disabled:opacity-30"
-                disabled={activeSlide === carouselSlideCount - 1}
+                aria-label={isAr ? 'الصورة التالية' : 'Next photo'}
+                className="absolute right-0 z-10 grid h-11 w-11 place-items-center rounded-full border-2 border-[#8b1e1e]/20 bg-white text-[#8b1e1e] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#f8eeee] hover:shadow-md active:translate-y-0"
               >
-                {dir === 'rtl' ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+                {dir === 'rtl' ? (
+                  <ChevronLeft size={20} />
+                ) : (
+                  <ChevronRight size={20} />
+                )}
               </button>
             </div>
-          </div>
 
-          <div
-            ref={scrollerRef}
-            dir={dir}
-            className="flex gap-4 sm:gap-5 overflow-x-auto px-5 sm:px-6 pb-4 snap-x snap-mandatory scroll-px-5 sm:scroll-px-6 no-scrollbar"
-          >
-            {carouselPhotos.length > 0
-              ? carouselPhotos.map((photo, i) => (
-                  <motion.div
-                    key={photo.id}
-                    data-slide-index={i}
-                    whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-                    className="snap-center shrink-0 w-[72vw] sm:w-[280px]"
-                  >
-                    <PhotoTile photo={photo} index={i} isAr={isAr} />
-                  </motion.div>
-                ))
-              : CAROUSEL_SHAPES.map((shape, i) => (
-                  <motion.div
-                    key={`${shape.kind}-${shape.tone}-${i}`}
-                    data-slide-index={i}
-                    whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-                    className="snap-center shrink-0 w-[72vw] sm:w-[280px]"
-                  >
-                    <ShapeTile shape={shape} index={i} />
-                  </motion.div>
-                ))}
-          </div>
-
-          <div className="flex justify-center gap-2 mt-4">
-            {Array.from({ length: carouselSlideCount }, (_, i) => (
-              <button
-                key={i}
-                onClick={() => scrollToSlide(i)}
-                aria-label={`${isAr ? 'الشريحة' : 'Slide'} ${i + 1}`}
-                className={`h-2 rounded-full transition-all ${
-                  activeSlide === i ? 'w-6 bg-[#8b1e1e]' : 'w-2 bg-[#8b1e1e]/20'
-                }`}
-              />
-            ))}
+            <div className="mt-6 flex justify-center gap-2">
+              {Array.from({ length: carouselSlideCount }, (_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => goToSlide(index)}
+                  aria-label={`${isAr ? 'الصورة' : 'Photo'} ${index + 1}`}
+                  aria-current={activeSlide === index ? 'true' : undefined}
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    activeSlide === index
+                      ? 'w-7 bg-[#8b1e1e]'
+                      : 'w-2 bg-[#8b1e1e]/20 hover:bg-[#8b1e1e]/40'
+                  }`}
+                />
+              ))}
+            </div>
           </div>
         </section>
       )}
@@ -670,10 +851,6 @@ export default function LandingPage() {
         <p className="text-xs mt-2 text-white/30">{t('landing.program')}</p>
       </footer>
 
-      <style>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
     </div>
   );
 }
