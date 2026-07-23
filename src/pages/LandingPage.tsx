@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useReducedMotion, type Variants } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import {
   ClipboardList,
   LogIn,
@@ -77,6 +77,8 @@ export default function LandingPage() {
   const [scrollY, setScrollY] = useState(0);
   const [nextGenButtonClicked, setNextGenButtonClicked] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [showFloatingActions, setShowFloatingActions] = useState(false);
+  const actionAreaRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();
 
@@ -102,6 +104,22 @@ export default function LandingPage() {
     const handleScroll = () => setScrollY(window.scrollY);
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const actionArea = actionAreaRef.current;
+    if (!actionArea) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const hasScrolledPastActions = !entry.isIntersecting && entry.boundingClientRect.bottom <= 0;
+        setShowFloatingActions(hasScrolledPastActions);
+      },
+      { threshold: 0 }
+    );
+
+    observer.observe(actionArea);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -158,6 +176,71 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen" dir={dir} style={{ fontFamily: bodyFont }}>
+      <AnimatePresence>
+        {showFloatingActions && (
+          <motion.nav
+            aria-label={isAr ? 'روابط سريعة' : 'Quick actions'}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -72, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -52, scale: 0.97 }}
+            transition={
+              prefersReducedMotion
+                ? { duration: 0.15 }
+                : { type: 'spring', stiffness: 420, damping: 34, mass: 0.82 }
+            }
+            className="pointer-events-none fixed inset-x-0 top-2 z-50 px-2 sm:top-3 sm:px-4"
+          >
+            <div className="pointer-events-auto mx-auto w-full max-w-5xl overflow-hidden rounded-[24px] border border-[#8b1e1e]/15 bg-white/90 shadow-[0_16px_48px_rgba(59,18,18,0.22)] backdrop-blur-xl">
+              <div className="grid max-h-[calc(100svh-1rem)] grid-cols-2 gap-2 overflow-y-auto p-2 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-2.5 sm:p-3">
+                <button
+                  onClick={() => navigate('/assessment')}
+                  className="inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl bg-[#8b1e1e] px-3 py-2.5 text-[12px] font-bold leading-tight text-white shadow-[0_6px_18px_rgba(139,30,30,0.22)] transition-transform hover:-translate-y-0.5 active:scale-[0.98] sm:min-h-[44px] sm:rounded-full sm:px-5 sm:text-sm"
+                >
+                  <ClipboardList size={16} className="shrink-0" />
+                  <span className="min-w-0 max-w-full break-words text-center sm:whitespace-nowrap">{t('landing.takeAssessment')}</span>
+                </button>
+
+                <button
+                  onClick={() => navigate('/calendar')}
+                  className="inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl border-2 border-[#8b1e1e] bg-white px-3 py-2.5 text-[12px] font-bold leading-tight text-[#8b1e1e] transition-transform hover:-translate-y-0.5 hover:bg-[#f8eeee] active:scale-[0.98] sm:min-h-[44px] sm:rounded-full sm:px-5 sm:text-sm"
+                >
+                  <LogIn size={16} className="shrink-0" />
+                  <span className="min-w-0 max-w-full break-words text-center sm:whitespace-nowrap">{t('landing.adminLogin')}</span>
+                </button>
+
+                {quickLinks.map(({ icon: Icon, path, en, ar }) => (
+                  <button
+                    key={`floating-${path}`}
+                    onClick={() => navigate(path)}
+                    className="inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl bg-stone-100 px-3 py-2.5 text-[12px] font-bold leading-tight text-[#8b1e1e] transition-transform hover:-translate-y-0.5 hover:bg-stone-200 active:scale-[0.98] sm:min-h-[44px] sm:rounded-full sm:px-5 sm:text-sm"
+                  >
+                    <Icon size={16} className="shrink-0" />
+                    <span className="min-w-0 max-w-full break-words text-center sm:whitespace-nowrap">{isAr ? ar : en}</span>
+                  </button>
+                ))}
+
+                <button
+                  onMouseDown={() => setNextGenButtonClicked(true)}
+                  onMouseLeave={() => setNextGenButtonClicked(false)}
+                  onClick={() => {
+                    setNextGenButtonClicked(true);
+                    navigate('/nextgen-activities');
+                  }}
+                  className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-2xl border-2 px-3 py-2.5 text-[12px] font-bold leading-tight shadow-sm transition-all hover:-translate-y-0.5 active:scale-[0.98] sm:min-h-[44px] sm:rounded-full sm:px-5 sm:text-sm ${
+                    nextGenButtonClicked
+                      ? 'border-[#641414] bg-[#641414] text-white'
+                      : 'border-[#f59e0b] bg-[#fff7ed] text-[#8b1e1e] hover:bg-[#f59e0b] hover:text-white'
+                  }`}
+                >
+                  <Sparkles size={16} className="shrink-0" />
+                  <span className="min-w-0 max-w-full break-words text-center sm:whitespace-nowrap">NextGen Activities</span>
+                </button>
+              </div>
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
+
       <section className="relative min-h-[100svh] sm:min-h-[90vh] flex items-center justify-center overflow-hidden bg-[#f5f4f0]">
         {/* Ambient shapes — the same soft-blob language reappears in the
             carousel below, tying the two together */}
@@ -225,53 +308,55 @@ export default function LandingPage() {
             {t('landing.program')}
           </motion.p>
 
-          <motion.div variants={heroItem} className="flex flex-col sm:flex-row gap-3.5 sm:gap-4 justify-center">
-            <button
-              onClick={() => navigate('/assessment')}
-              className="inline-flex items-center justify-center gap-3 min-h-[56px] px-10 bg-[#8b1e1e] text-white rounded-full font-bold text-lg shadow-[0_8px_28px_rgba(139,30,30,0.24)] transition-transform hover:-translate-y-[2px] hover:shadow-[0_12px_32px_rgba(139,30,30,0.3)] active:translate-y-0 active:scale-[0.98]"
-            >
-              {t('landing.takeAssessment')}
-              {Arrow}
-            </button>
-            <button
-              onClick={() => navigate('/calendar')}
-              className="inline-flex items-center justify-center gap-3 min-h-[56px] px-10 bg-white text-[#8b1e1e] border-2 border-[#8b1e1e] rounded-full font-bold text-lg transition-transform hover:-translate-y-[2px] hover:bg-[#f8eeee] active:translate-y-0 active:scale-[0.98]"
-            >
-              <LogIn size={18} />
-              {t('landing.adminLogin')}
-            </button>
-          </motion.div>
-
-          {/* Secondary actions — a compact grid on phones instead of
-              wrapping pills, so every tap target stays the same size */}
-          <motion.div variants={heroItem} className="mt-6 grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-3.5 justify-center">
-            {quickLinks.map(({ icon: Icon, path, en, ar }) => (
+          <div ref={actionAreaRef}>
+            <motion.div variants={heroItem} className="flex flex-col sm:flex-row gap-3.5 sm:gap-4 justify-center">
               <button
-                key={path}
-                onClick={() => navigate(path)}
-                className="inline-flex items-center justify-center gap-2 min-h-[50px] px-4 sm:px-6 bg-stone-100 text-[#8b1e1e] rounded-2xl sm:rounded-full text-sm sm:text-base font-bold transition-transform hover:-translate-y-[2px] hover:bg-stone-200 active:translate-y-0 active:scale-[0.98]"
+                onClick={() => navigate('/assessment')}
+                className="inline-flex items-center justify-center gap-3 min-h-[56px] px-10 bg-[#8b1e1e] text-white rounded-full font-bold text-lg shadow-[0_8px_28px_rgba(139,30,30,0.24)] transition-transform hover:-translate-y-[2px] hover:shadow-[0_12px_32px_rgba(139,30,30,0.3)] active:translate-y-0 active:scale-[0.98]"
               >
-                <Icon size={17} />
-                {isAr ? ar : en}
+                {t('landing.takeAssessment')}
+                {Arrow}
               </button>
-            ))}
-            <button
-              onMouseDown={() => setNextGenButtonClicked(true)}
-              onMouseLeave={() => setNextGenButtonClicked(false)}
-              onClick={() => {
-                setNextGenButtonClicked(true);
-                navigate('/nextgen-activities');
-              }}
-              className={`col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-2 min-h-[50px] px-4 sm:px-6 rounded-2xl sm:rounded-full text-sm sm:text-base font-bold border-2 shadow-sm transition-all duration-200 hover:-translate-y-[2px] hover:shadow-[0_12px_32px_rgba(139,30,30,0.22)] active:translate-y-[1px] active:scale-[0.98] ${
-                nextGenButtonClicked
-                  ? 'bg-[#641414] text-white border-[#641414]'
-                  : 'bg-[#fff7ed] text-[#8b1e1e] border-[#f59e0b] hover:bg-[#f59e0b] hover:text-white hover:border-[#f59e0b] active:bg-[#641414] active:border-[#641414] active:text-white'
-              }`}
-            >
-              <Sparkles size={17} />
-              NextGen Activities
-            </button>
-          </motion.div>
+              <button
+                onClick={() => navigate('/calendar')}
+                className="inline-flex items-center justify-center gap-3 min-h-[56px] px-10 bg-white text-[#8b1e1e] border-2 border-[#8b1e1e] rounded-full font-bold text-lg transition-transform hover:-translate-y-[2px] hover:bg-[#f8eeee] active:translate-y-0 active:scale-[0.98]"
+              >
+                <LogIn size={18} />
+                {t('landing.adminLogin')}
+              </button>
+            </motion.div>
+
+            {/* Secondary actions — a compact grid on phones instead of
+                wrapping pills, so every tap target stays the same size */}
+            <motion.div variants={heroItem} className="mt-6 grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-3.5 justify-center">
+              {quickLinks.map(({ icon: Icon, path, en, ar }) => (
+                <button
+                  key={path}
+                  onClick={() => navigate(path)}
+                  className="inline-flex items-center justify-center gap-2 min-h-[50px] px-4 sm:px-6 bg-stone-100 text-[#8b1e1e] rounded-2xl sm:rounded-full text-sm sm:text-base font-bold transition-transform hover:-translate-y-[2px] hover:bg-stone-200 active:translate-y-0 active:scale-[0.98]"
+                >
+                  <Icon size={17} />
+                  {isAr ? ar : en}
+                </button>
+              ))}
+              <button
+                onMouseDown={() => setNextGenButtonClicked(true)}
+                onMouseLeave={() => setNextGenButtonClicked(false)}
+                onClick={() => {
+                  setNextGenButtonClicked(true);
+                  navigate('/nextgen-activities');
+                }}
+                className={`col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-2 min-h-[50px] px-4 sm:px-6 rounded-2xl sm:rounded-full text-sm sm:text-base font-bold border-2 shadow-sm transition-all duration-200 hover:-translate-y-[2px] hover:shadow-[0_12px_32px_rgba(139,30,30,0.22)] active:translate-y-[1px] active:scale-[0.98] ${
+                  nextGenButtonClicked
+                    ? 'bg-[#641414] text-white border-[#641414]'
+                    : 'bg-[#fff7ed] text-[#8b1e1e] border-[#f59e0b] hover:bg-[#f59e0b] hover:text-white hover:border-[#f59e0b] active:bg-[#641414] active:border-[#641414] active:text-white'
+                }`}
+              >
+                <Sparkles size={17} />
+                NextGen Activities
+              </button>
+            </motion.div>
+          </div>
         </motion.div>
       </section>
 
