@@ -32,11 +32,6 @@ interface CarouselPhoto {
   updatedAt?: number;
 }
 
-interface CarouselSettings {
-  enabled: boolean;
-  photos: CarouselPhoto[];
-}
-
 interface StoredCarouselPhoto {
   url?: unknown;
   dataUrl?: unknown;
