@@ -13,6 +13,7 @@ import {
   Globe,
   Calendar as CalendarIcon,
   Sparkles,
+  ShieldCheck,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -273,6 +274,7 @@ export default function LandingPage() {
     { icon: CalendarIcon, path: '/booking', en: 'Book a Meeting', ar: 'حجز موعد' },
     { icon: Users, path: '/group-notes', en: 'My Group Notes', ar: 'ملاحظات مجموعتي' },
     { icon: ClipboardList, path: '/attendance', en: 'Attendance', ar: 'الحضور' },
+    { icon: ShieldCheck, path: '/administrator', en: 'Administrator Panel', ar: 'لوحة الإدارة' },
   ];
 
   const heroContainer: Variants = {
