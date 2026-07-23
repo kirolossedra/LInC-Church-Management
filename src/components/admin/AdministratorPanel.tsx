@@ -677,13 +677,18 @@ function AttendanceManagement() {
     pageDescription: isArabic
       ? 'اختر الإجراء الذي تريد تنفيذه.'
       : 'Choose the action you want to perform.',
-    addModifyPerson: isArabic ? 'إضافة أو تعديل شخص' : 'Add / Modify Person',
+    addModifyPerson: isArabic ? 'إدارة الأشخاص' : 'Manage People',
     takeAttendance: isArabic ? 'تسجيل الحضور' : 'Take Attendance',
 
-    peopleTitle: isArabic ? 'إضافة أو تعديل الأشخاص' : 'Add or Modify People',
+    peopleTitle: isArabic ? 'إدارة الأشخاص' : 'People Management',
     peopleDescription: isArabic
-      ? 'أضف شخصاً جديداً أو ابحث عن شخص موجود لتعديل بياناته.'
-      : 'Add a new person or search for an existing person to modify their details.',
+      ? 'أضف شخصاً جديداً أو اضغط على شخص موجود لفتح نافذة التعديل.'
+      : 'Add a new person or select an existing person to edit them in a popup.',
+    addNewPerson: isArabic ? 'إضافة شخص جديد' : 'Add New Person',
+    addPerson: isArabic ? 'إضافة شخص جديد' : 'Add New Person',
+    addPersonDescription: isArabic
+      ? 'أدخل بيانات الشخص وصورته ثم احفظه.'
+      : 'Enter the person details and photo, then save the new person.',
     englishNameSection: isArabic ? 'الاسم بالإنجليزية' : 'English Name',
     arabicNameSection: isArabic ? 'الاسم بالعربية' : 'Arabic Name',
     firstName: isArabic ? 'الاسم الأول' : 'First Name',
@@ -1104,6 +1109,19 @@ function AttendanceManagement() {
     resetPersonForm();
   };
 
+  const openNewPersonEditor = () => {
+    stopPersonCameraStream();
+    setIsPersonCameraOpen(false);
+    setPersonCameraError('');
+    setSelectedPersonId('');
+    setPersonForm(emptyPersonForm);
+    setIsPersonEditModalOpen(true);
+
+    window.requestAnimationFrame(() => {
+      personEditModalRef.current?.focus();
+    });
+  };
+
   const handleSelectPerson = (person: AttendancePerson) => {
     stopPersonCameraStream();
     setIsPersonCameraOpen(false);
@@ -1454,7 +1472,7 @@ function AttendanceManagement() {
     text.cameraPermissionError,
   ]);
 
-  const renderPersonEditor = (isModal: boolean) => (
+  const renderPersonEditor = () => (
     <>
             <div
               className="attendance-photo-editor"
@@ -2051,14 +2069,14 @@ function AttendanceManagement() {
                 {isSavingPerson ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 {isSavingPerson
                   ? text.saving
-                  : isModal
+                  : selectedPersonId
                     ? text.updatePerson
                     : text.savePerson}
               </button>
 
               <button
                 type="button"
-                onClick={isModal ? closePersonEditor : resetPersonForm}
+                onClick={closePersonEditor}
                 style={{
                   width: '100%',
                   minHeight: '50px',
@@ -2071,7 +2089,7 @@ function AttendanceManagement() {
                   cursor: 'pointer',
                 }}
               >
-                {isModal ? text.close : text.reset}
+                {text.close}
               </button>
             </div>
     </>
@@ -2273,13 +2291,34 @@ function AttendanceManagement() {
               </button>
             </div>
 
-            {!selectedPersonId && renderPersonEditor(false)}
+            <button
+              type="button"
+              onClick={openNewPersonEditor}
+              style={{
+                width: '100%',
+                minHeight: '58px',
+                border: 'none',
+                borderRadius: '18px',
+                background: '#8b1e1e',
+                color: 'white',
+                padding: '14px 20px',
+                fontSize: '17px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                boxShadow: '0 8px 24px rgba(139, 30, 30, 0.22)',
+              }}
+            >
+              <UserPlus size={20} />
+              {text.addNewPerson}
+            </button>
 
             <div
               style={{
-                marginTop: '34px',
-                borderTop: '1px solid #eee',
-                paddingTop: '28px',
+                marginTop: '28px',
               }}
             >
               <h3
@@ -2405,10 +2444,10 @@ function AttendanceManagement() {
                       style={{
                         width: '100%',
                         textAlign: dir === 'rtl' ? 'right' : 'left',
-                        border: selectedPersonId === person.firebaseId ? '2px solid #8b1e1e' : '1px solid #eee',
+                        border: '1px solid #eee',
                         borderRadius: '18px',
                         padding: '16px',
-                        background: selectedPersonId === person.firebaseId ? '#f8eeee' : 'white',
+                        background: 'white',
                         cursor: 'pointer',
                       }}
                     >
@@ -2492,7 +2531,7 @@ function AttendanceManagement() {
           </section>
         )}
 
-        {isPersonEditModalOpen && selectedPersonId && (
+        {isPersonEditModalOpen && (
           <div
             className="attendance-person-edit-overlay"
             role="presentation"
@@ -2561,7 +2600,7 @@ function AttendanceManagement() {
                       fontWeight: 900,
                     }}
                   >
-                    {text.editPerson}
+                    {selectedPersonId ? text.editPerson : text.addPerson}
                   </h2>
                   <p
                     style={{
@@ -2571,7 +2610,9 @@ function AttendanceManagement() {
                       lineHeight: 1.5,
                     }}
                   >
-                    {text.editPersonDescription}
+                    {selectedPersonId
+                      ? text.editPersonDescription
+                      : text.addPersonDescription}
                   </p>
                 </div>
 
@@ -2608,7 +2649,7 @@ function AttendanceManagement() {
                   padding: '24px',
                 }}
               >
-                {renderPersonEditor(true)}
+                {renderPersonEditor()}
               </div>
             </div>
           </div>
