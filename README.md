@@ -2,13 +2,160 @@
 
 A bilingual English/Arabic church administration platform for LINC Ministries' Leadership Development Program (2026–2028).
 
-The application is built with React, TypeScript, Vite, Firebase, EmailJS, and selected Google integrations. It includes spiritual-gifts assessments, pastoral calendar management, public meeting booking, meeting-request decisions, People Development workflows, NextGen administration, attendance tools, congregation group notes, and bilingual public pages.
+The application uses a React/TypeScript/Vite frontend, Firebase Authentication and Realtime Database, and an incremental Cloudflare Workers backend. Sensitive participant meeting-invitation delivery has been moved out of the browser and now runs through a Hono API and Brevo. Other legacy EmailJS and Google integration paths remain in use where explicitly documented.
 
-The project is currently a client-driven Firebase application. Firebase provides authentication and persistent data services, while much of the business logic still runs in the React client. The current refactor is separating the application into focused UI components, hooks, Firebase modules, selectors, action modules, and email modules so that the application can later move cleanly toward a three-tier architecture:
+## Project hierarchy
 
 ```text
-Frontend → Backend/API → Database
+LInC-Church-Management/
+├── .github/
+│   └── workflows/
+│       └── backend-tests.yml
+├── backend/
+│   ├── src/
+│   │   ├── auth/
+│   │   │   └── firebaseAuth.ts
+│   │   ├── emails/
+│   │   │   └── meetingInvitation.email.ts
+│   │   ├── middleware/
+│   │   │   ├── authentication.middleware.ts
+│   │   │   └── authorization.middleware.ts
+│   │   ├── routes/
+│   │   │   └── meetingInvitations.routes.ts
+│   │   ├── schemas/
+│   │   │   └── meetingInvitation.schema.ts
+│   │   ├── services/
+│   │   │   └── brevo.service.ts
+│   │   └── index.ts
+│   ├── test/
+│   │   └── index.spec.ts
+│   ├── .dev.vars
+│   ├── .gitignore
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.json
+│   ├── vitest.config.ts
+│   └── wrangler.jsonc
+├── src/
+│   ├── components/
+│   │   ├── AssessmentForm.tsx
+│   │   ├── BookMeeting.tsx
+│   │   ├── Layout.tsx
+│   │   ├── PageTitle.tsx
+│   │   └── pastor/
+│   │       ├── PastorDashboard.tsx
+│   │       ├── calendar/
+│   │       │   ├── calendar.constants.ts
+│   │       │   ├── calendar.email.ts
+│   │       │   ├── calendar.firebase.ts
+│   │       │   ├── calendar.forms.ts
+│   │       │   ├── calendar.slots.ts
+│   │       │   ├── calendar.types.ts
+│   │       │   ├── calendar.utils.ts
+│   │       │   └── index.ts
+│   │       ├── hooks/
+│   │       │   ├── index.ts
+│   │       │   ├── useAvailability.ts
+│   │       │   ├── useCalendarMonth.ts
+│   │       │   ├── useMeetingRequests.ts
+│   │       │   ├── useMeetings.ts
+│   │       │   ├── useNextGen.ts
+│   │       │   ├── useParticipants.ts
+│   │       │   └── usePeopleDevelopment.ts
+│   │       ├── meeting-requests/
+│   │       │   ├── MeetingRequestsSection.tsx
+│   │       │   ├── meetingRequests.actions.ts
+│   │       │   ├── meetingRequests.types.ts
+│   │       │   ├── meetingRequests.utils.ts
+│   │       │   └── index.ts
+│   │       ├── nextgen/
+│   │       │   ├── NextGenQuestionsSection.tsx
+│   │       │   ├── NextGenRegistrationsSection.tsx
+│   │       │   ├── NextGenSurveyResultsSection.tsx
+│   │       │   ├── nextgen.actions.ts
+│   │       │   ├── nextgen.constants.ts
+│   │       │   ├── nextgen.firebase.ts
+│   │       │   ├── nextgen.types.ts
+│   │       │   ├── nextgen.utils.ts
+│   │       │   └── index.ts
+│   │       ├── people-development/
+│   │       │   ├── README.md
+│   │       │   ├── PeopleAssignmentsCalendarModal.tsx
+│   │       │   ├── PeopleDevelopmentGroupPanel.tsx
+│   │       │   ├── PeopleDevelopmentSection.tsx
+│   │       │   ├── PeoplePersonalNoteModal.tsx
+│   │       │   ├── index.ts
+│   │       │   ├── peopleDevelopment.actions.ts
+│   │       │   ├── peopleDevelopment.constants.ts
+│   │       │   ├── peopleDevelopment.firebase.ts
+│   │       │   ├── peopleDevelopment.selectors.ts
+│   │       │   ├── peopleDevelopment.types.ts
+│   │       │   ├── peopleDevelopment.utils.ts
+│   │       │   └── peopleDevelopmentEmail.ts
+│   │       └── email/
+│   │           └── # Reserved for later email extraction
+│   ├── i18n/
+│   │   ├── index.tsx
+│   │   └── translations.ts
+│   ├── pages/
+│   │   ├── AdminDashboard.tsx
+│   │   ├── AttendancePage.tsx
+│   │   ├── BookingCalendar.tsx
+│   │   ├── CongregationGroupNotes.tsx
+│   │   ├── GuidePage.tsx
+│   │   ├── LandingPage.tsx
+│   │   ├── NextGenActivities.tsx
+│   │   ├── PeopleNotesPage.tsx
+│   │   ├── PrivacyPolicy.tsx
+│   │   └── TermsOfService.tsx
+│   ├── services/
+│   │   ├── gmail.ts
+│   │   └── meetingInvitations.ts
+│   ├── App.tsx
+│   ├── firebase.ts
+│   ├── main.tsx
+│   └── types.ts
+├── .env
+├── .env.example
+├── netlify.toml
+├── package.json
+├── tsconfig.json
+└── vite.config.ts
 ```
+
+> `backend/src/middleware/authorization.middleware.ts` exists from the initial backend work, but the active meeting-invitation route does not perform a Firebase Realtime Database role lookup. It authenticates the already signed-in Firebase user only.
+
+## Table of contents
+
+- [Major Refactor Completed](#major-refactor-completed)
+- [AI Assistant Removal](#ai-assistant-removal)
+- [Pastor Dashboard Relocation](#pastor-dashboard-relocation)
+- [Current Pastor Module Structure](#current-pastor-module-structure)
+- [Hooks Introduced](#hooks-introduced)
+- [Calendar Modules Introduced](#calendar-modules-introduced)
+- [Meeting Request Modules Introduced](#meeting-request-modules-introduced)
+- [NextGen Modules Introduced](#nextgen-modules-introduced)
+- [People Development Modules Introduced](#people-development-modules-introduced)
+- [Dashboard Integration](#dashboard-integration)
+- [Current Feature Set](#current-feature-set)
+- [Authentication and Authorization](#authentication-and-authorization)
+- [Current Architecture](#current-architecture)
+- [Backend/API Layer](#backendapi-layer)
+- [Email and External Services](#email-and-external-services)
+- [Firebase Data Areas](#firebase-data-areas)
+- [Security Notes](#security-notes)
+- [Tech Stack](#tech-stack)
+- [Build Corrections Completed](#build-corrections-completed)
+- [Getting Started](#getting-started)
+- [Firebase Rules](#firebase-rules)
+- [Local Development](#local-development)
+- [Production Build and Deployment](#production-build-and-deployment)
+- [Scripts](#scripts)
+- [Admin Access](#admin-access)
+- [Remaining Refactor Work](#remaining-refactor-work)
+- [Refactor Principles](#refactor-principles)
+- [License](#license)
+- [Created by](#created-by)
 
 ---
 
@@ -360,7 +507,7 @@ This keeps the hook focused on React state and orchestration.
 
 ### Purpose
 
-Controls meeting data, meeting-editor state, participant invitations, creation, updates, and deletion.
+Controls meeting data, meeting-editor state, participant selection, authenticated backend invitations, creation, updates, and deletion.
 
 ### Responsibilities
 
@@ -371,7 +518,7 @@ Controls meeting data, meeting-editor state, participant invitations, creation, 
 - Tracks selected participants
 - Controls the participant dropdown
 - Tracks meeting-save loading state
-- Tracks whether participant emails were sent successfully
+- Tracks whether participant invitations were sent successfully
 - Opens a blank meeting form
 - Opens a meeting form for a selected calendar date
 - Opens an existing meeting for editing
@@ -385,10 +532,47 @@ Controls meeting data, meeting-editor state, participant invitations, creation, 
 - Preserves booking-request fields during edits
 - Resets acknowledgement when finalized details change
 - Synchronizes updated date/time details back to the source booking request
-- Sends participant invitations through EmailJS
-- Logs invitation sends to Firebase
-- Sends cancellation emails to booking requesters
+- Builds a recipient list from selected participants
+- Filters out participants without usable email addresses
+- Calls `sendMeetingInvitationsViaBackend(...)` once with the complete meeting and recipient batch
+- Uses the current interface locale to request English or Arabic invitation content
+- Keeps requester cancellation communication on the existing EmailJS path for now
 - Deletes meetings
+
+### Participant invitation path
+
+The participant invitation path no longer builds or sends the email through EmailJS in the browser.
+
+```text
+Pastor saves Add Event
+        ↓
+useMeetings.ts validates and saves the meeting
+        ↓
+Selected participants are converted into recipient objects
+        ↓
+src/services/meetingInvitations.ts
+        ↓
+Authenticated POST to the Cloudflare Worker
+        ↓
+Brevo sends the invitation
+```
+
+The hook sends:
+
+```ts
+{
+  locale,
+  recipients,
+  meeting: {
+    title,
+    date,
+    startTime,
+    endTime,
+    location,
+    meetLink,
+  },
+}
+```
 
 ### Preserved request fields
 
@@ -407,7 +591,9 @@ requesterLanguage
 
 When the pastor changes finalized meeting details such as the date, time, location, or meeting link, the existing acknowledgement state is reset so the requester can acknowledge the new details.
 
----
+### EmailJS still present in this hook
+
+`sendMeetingStatusEmailViaEmailJs(...)` remains imported for requester cancellation messages when deleting a meeting created from a public request. That import does not mean Add Event participant invitations still use EmailJS.
 
 ## `useAvailability.ts`
 
@@ -1074,16 +1260,32 @@ The Pastor Dashboard now combines several focused administration features:
 - Edit meetings
 - Delete meetings
 - Select participants
-- Send EmailJS invitations
+- Send participant invitations through the authenticated Cloudflare Worker and Brevo
 - Preserve public booking metadata
-- Notify requesters about cancellations
+- Notify requesters about cancellations through the existing EmailJS status-email path
 - Track acknowledgement when meeting details change
 - Display upcoming meetings
 - View meetings for a selected day
 
-Some older Google Calendar/Meet integration code remains in the project service layer, but the active invitation flow used by the refactored Pastor Dashboard currently sends through EmailJS.
+The active participant-invitation flow is:
 
----
+```text
+Add Event form
+   ↓
+useMeetings.ts
+   ↓
+src/services/meetingInvitations.ts
+   ↓
+POST /api/v1/meeting-invitations
+   ↓
+Firebase ID-token verification
+   ↓
+Backend-generated bilingual email
+   ↓
+Brevo transactional email API
+```
+
+Some older Google Calendar/Meet integration code remains in the project service layer. It is not the active participant-invitation transport used by the refactored Pastor Dashboard.
 
 ## Public Meeting Booking
 
@@ -1198,14 +1400,64 @@ The application uses Firebase Authentication with:
 - Google Sign-In
 - Email/password authentication
 
-The current application recognizes staff roles such as:
+The React application already persists the signed-in Firebase session. The new backend invitation flow reuses that session; it does not display another login form.
+
+## Frontend route access
+
+The current frontend reads the `admins/` Realtime Database area and resolves access in `App.tsx`. Existing values include legacy roles such as:
 
 ```text
 superadmin
 pastor
 ```
 
-The long-term role design is intended to evolve toward:
+The current Pastor Dashboard route continues to use the existing client-side access model.
+
+## Backend invitation authentication
+
+For participant meeting invitations, the frontend calls:
+
+```ts
+const firebaseIdToken = await auth.currentUser.getIdToken();
+```
+
+and sends:
+
+```http
+Authorization: Bearer <firebase-id-token>
+```
+
+The Worker verifies the Firebase ID token with Google's public Firebase signing keys before allowing the Brevo request.
+
+The backend checks:
+
+- RS256 signature
+- Firebase project audience
+- Firebase issuer
+- token expiration and not-before claims through `jose`
+- issued-at time
+- authentication time
+- non-empty Firebase subject/UID
+
+The backend then exposes the verified user in Hono request context.
+
+## Current authorization boundary
+
+The active meeting-invitation endpoint verifies that the caller is a valid signed-in Firebase user. It does **not** currently perform an additional backend lookup of the `pastor` role.
+
+This was intentional for the current incremental migration:
+
+```text
+Existing frontend pastor access remains unchanged
+        +
+Backend rejects anonymous requests
+```
+
+`backend/src/middleware/authorization.middleware.ts` exists from an earlier authorization experiment, but it is not mounted on the active invitation route.
+
+## Role direction
+
+The long-term role model may still evolve toward:
 
 ```text
 Pastor
@@ -1213,95 +1465,710 @@ General Admin
 Testing Admin
 ```
 
-### Intended role responsibilities
-
-#### Pastor
-
-- Pastoral decisions
-- Meeting-request decisions
-- People Development decisions
-- Confidential personal notes
-- Pastoral calendar management
-
-#### General Admin
-
-- Content administration
-- Configuration
-- Bilingual public content
-- Read-only Pastor views where appropriate
-- No authority over explicitly pastoral decisions
-
-#### Testing Admin
-
-- Staging and testing controls
-- Test data
-- Feature verification
-- Non-production administration
-
-The legacy `superadmin` role remains in the current application and is planned for later cleanup.
-
----
+The legacy `superadmin` naming remains in the current frontend and can be cleaned up separately without changing the meeting-invitation transport.
 
 # Current Architecture
 
-## Active architecture
+## Active hybrid architecture
 
 ```text
-React UI
-   ↓
-Hooks and feature actions
-   ↓
-Firebase client SDK / EmailJS / selected Google services
-   ↓
-Firebase Realtime Database and external APIs
+React frontend on Netlify
+   ├── Firebase client SDK for authentication and application data
+   ├── Existing EmailJS paths for selected legacy notifications
+   └── Authenticated API client for participant meeting invitations
+             ↓
+Cloudflare Worker backend
+   ├── Hono routing and CORS
+   ├── Firebase ID-token verification
+   ├── Zod request validation
+   ├── Bilingual email construction
+   └── Brevo API delivery
+             ↓
+Firebase / Brevo / selected Google services
 ```
 
-This is still primarily a two-tier/client-driven architecture.
+The application is no longer purely client-driven. It is now a hybrid system with the first production backend workflow implemented.
 
-## Target architecture
+## Incremental three-tier direction
 
 ```text
 React frontend
    ↓
-Backend/API
+Cloudflare Worker API
    ↓
-Firebase or another database
+Firebase and external providers
 ```
 
-A future backend layer should eventually own:
+The backend migration is intentionally incremental. Only participant meeting invitations have moved to Brevo through the Worker so far.
 
-- Authorization enforcement
-- Meeting-request decisions
-- Email delivery
-- Audit logging
-- File validation
-- Public booking conflict prevention
-- Secure Google Calendar/Meet creation
-- People Development notifications
-- Administrative configuration
-- Sensitive-data access
+Future candidates include:
 
-The current module split makes that migration easier because Firebase calls, actions, selectors, hooks, and UI are no longer concentrated in one file.
+- requester confirmation and cancellation emails
+- People Development assignment notifications
+- meeting-request decisions
+- audit logging
+- booking-conflict transactions
+- confidential People Development operations
+- file validation
+- secure Google Calendar/Meet creation
+
+# Backend/API Layer
+
+The first production backend workflow is implemented in:
+
+```text
+backend/
+```
+
+The backend foundation is tracked under GitHub issue `#12`.
+
+Current production endpoints:
+
+```text
+Frontend: https://lincministry.com
+Worker:   https://linc-backend.linc-ministry.workers.dev
+```
+
+The Worker is currently hosted on the Cloudflare Workers free plan and is deployed separately from the Netlify frontend.
+
+## Backend stack
+
+- Cloudflare Workers
+- Hono
+- TypeScript
+- Zod
+- `jose`
+- Brevo transactional email API
+- Vitest
+- `@cloudflare/vitest-pool-workers`
+- Wrangler
+
+## Backend file responsibilities
+
+### `backend/src/index.ts`
+
+The Worker entry point:
+
+- creates the Hono application
+- declares Worker bindings
+- configures CORS for API routes
+- preserves the root health response
+- preserves the Brevo test route
+- mounts the meeting-invitation route
+
+Current public root response:
+
+```text
+GET /
+→ Hello Hono!
+```
+
+Current API route mount:
+
+```text
+/api/v1/meeting-invitations
+```
+
+### `backend/src/auth/firebaseAuth.ts`
+
+Verifies Firebase ID tokens using `jose`.
+
+It uses Google's Firebase public JSON Web Key Set:
+
+```text
+https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com
+```
+
+Verification is tied to the configured Firebase project:
+
+```text
+churchmeeting
+```
+
+The function returns a normalized authenticated-user object:
+
+```ts
+{
+  uid,
+  email,
+  emailVerified,
+  name,
+  picture,
+  signInProvider,
+}
+```
+
+Token revocation checking is not currently implemented. The verifier validates the signed token presented for the request but does not call Firebase Admin to check whether the session was explicitly revoked after issuance.
+
+### `backend/src/middleware/authentication.middleware.ts`
+
+Reads:
+
+```http
+Authorization: Bearer <token>
+```
+
+The middleware:
+
+1. rejects a missing or malformed bearer token with `401`
+2. verifies the token through `verifyFirebaseIdToken(...)`
+3. stores the authenticated user in Hono context
+4. stores the verified raw token in context for possible later use
+5. allows the request to continue
+
+The frontend user does not sign in again. Firebase refreshes its browser session normally, and the frontend obtains the current ID token when making the API request.
+
+### `backend/src/middleware/authorization.middleware.ts`
+
+This file was created during the first backend authorization experiment. It can read `admins/<normalized-email>` from Firebase Realtime Database and accept only the exact value `pastor`.
+
+It is **not active** on the meeting-invitation route.
+
+The current endpoint requires a verified Firebase account but preserves the existing frontend pastor-access model.
+
+### `backend/src/schemas/meetingInvitation.schema.ts`
+
+Defines the complete request contract with Zod.
+
+The route accepts:
+
+```ts
+{
+  locale: 'en' | 'ar',
+  recipients: [
+    {
+      email: string,
+      name: string,
+    },
+  ],
+  meeting: {
+    title: string,
+    date: 'YYYY-MM-DD',
+    startTime: 'HH:mm',
+    endTime: 'HH:mm',
+    location: string,
+    meetLink: string,
+  },
+}
+```
+
+Validation includes:
+
+- strict objects with no unknown properties
+- English or Arabic locale only
+- at least one recipient
+- maximum of 50 recipients
+- valid recipient email addresses
+- recipient names between 1 and 120 characters
+- meeting title between 1 and 200 characters
+- real calendar date validation
+- 24-hour `HH:mm` time validation
+- end time strictly after start time
+- location length limit
+- empty meeting link or valid URL
+- meeting-link length limit
+
+Invalid requests return a structured `400 VALIDATION_ERROR`.
+
+### `backend/src/emails/meetingInvitation.email.ts`
+
+Builds the bilingual participant invitation.
+
+The builder is a pure function. It does not call Firebase, Brevo, React, or any network service.
+
+Responsibilities include:
+
+- English subject and body
+- Arabic subject and RTL body
+- localized date formatting
+- localized time formatting
+- location fallback
+- optional online meeting link
+- HTML escaping for user-controlled values
+- plain-text email fallback
+
+English subject format:
+
+```text
+Meeting Invitation: <meeting title>
+```
+
+Arabic subject format:
+
+```text
+دعوة لاجتماع: <meeting title>
+```
+
+### `backend/src/services/brevo.service.ts`
+
+Contains the reusable Brevo delivery client.
+
+It sends to:
+
+```text
+https://api.brevo.com/v3/smtp/email
+```
+
+The Brevo API key is added only by the Worker:
+
+```http
+api-key: <BREVO_API_KEY>
+```
+
+The browser never receives this key.
+
+The service accepts already-built email content and is responsible for:
+
+- sender details
+- recipient details
+- subject
+- HTML content
+- text content
+- provider response parsing
+- provider message ID extraction
+- provider failure conversion into `BrevoRequestError`
+
+### `backend/src/routes/meetingInvitations.routes.ts`
+
+Implements:
+
+```http
+POST /api/v1/meeting-invitations
+```
+
+The route sequence is:
+
+```text
+Firebase authentication middleware
+        ↓
+JSON parsing
+        ↓
+Zod validation
+        ↓
+Recipient loop
+        ↓
+Bilingual email builder
+        ↓
+Brevo service
+        ↓
+Structured complete/partial/failure response
+```
+
+The route does not accept arbitrary email HTML or an arbitrary subject from the browser. The backend constructs the invitation from validated meeting data, which prevents the endpoint from becoming a general-purpose email relay.
+
+### `src/services/meetingInvitations.ts`
+
+This is the frontend API client.
+
+It:
+
+1. reads `auth.currentUser`
+2. obtains the current Firebase ID token
+3. sends the meeting invitation request to the Worker
+4. attaches the bearer token
+5. parses the structured backend response
+6. returns `true` or `false` to `useMeetings.ts`
+
+Default backend URL:
+
+```text
+https://linc-backend.linc-ministry.workers.dev
+```
+
+Optional frontend override:
+
+```text
+VITE_BACKEND_BASE_URL
+```
+
+Trailing slashes are removed before building the endpoint URL.
+
+## CORS configuration
+
+The Worker currently permits these origins:
+
+```text
+https://lincministry.com
+http://localhost:5173
+```
+
+Allowed request headers:
+
+```text
+Content-Type
+Authorization
+```
+
+Allowed methods:
+
+```text
+GET
+POST
+OPTIONS
+```
+
+Preflight cache duration:
+
+```text
+86400 seconds
+```
+
+A request from an unrelated browser origin does not receive the allowed-origin CORS response.
+
+## API responses
+
+### Success
+
+```http
+201 Created
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "requestedCount": 2,
+    "sentCount": 2,
+    "failedCount": 0,
+    "sent": [],
+    "failed": []
+  }
+}
+```
+
+Each successful recipient entry may include Brevo's message ID.
+
+### Partial delivery
+
+```http
+207 Multi-Status
+```
+
+Used when at least one recipient succeeds and at least one fails.
+
+### Complete delivery failure
+
+```http
+502 Bad Gateway
+```
+
+Used when no invitation can be sent.
+
+### Authentication failure
+
+```http
+401 Unauthorized
+```
+
+Used when the Firebase bearer token is missing, invalid, or expired.
+
+### Invalid request
+
+```http
+400 Bad Request
+```
+
+Used for malformed JSON or Zod validation failures.
+
+## Brevo test endpoint
+
+The Worker still contains:
+
+```http
+POST /api/v1/email/test
+```
+
+Body:
+
+```json
+{
+  "sandbox": true
+}
+```
+
+Behavior:
+
+- recipient is fixed server-side through `BREVO_TEST_RECIPIENT`
+- `sandbox: true` asks Brevo to drop the message instead of delivering it
+- `sandbox: false` performs a real send to the fixed test recipient
+- the endpoint returns the provider message ID where available
+
+This endpoint was useful for confirming Worker-to-Brevo connectivity. It should eventually be removed or restricted after backend validation is complete.
+
+## Worker bindings and secrets
+
+### Non-secret Wrangler variables
+
+Configured in `backend/wrangler.jsonc`:
+
+```text
+FIREBASE_PROJECT_ID
+FIREBASE_DATABASE_URL
+```
+
+Current values:
+
+```text
+FIREBASE_PROJECT_ID=churchmeeting
+FIREBASE_DATABASE_URL=https://churchmeeting-default-rtdb.firebaseio.com
+```
+
+`FIREBASE_DATABASE_URL` is not required by the active invitation route because the role-lookup middleware is not mounted.
+
+### Local backend secrets
+
+Stored in:
+
+```text
+backend/.dev.vars
+```
+
+Expected local bindings:
+
+```text
+BREVO_API_KEY
+BREVO_SENDER_EMAIL
+BREVO_SENDER_NAME
+BREVO_TEST_RECIPIENT
+```
+
+`.dev.vars` is ignored by `backend/.gitignore` and must not be committed.
+
+### Production Worker secrets
+
+The same sensitive values are configured as Cloudflare Worker secrets:
+
+```text
+BREVO_API_KEY
+BREVO_SENDER_EMAIL
+BREVO_SENDER_NAME
+BREVO_TEST_RECIPIENT
+```
+
+The Brevo sender currently uses the verified sender account configured in Brevo.
+
+## Frontend-to-backend invitation flow
+
+```text
+Pastor is already signed into Firebase
+        ↓
+Pastor opens Add Event
+        ↓
+Pastor selects one or more participants
+        ↓
+Pastor submits the meeting form
+        ↓
+Meeting is created or updated in Firebase
+        ↓
+useMeetings.ts creates validated recipient objects
+        ↓
+meetingInvitations.ts calls currentUser.getIdToken()
+        ↓
+POST request reaches Cloudflare Worker
+        ↓
+Worker verifies Firebase token
+        ↓
+Worker validates meeting and recipients
+        ↓
+Worker builds English or Arabic email
+        ↓
+Worker calls Brevo using the secret API key
+        ↓
+Brevo returns delivery acceptance/message ID
+        ↓
+Frontend receives success or failure
+```
+
+## Why this avoids the original Brevo frontend problem
+
+The earlier Brevo approach was rejected because the email operation was attempted directly from client-side browser code.
+
+The current architecture changes the trust boundary:
+
+```text
+Before
+Browser → Brevo
+
+Now
+Browser → authenticated Worker → Brevo
+```
+
+The Brevo API key exists only in Worker secrets. The browser can neither read nor submit the key.
+
+This solves the client-side API-key exposure and browser-side provider-call problem. It does not guarantee that Brevo can never restrict the account for reputation, unusual traffic, quota, or policy reasons.
+
+## Backend testing
+
+Backend tests run with Vitest and the Cloudflare Workers test pool.
+
+Current tests cover:
+
+- root route returns `Hello Hono!`
+- invalid test-email body returns `400 VALIDATION_ERROR`
+- successful mocked Brevo sandbox request returns success
+
+Run:
+
+```bash
+cd backend
+npm test
+```
+
+Watch mode:
+
+```bash
+npm run test:watch
+```
+
+The current suite does not yet provide complete route coverage for:
+
+- Firebase token verification failures
+- meeting-invitation schema edge cases
+- English and Arabic email output
+- complete Brevo failure
+- partial recipient failure
+- CORS behavior
+
+These are recommended next tests.
+
+## Continuous integration
+
+Workflow:
+
+```text
+.github/workflows/backend-tests.yml
+```
+
+The workflow runs when backend files or the workflow itself change.
+
+It performs:
+
+```text
+Checkout
+   ↓
+Node.js setup
+   ↓
+npm ci in backend/
+   ↓
+npm test
+```
+
+The workflow validates the backend but does not deploy it.
+
+## Separate deployment systems
+
+The repository has two independent production deployment paths.
+
+### Frontend
+
+```text
+Git push
+   ↓
+Netlify build
+   ↓
+npm run build
+   ↓
+Published frontend
+```
+
+### Backend
+
+```text
+cd backend
+npx wrangler deploy
+   ↓
+Published Cloudflare Worker
+```
+
+Deploying Netlify does not deploy the Worker. Deploying the Worker does not rebuild the Netlify frontend.
+
+Both deployments must include their corresponding changes for an end-to-end feature migration.
+
+## Netlify secrets-scan configuration
+
+Netlify detected the public Firebase project ID inside:
+
+```text
+backend/wrangler.jsonc
+```
+
+because the same value is also configured as:
+
+```text
+VITE_FIREBASE_PROJECT_ID
+```
+
+The project therefore uses:
+
+```text
+SECRETS_SCAN_OMIT_KEYS=VITE_FIREBASE_PROJECT_ID
+```
+
+This prevents Netlify from treating the public Firebase project identifier as a leaked secret.
+
+The value is not marked as a secret and applies to the required deploy contexts.
+
+## Operational verification
+
+After changing the invitation workflow:
+
+1. deploy the Worker with `npx wrangler deploy`
+2. publish the Netlify frontend
+3. hard-refresh `lincministry.com`
+4. create an Add Event meeting
+5. select a participant with a valid email
+6. save the meeting
+7. inspect Brevo Transactional Logs
+8. inspect the recipient inbox and spam folder
+
+A Netlify production deployment can succeed while the Worker remains on an older version, so Brevo logs are the final provider-side confirmation that the backend route was reached.
+
 
 ---
 
 # Email and External Services
 
+## Brevo
+
+Brevo is now the active transport for **participant meeting invitations created through Add Event**.
+
+Current verified sender configuration:
+
+```text
+Sender email: lincministry.ca@gmail.com
+Sender name:  Linc ministry
+```
+
+The browser sends validated meeting and recipient data to the Cloudflare Worker. The Worker builds the bilingual content and calls Brevo with the secret API key.
+
+Custom-domain authentication has not yet been configured. Because the sender is a Gmail address delivered through Brevo, invitation messages can still be classified as spam even when Brevo accepts the transaction.
+
+The browser does not contain:
+
+- the Brevo API key
+- arbitrary HTML for the provider
+- arbitrary sender details
+- direct Brevo request code
+
 ## EmailJS
 
-The active Pastor Dashboard uses EmailJS for:
+EmailJS remains in the project for legacy workflows that have not yet moved to the backend.
 
-- Participant meeting invitations
+Current examples include:
+
+- requester status and cancellation messages in calendar workflows
 - People Development assignment notifications
-- Some requester status communications
+- other older client-side email paths
 
-Email successes and failures may be written to:
+Email successes and failures may still be written to:
 
 ```text
 emailJsSendLogs/
 ```
 
-in Firebase for operational auditing.
+for workflows that continue to use EmailJS.
+
+The presence of an EmailJS import in `useMeetings.ts` is currently caused by requester cancellation behavior. It does not mean Add Event participant invitations still use EmailJS.
 
 ## Google APIs
 
@@ -1317,15 +2184,18 @@ The legacy integration is located primarily in:
 src/services/gmail.ts
 ```
 
-That service contains both older Google behavior and active/legacy utilities. It should be separated later into focused email and calendar services.
+That service contains both older Google behavior and active/legacy utilities. It should eventually be separated into focused email and calendar services.
 
-## Important implementation reality
+## Active transport summary
 
-The README previously described all meeting invitations as Gmail API operations and all meetings as automatically creating real Google Meet links. That description is no longer universally accurate.
+| Workflow | Current transport |
+|---|---|
+| Add Event participant invitations | Cloudflare Worker → Brevo |
+| Requester cancellation/status messages | EmailJS |
+| People Development assignment notifications | EmailJS |
+| Legacy Google/Gmail/Calendar paths | Present where still referenced |
 
-The current refactored Pastor Dashboard primarily uses EmailJS for participant invitations. Google Calendar/Meet behavior may still be used by other or legacy paths, but it is not the sole active email path.
-
----
+The application therefore currently uses multiple transports during the incremental migration.
 
 # Firebase Data Areas
 
@@ -1353,28 +2223,49 @@ The exact security rules should be reviewed against the current database structu
 
 # Security Notes
 
-The application currently performs significant logic in the browser. This means Firebase rules and backend validation are essential.
+The application now has a backend boundary for participant meeting invitations, but significant logic still runs in the browser.
+
+## Improved areas
+
+- Brevo API key is stored only in Cloudflare Worker secrets
+- participant invitation payloads are validated server-side
+- participant invitation HTML is generated server-side
+- invitation requests require a valid Firebase ID token
+- CORS is restricted to the production frontend and local Vite origin
+- the endpoint cannot accept arbitrary email HTML or arbitrary sender information
+- local backend secrets are excluded through `.dev.vars`
+
+## Current limitations
+
+- the active invitation route authenticates the Firebase user but does not independently verify the `pastor` role
+- the Brevo test endpoint remains available
+- Firebase ID-token revocation is not checked through Firebase Admin
+- some EmailJS credentials/configuration and email flows still exist client-side
+- several administrative operations still depend heavily on Firebase client rules
+- booking conflict prevention is not yet enforced as a backend transaction
+- confidential People Development data still requires careful Firebase rules
+- Base64 file storage remains in Realtime Database
+- legacy OAuth behavior should still be reviewed
+- hard-coded/default role provisioning remains in `App.tsx`
 
 Important areas requiring continued review include:
 
-- Public meeting-request writes
-- Public availability reads
-- Booking race conditions
-- Duplicate booking prevention
-- Predictable or identifier-based access controls
-- Confidential People Development notes
-- Attendance information
+- public meeting-request writes
+- public availability reads
+- booking race conditions
+- duplicate booking prevention
+- predictable or identifier-based access controls
+- confidential People Development notes
+- attendance information
 - Base64 files stored in Realtime Database
-- Client-side email credentials/configuration
-- Hard-coded role provisioning
-- Legacy OAuth implicit-flow behavior
-- Browser-side administrative migrations
+- remaining client-side email configuration
+- browser-side administrative migrations
 
 The sample Firebase rules in this README are development examples only. They must not be treated as a complete production security policy.
 
----
-
 # Tech Stack
+
+## Frontend
 
 - React 19
 - TypeScript
@@ -1383,107 +2274,30 @@ The sample Firebase rules in this README are development examples only. They mus
 - Firebase Authentication
 - Firebase Realtime Database
 - Firebase Firestore initialization
-- EmailJS
-- Google Calendar API integration
-- Gmail API integration
+- EmailJS for remaining legacy email paths
+- Google Calendar/Gmail integration code
 - Motion for React
 - Lucide React
 - date-fns
 - React Router
 
----
+## Backend
 
-# Updated Project Structure
+- Cloudflare Workers
+- Hono
+- TypeScript
+- Zod
+- `jose`
+- Brevo transactional email API
+- Wrangler
+- Vitest
+- `@cloudflare/vitest-pool-workers`
 
-```text
-kiroform/
-├── src/
-│   ├── components/
-│   │   ├── AssessmentForm.tsx
-│   │   ├── BookMeeting.tsx
-│   │   ├── Layout.tsx
-│   │   ├── PageTitle.tsx
-│   │   └── pastor/
-│   │       ├── PastorDashboard.tsx
-│   │       ├── calendar/
-│   │       │   ├── calendar.constants.ts
-│   │       │   ├── calendar.email.ts
-│   │       │   ├── calendar.firebase.ts
-│   │       │   ├── calendar.forms.ts
-│   │       │   ├── calendar.slots.ts
-│   │       │   ├── calendar.types.ts
-│   │       │   ├── calendar.utils.ts
-│   │       │   └── index.ts
-│   │       ├── hooks/
-│   │       │   ├── index.ts
-│   │       │   ├── useAvailability.ts
-│   │       │   ├── useCalendarMonth.ts
-│   │       │   ├── useMeetingRequests.ts
-│   │       │   ├── useMeetings.ts
-│   │       │   ├── useNextGen.ts
-│   │       │   ├── useParticipants.ts
-│   │       │   └── usePeopleDevelopment.ts
-│   │       ├── meeting-requests/
-│   │       │   ├── MeetingRequestsSection.tsx
-│   │       │   ├── meetingRequests.actions.ts
-│   │       │   ├── meetingRequests.types.ts
-│   │       │   ├── meetingRequests.utils.ts
-│   │       │   └── index.ts
-│   │       ├── nextgen/
-│   │       │   ├── NextGenQuestionsSection.tsx
-│   │       │   ├── NextGenRegistrationsSection.tsx
-│   │       │   ├── NextGenSurveyResultsSection.tsx
-│   │       │   ├── nextgen.actions.ts
-│   │       │   ├── nextgen.constants.ts
-│   │       │   ├── nextgen.firebase.ts
-│   │       │   ├── nextgen.types.ts
-│   │       │   ├── nextgen.utils.ts
-│   │       │   └── index.ts
-│   │       ├── people-development/
-│   │       │   ├── README.md
-│   │       │   ├── PeopleAssignmentsCalendarModal.tsx
-│   │       │   ├── PeopleDevelopmentGroupPanel.tsx
-│   │       │   ├── PeopleDevelopmentSection.tsx
-│   │       │   ├── PeoplePersonalNoteModal.tsx
-│   │       │   ├── index.ts
-│   │       │   ├── peopleDevelopment.actions.ts
-│   │       │   ├── peopleDevelopment.constants.ts
-│   │       │   ├── peopleDevelopment.firebase.ts
-│   │       │   ├── peopleDevelopment.selectors.ts
-│   │       │   ├── peopleDevelopment.types.ts
-│   │       │   ├── peopleDevelopment.utils.ts
-│   │       │   └── peopleDevelopmentEmail.ts
-│   │       └── email/
-│   │           └── # Reserved for future email-service extraction
-│   ├── i18n/
-│   │   ├── index.tsx
-│   │   └── translations.ts
-│   ├── pages/
-│   │   ├── AdminDashboard.tsx
-│   │   ├── AttendancePage.tsx
-│   │   ├── BookingCalendar.tsx
-│   │   ├── CongregationGroupNotes.tsx
-│   │   ├── GuidePage.tsx
-│   │   ├── LandingPage.tsx
-│   │   ├── NextGenActivities.tsx
-│   │   ├── PeopleNotesPage.tsx
-│   │   ├── PrivacyPolicy.tsx
-│   │   └── TermsOfService.tsx
-│   ├── services/
-│   │   └── gmail.ts
-│   ├── types.ts
-│   ├── App.tsx
-│   ├── firebase.ts
-│   └── main.tsx
-├── .env
-├── .env.example
-├── netlify.toml
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
-```
+## Delivery and CI
 
----
+- Netlify for frontend builds and hosting
+- Cloudflare Workers for backend hosting
+- GitHub Actions for backend tests
 
 # Build Corrections Completed
 
@@ -1547,35 +2361,51 @@ Three unsupported `updatedAt` properties were removed from `createUnavailability
 
 ## Prerequisites
 
+### Frontend
+
 - Node.js 20 or newer
 - npm
 - Firebase project
 - Firebase Authentication
 - Firebase Realtime Database
-- EmailJS account/configuration for active email workflows
+- EmailJS account/configuration for remaining legacy workflows
 - Google Cloud project when using the legacy Google Calendar/Gmail integrations
 
----
+### Backend
 
-## Installation
+- Cloudflare account
+- Wrangler access to the `linc-backend` Worker
+- Brevo account
+- verified Brevo sender
+- Firebase project ID
+- local `.dev.vars` file for development
+
+## Repository installation
 
 ```bash
 git clone <repository-url>
-cd kiroform
+cd LInC-Church-Management
 npm install
 ```
 
----
+Install backend dependencies separately:
 
-## Environment configuration
+```bash
+cd backend
+npm install
+```
 
-Create the local environment file:
+The frontend and backend use separate `package.json` files and separate dependency installations.
+
+## Frontend environment configuration
+
+Create the local frontend environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Common variables include:
+Common frontend variables include:
 
 | Variable | Purpose |
 |---|---|
@@ -1586,6 +2416,7 @@ Common variables include:
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID |
 | `VITE_FIREBASE_APP_ID` | Firebase application ID |
 | `VITE_FIREBASE_MEASUREMENT_ID` | Firebase Analytics measurement ID |
+| `VITE_BACKEND_BASE_URL` | Optional override for the Cloudflare Worker base URL |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `VITE_GOOGLE_REDIRECT_URI` | Google OAuth redirect URI |
 | `VITE_GEMINI_API_KEY` | Legacy/optional AI configuration |
@@ -1593,9 +2424,66 @@ Common variables include:
 
 The AI variables are not required by the active Pastor Dashboard after the AI assistant removal.
 
-EmailJS configuration currently exists in application code and should eventually be moved to environment-backed configuration or a backend service.
+`VITE_BACKEND_BASE_URL` is optional because the frontend client falls back to:
 
----
+```text
+https://linc-backend.linc-ministry.workers.dev
+```
+
+## Backend local configuration
+
+Create:
+
+```text
+backend/.dev.vars
+```
+
+with:
+
+```text
+BREVO_API_KEY=<local-brevo-api-key>
+BREVO_SENDER_EMAIL=<verified-sender-email>
+BREVO_SENDER_NAME=<sender-name>
+BREVO_TEST_RECIPIENT=<fixed-test-recipient>
+```
+
+Do not commit `.dev.vars`.
+
+Non-secret Worker configuration is stored in:
+
+```text
+backend/wrangler.jsonc
+```
+
+Current non-secret variables include:
+
+```text
+FIREBASE_PROJECT_ID
+FIREBASE_DATABASE_URL
+```
+
+## Production secret configuration
+
+The production Worker requires these Cloudflare secrets:
+
+```text
+BREVO_API_KEY
+BREVO_SENDER_EMAIL
+BREVO_SENDER_NAME
+BREVO_TEST_RECIPIENT
+```
+
+They must be configured in Cloudflare, not committed to the repository.
+
+## Netlify secrets scan
+
+Netlify must include:
+
+```text
+SECRETS_SCAN_OMIT_KEYS=VITE_FIREBASE_PROJECT_ID
+```
+
+because the public Firebase project identifier also appears in `backend/wrangler.jsonc`.
 
 # Firebase Rules
 
@@ -1642,17 +2530,63 @@ Production rules must be designed around actual roles, data sensitivity, and pub
 
 # Local Development
 
-Start the Vite development server:
+## Frontend development
+
+From the repository root:
 
 ```bash
 npm run dev
 ```
 
-The configured port may vary depending on `vite.config.ts`.
+The frontend normally runs at:
 
----
+```text
+http://localhost:5173
+```
 
-# Production Build
+That origin is already allowed by the Worker's CORS configuration.
+
+## Backend development
+
+From the repository root:
+
+```bash
+cd backend
+npm run dev
+```
+
+Wrangler starts the local Worker and loads local bindings from `.dev.vars`.
+
+## Run frontend and backend together
+
+Use separate terminals.
+
+### Terminal 1
+
+```bash
+npm run dev
+```
+
+### Terminal 2
+
+```bash
+cd backend
+npm run dev
+```
+
+When testing a non-production Worker URL, set:
+
+```text
+VITE_BACKEND_BASE_URL=<local-or-preview-worker-url>
+```
+
+and restart Vite so the frontend receives the updated environment variable.
+
+# Production Build and Deployment
+
+## Frontend production build
+
+From the repository root:
 
 ```bash
 npm run build
@@ -1670,9 +2604,49 @@ dist/ output
 
 Netlify uses the same `npm run build` command from `netlify.toml`.
 
----
+## Frontend deployment
+
+Frontend changes are published through Netlify.
+
+A successful Netlify build does not deploy the Worker.
+
+## Backend tests before deployment
+
+```bash
+cd backend
+npm test
+```
+
+## Backend deployment
+
+```bash
+cd backend
+npx wrangler deploy
+```
+
+A successful Wrangler deployment publishes the Worker separately from Netlify.
+
+## End-to-end deployment order
+
+For a change that modifies both frontend and backend:
+
+```text
+1. Run backend tests
+2. Deploy Worker
+3. Push/publish frontend
+4. Wait for Netlify Published status
+5. Hard-refresh production frontend
+6. Trigger the workflow
+7. Verify provider logs
+```
+
+Provider-side verification for participant invitations is performed in Brevo Transactional Logs.
 
 # Scripts
+
+## Frontend scripts
+
+Run from the repository root.
 
 | Command | Description |
 |---|---|
@@ -1681,7 +2655,16 @@ Netlify uses the same `npm run build` command from `netlify.toml`.
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run ESLint when configured |
 
----
+## Backend scripts
+
+Run from `backend/`.
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the local Cloudflare Worker with Wrangler |
+| `npm test` | Run the backend Vitest suite once |
+| `npm run test:watch` | Run backend tests in watch mode |
+| `npx wrangler deploy` | Deploy the Worker to Cloudflare |
 
 # Admin Access
 
@@ -1700,7 +2683,7 @@ Role and account management should eventually move out of hard-coded client logi
 
 # Remaining Refactor Work
 
-The current refactor significantly improved the Pastor Dashboard, but additional cleanup remains.
+The Pastor Dashboard refactor and the first backend email migration are complete, but additional cleanup remains.
 
 ## Recommended next extractions
 
@@ -1720,23 +2703,58 @@ PastorDashboardToolbar.tsx
 
 This can reduce `PastorDashboard.tsx` from approximately 1,603 lines toward a target of roughly 500–700 lines.
 
-### Email services
+### Remaining email migrations
 
-Move email creation and sending into:
-
-```text
-src/components/pastor/email/
-```
-
-Suggested modules:
+Move the remaining client-side EmailJS workflows behind the Worker incrementally:
 
 ```text
-meetingInvitationEmail.ts
-peopleDevelopmentNotificationEmail.ts
-emailJsLogger.ts
+requesterConfirmation.routes.ts
+requesterCancellation.routes.ts
+peopleDevelopmentNotification.routes.ts
 ```
 
-### Styling
+Priority candidates:
+
+1. requester confirmation/status emails
+2. requester cancellation emails
+3. People Development assignment notifications
+4. operational email logging
+
+Each migration should preserve the existing frontend behavior and move only the sensitive provider operation to the backend.
+
+### Backend test expansion
+
+Add automated coverage for:
+
+- missing bearer token
+- invalid Firebase token
+- valid authenticated invitation request
+- malformed JSON
+- invalid calendar dates
+- invalid time ranges
+- more than 50 recipients
+- English email content
+- Arabic RTL email content
+- HTML escaping
+- complete Brevo failure
+- partial-recipient failure
+- CORS preflight behavior
+
+### Test endpoint cleanup
+
+After production validation is stable, remove or restrict:
+
+```text
+POST /api/v1/email/test
+```
+
+### Authorization decision
+
+The current endpoint authenticates an existing Firebase account but does not perform a backend role lookup.
+
+A future authorization change should be treated as a separate design decision rather than being bundled into email transport migration.
+
+### Calendar styling
 
 Move the large inline dashboard `<style>` block into a stylesheet or focused styling module.
 
@@ -1754,32 +2772,31 @@ and separate:
 - Google Calendar behavior
 - Google Meet behavior
 - EmailJS behavior
-- Legacy placeholder behavior
+- legacy placeholder behavior
 
 ### Dependency cleanup
 
 After active imports are verified, remove:
 
-- Unused OpenAI dependencies
-- Unused AI environment variables
-- Unused AI translation strings
-- Obsolete calendar files
-- Unused duplicate booking components
-- Dead Google/OAuth utilities
+- unused OpenAI dependencies
+- unused AI environment variables
+- unused AI translation strings
+- obsolete calendar files
+- unused duplicate booking components
+- dead Google/OAuth utilities
+- dead authorization experiments that are intentionally abandoned
 
-### Backend migration
+### Additional backend candidates
 
-Move privileged workflows from the browser into a backend/API, especially:
+Potential later migrations include:
 
-- Role enforcement
-- Meeting acceptance/rejection
-- Email sending
-- File upload validation
-- Booking conflict transactions
-- Audit logging
-- Confidential People Development operations
-
----
+- meeting-request decisions
+- booking conflict transactions
+- audit logging
+- confidential People Development operations
+- file upload validation
+- secure Google Calendar/Meet creation
+- administrative configuration
 
 # Refactor Principles
 
@@ -1790,17 +2807,66 @@ The project now follows these boundaries:
 | Page composition | `PastorDashboard.tsx` |
 | Stateful React orchestration | `hooks/` |
 | Visual rendering | Feature components |
-| Firebase subscriptions and writes | `*.firebase.ts` |
-| Business workflows | `*.actions.ts` |
+| Frontend Firebase subscriptions and writes | `*.firebase.ts` |
+| Frontend business workflows | `*.actions.ts` |
 | Pure calculations and filtering | `*.selectors.ts`, `*.utils.ts`, `*.slots.ts` |
 | Shared types | `*.types.ts` |
 | Shared constants | `*.constants.ts` |
-| Email HTML builders | Email modules |
-| Routing and role guards | `App.tsx` |
+| Frontend API clients | `src/services/` |
+| Backend routing | `backend/src/routes/` |
+| Backend authentication | `backend/src/auth/`, `backend/src/middleware/` |
+| Backend validation | `backend/src/schemas/` |
+| Backend email builders | `backend/src/emails/` |
+| External provider clients | `backend/src/services/` |
+| Worker configuration | `backend/wrangler.jsonc` |
+| Local Worker secrets | `backend/.dev.vars` |
+| Backend automated tests | `backend/test/` |
+| Backend CI | `.github/workflows/backend-tests.yml` |
+| Frontend routing and existing role guards | `App.tsx` |
 
-This structure prevents the creation of another single 3,000-line component and makes each area easier to test, replace, and eventually move behind an API.
+## Incremental migration rule
 
----
+The backend is introduced one workflow at a time:
+
+```text
+Preserve existing frontend behavior
+        ↓
+Create a narrow validated API contract
+        ↓
+Reuse the existing Firebase session
+        ↓
+Move the sensitive provider call to the Worker
+        ↓
+Test locally
+        ↓
+Deploy Worker and frontend independently
+        ↓
+Verify provider logs
+```
+
+This approach avoids a risky all-at-once rewrite while still moving secrets and provider calls out of the browser.
+
+## Separation rule
+
+The meeting invitation implementation follows:
+
+```text
+Frontend form state
+        ≠
+Frontend API client
+        ≠
+Backend route
+        ≠
+Backend schema
+        ≠
+Email content builder
+        ≠
+Brevo transport
+```
+
+Each layer can be tested or replaced without rebuilding every other layer.
+
+This structure prevents another single 3,000-line component and provides a practical path toward a broader three-tier architecture.
 
 # License
 
