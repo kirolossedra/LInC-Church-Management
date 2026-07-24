@@ -4,7 +4,7 @@ A bilingual English/Arabic church administration platform for LINC Ministries' L
 
 The application uses a React/TypeScript/Vite frontend, Firebase Authentication and Realtime Database, and an incremental Cloudflare Workers backend. Sensitive participant meeting-invitation delivery has been moved out of the browser and now runs through a Hono API and Brevo. Other legacy EmailJS and Google integration paths remain in use where explicitly documented.
 
-## Project hierarchy
+## Project Hierarchy
 
 ```text
 LInC-Church-Management/
@@ -125,8 +125,11 @@ LInC-Church-Management/
 
 > `backend/src/middleware/authorization.middleware.ts` exists from the initial backend work, but the active meeting-invitation route does not perform a Firebase Realtime Database role lookup. It authenticates the already signed-in Firebase user only.
 
-## Table of contents
+---
 
+## Table of Contents
+
+- [Project Hierarchy](#project-hierarchy)
 - [Major Refactor Completed](#major-refactor-completed)
 - [AI Assistant Removal](#ai-assistant-removal)
 - [Pastor Dashboard Relocation](#pastor-dashboard-relocation)
@@ -2122,7 +2125,6 @@ After changing the invitation workflow:
 8. inspect the recipient inbox and spam folder
 
 A Netlify production deployment can succeed while the Worker remains on an older version, so Brevo logs are the final provider-side confirmation that the backend route was reached.
-
 
 ---
 
