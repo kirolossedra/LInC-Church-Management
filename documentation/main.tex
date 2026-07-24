@@ -40,8 +40,8 @@
 % ============================================================
 \newcommand{\DocumentTitle}{LINC Ministry Portal}
 \newcommand{\DocumentSubtitle}{Current-State Technical Assessment, Target Architecture, and Enterprise Modernization Plan}
-\newcommand{\DocumentVersion}{1.1}
-\newcommand{\DocumentStatus}{Architecture Baseline and Modernization Specification}
+\newcommand{\DocumentVersion}{1.2}
+\newcommand{\DocumentStatus}{Architecture Baseline, Implemented Backend Slice, and Modernization Specification}
 \newcommand{\DocumentAuthor}{Kirolos Sedra}
 \newcommand{\DocumentAffiliation}{T-TLabs / LINC Ministry}
 \newcommand{\DocumentClassification}{Confidential -- Internal Use Only}
@@ -284,6 +284,7 @@ Review basis & Source-code inspection of the provided React, Firebase, YAML, ser
 \rowcolor{primary}
 \textcolor{white}{\textbf{Version}} & \textcolor{white}{\textbf{Date}} & \textcolor{white}{\textbf{Author}} & \textcolor{white}{\textbf{Change Summary}} \\
 \midrule
+1.2 & July 24, 2026 & \DocumentAuthor & Documented the implemented Cloudflare Worker backend foundation and the completed participant meeting-invitation migration from browser-side EmailJS to authenticated backend Brevo delivery, including Hono routing, Zod validation, Firebase ID-token verification, bilingual email generation, Worker secrets, CORS, Vitest tests, GitHub Actions, Netlify secret-scan remediation, separate frontend/backend deployment, production troubleshooting, current limitations, and skills learned. \\
 1.1 & July 22, 2026 & \DocumentAuthor & Added the implemented landing-page floating action dock: scroll-triggered promotion of hero actions, viewport-safe responsive layout, return animation, reduced-motion behavior, and related testing and acceptance requirements. \\
 1.0 & July 22, 2026 & \DocumentAuthor & Initial enterprise documentation baseline covering current-state analysis, target architecture, security model, migration plan, and delivery roadmap. \\
 \bottomrule
@@ -292,7 +293,7 @@ Review basis & Source-code inspection of the provided React, Firebase, YAML, ser
 \end{table}
 
 \begin{warningbox}[-- Controlled Baseline]
-This document is an architecture and modernization baseline. It deliberately describes the existing implementation candidly. It must not be interpreted as evidence that the current production system already satisfies the target controls. Any statement marked as a target, recommendation, or acceptance criterion remains unimplemented until verified through code, infrastructure, tests, and deployment evidence.
+This document is an architecture and modernization baseline. It deliberately describes the existing implementation candidly. The Cloudflare Worker backend foundation and participant meeting-invitation migration documented in the implemented-backend chapter are completed current-state work supported by code, tests, and deployment evidence. The broader target architecture, role model, database migration, and enterprise controls remain recommendations until separately verified through code, infrastructure, tests, and deployment evidence.
 \end{warningbox}
 
 % ---------------- TOC ----------------
@@ -313,25 +314,21 @@ This document is an architecture and modernization baseline. It deliberately des
 
 The LINC Ministry Portal has evolved from a bilingual spiritual-gifts assessment into a broad ministry operations platform. Its current feature set includes configurable assessments, public meeting requests, Pastor calendar management, NextGen participation, attendance tracking, People Development groups, confidential pastoral notes, bilingual presentation, email notifications, and several administrative functions.
 
-The implementation demonstrates substantial product discovery and domain knowledge. It also contains several useful transactional ideas, such as Firebase transactions for unique NextGen identifiers and voting. The landing page now additionally includes a responsive, scroll-aware floating action dock that preserves access to the six primary actions after the original hero buttons leave the viewport and restores the normal layout when the user scrolls back to the top. However, the system has grown through incremental frontend additions without a governing backend boundary or unified domain model. The result is a feature-rich but structurally fragile application.
+The implementation demonstrates substantial product discovery and domain knowledge. It also contains several useful transactional ideas, such as Firebase transactions for unique NextGen identifiers and voting. The landing page now additionally includes a responsive, scroll-aware floating action dock that preserves access to the six primary actions after the original hero buttons leave the viewport and restores the normal layout when the user scrolls back to the top.
+
+A first production backend slice has now been implemented. A Cloudflare Worker using Hono, TypeScript, Zod, and \texttt{jose} receives authenticated participant meeting-invitation requests from the React frontend, validates the payload, generates bilingual English/Arabic email content, and calls Brevo using a Worker-side secret. The frontend continues to use its existing Firebase Authentication session, so no additional login screen or pastor-facing authentication step was introduced. Vitest tests and GitHub Actions protect the backend foundation, while Netlify and Cloudflare Workers remain separate deployment surfaces.
 
 \begin{criticalbox}[-- Primary Architectural Finding]
-The current two-tier model, in which the React frontend reads and writes Firebase data directly, is not suitable as the long-term architecture for a system containing confidential pastoral records, attendance history, participant identities, administrative permissions, booking decisions, and externally triggered notifications.
+The application is now a hybrid system rather than a completely two-tier application: participant meeting invitations use a protected backend path, but most domains still read and write Firebase or invoke legacy providers directly from the browser. The remaining direct-client access model is not suitable as the long-term architecture for confidential pastoral records, attendance history, participant identities, administrative permissions, booking decisions, and other sensitive workflows.
 \end{criticalbox}
 
-The central modernization decision is to move from:
+The central modernization direction remains:
 
 \begin{center}
-\textbf{Frontend $\rightarrow$ Database}
+\textbf{Frontend $\rightarrow$ Backend/API $\rightarrow$ Database and External Services}
 \end{center}
 
-to:
-
-\begin{center}
-\textbf{Frontend $\rightarrow$ Backend/API $\rightarrow$ Database}
-\end{center}
-
-The backend will become the authoritative enforcement and orchestration layer for authorization, validation, transactions, privacy boundaries, notifications, audit logging, rate limiting, file handling, and migrations. This direction also aligns the project with the owner's backend-engineering expertise and makes the resulting product materially easier to secure, maintain, commercialize, and transfer.
+The implemented invitation service proves this migration pattern in production. The backend must progressively become the authoritative enforcement and orchestration layer for authorization, validation, transactions, privacy boundaries, notifications, audit logging, rate limiting, file handling, and migrations. This direction aligns the project with the owner's backend-engineering expertise and makes the resulting product materially easier to secure, maintain, commercialize, and transfer.
 
 \section{Modernization Outcome}
 
@@ -362,12 +359,12 @@ The target product will provide:
 \rowcolor{primary}
 \textcolor{white}{\textbf{Decision Area}} & \textcolor{white}{\textbf{Disposition}} & \textcolor{white}{\textbf{Summary}} \\
 \midrule
-Application architecture & \statusrefactor & Introduce a backend/API tier and prohibit direct client access to confidential data branches. \\
+Application architecture & \statusactive & First backend slice implemented for authenticated Brevo meeting invitations; continue migrating sensitive domains and prohibit direct client access to confidential data branches. \\
 Authorization & \statusrefactor & Replace role booleans and client-side checks with backend-enforced capabilities. \\
 Superadmin model & \statusremove & Remove the existing superadmin role, dashboard, automatic provisioning, and related navigation. \\
 Admin methodology & \statusnew & Introduce General Admin, Testing Admin, Admin Mode, publishing workflows, and permission delegation with separation of duties. \\
 AI calendar and booking controls & \statusremove & Delete the AI booking assistant and high-risk AI calendar mutation functions. \\
-Google/Gmail integration & \statusremove & Remove non-operational Google OAuth, Gmail API, Google Calendar, and fake Meet-link functionality. \\
+Email and legacy Google integration & \statusrefactor & Participant invitations now use backend Brevo delivery. Remove non-operational Google OAuth, Gmail API, Google Calendar, and fake Meet-link functionality; migrate remaining EmailJS workflows incrementally. \\
 Booking & \statusrefactor & Retain one booking implementation and move conflict prevention to backend transactions. \\
 Member identity & \statusrefactor & Consolidate fragmented person records into a canonical member model. \\
 Files & \statusrefactor & Move base64 PDFs out of Realtime Database into managed object storage. \\
@@ -522,29 +519,36 @@ The strongest value is not the number of screens. It is the accumulated ministry
 
 \section{Current Deployment Model}
 
-The current system is a browser-based React application built with TypeScript and Vite. Firebase Authentication is used for selected protected routes, while Firebase Realtime Database is accessed directly from the browser for most application data. EmailJS is used for operational email in several flows. Legacy code also references Google OAuth, Gmail, Google Calendar, fake Meet links, OpenRouter, and browser-side AI clients.
+The system now uses a hybrid deployment model. The React 19 and TypeScript frontend is built with Vite and hosted on Netlify at \path{https://lincministry.com}. Firebase Authentication and Firebase Realtime Database remain the primary identity and persistence platforms for the existing application. A separate Cloudflare Worker backend is deployed at \path{https://linc-backend.linc-ministry.workers.dev}. The Worker currently owns participant meeting-invitation delivery through Brevo.
+
+Netlify and Cloudflare Workers are independent production surfaces. A successful Netlify deployment does not update the Worker, and a successful Wrangler deployment does not rebuild the frontend. Any change to the frontend/backend API contract therefore requires compatible versions to be deployed to both platforms.
 
 \begin{figure}[H]
 \centering
-\resizebox{0.94\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
-  box/.style={draw=primary, rounded corners, fill=lightgray, minimum width=4.0cm, minimum height=1.25cm, align=center, thick},
+  box/.style={draw=primary, rounded corners, fill=lightgray, minimum width=4.3cm, minimum height=1.2cm, align=center, thick},
+  backend/.style={draw=secondary, rounded corners, fill=secondary!8, minimum width=4.3cm, minimum height=1.2cm, align=center, thick},
+  external/.style={draw=accent!80!black, rounded corners, fill=accent!10, minimum width=4.0cm, minimum height=1.1cm, align=center},
   legacy/.style={draw=warnred, rounded corners, fill=warnred!6, minimum width=4.0cm, minimum height=1.05cm, align=center},
   arrow/.style={-{Latex[length=3mm]}, thick, color=secondary}
 ]
-  \node[box] (browser) at (0,0) {React / TypeScript Frontend\\Public and staff interfaces};
-  \node[box] (firebase) at (6.2,0) {Firebase Realtime Database\\Direct browser reads and writes};
-  \node[box] (auth) at (6.2,2.1) {Firebase Authentication};
-  \node[box] (email) at (6.2,-2.1) {EmailJS};
-  \node[legacy] (legacy) at (0,-2.1) {Legacy Google / Gmail / Calendar\\OpenRouter / AI client code};
+  \node[box] (browser) at (0,1.4) {Netlify Frontend\\React, TypeScript, Vite};
+  \node[box] (firebase) at (6.5,2.7) {Firebase Authentication\\and Realtime Database};
+  \node[backend] (worker) at (6.5,0.1) {Cloudflare Worker Backend\\Hono, Zod, \texttt{jose}};
+  \node[external] (brevo) at (13.0,0.1) {Brevo Transactional Email};
+  \node[legacy] (emailjs) at (6.5,-2.5) {Remaining Legacy EmailJS\\and selected client workflows};
 
-  \draw[arrow] (browser) -- (firebase);
-  \draw[arrow] (browser.north east) -- (auth.west);
-  \draw[arrow] (browser.south east) -- (email.west);
-  \draw[arrow] (browser) -- (legacy);
+  \draw[arrow] (browser.north east) -- (firebase.west);
+  \draw[arrow] (browser.east) -- node[above,fill=white,inner sep=2pt]{Firebase ID token + JSON} (worker.west);
+  \draw[arrow] (worker.east) -- node[above,fill=white,inner sep=2pt]{server-side API key} (brevo.west);
+  \draw[arrow] (browser.south east) -- (emailjs.west);
 \end{tikzpicture}}
-\caption{Current two-tier architecture: the browser directly owns database access and external service calls}
+\caption{Current hybrid architecture after the first backend migration}
 \end{figure}
+
+The backend is located inside the same repository under \path{backend/}, but it has its own \texttt{package.json}, source tree, tests, configuration, and deployment command.
+
 
 \section{Technology Inventory}
 
@@ -556,36 +560,46 @@ The current system is a browser-based React application built with TypeScript an
 \rowcolor{primary}
 \textcolor{white}{\textbf{Layer}} & \textcolor{white}{\textbf{Technology}} & \textcolor{white}{\textbf{Current Use}} \\
 \midrule
-Frontend & React, TypeScript, Vite & Page rendering, business logic, data access, validation, role checks, transactions, email calls, PDF generation, and direct database mutation. \\
+Frontend & React 19, TypeScript, Vite & Page rendering, feature orchestration, Firebase client access, meeting forms, and typed calls to the invitation backend. \\
+Frontend hosting & Netlify & Production frontend builds and deployment at \path{https://lincministry.com}; repository secret scanning is enabled. \\
 UI & Tailwind-style utility classes, Motion, AnimatePresence, Lucide icons, IntersectionObserver & Responsive bilingual interfaces, hero animations, carousel interactions, and a scroll-triggered floating action dock with reduced-motion support. \\
-Identity & Firebase Authentication & Google and email/password flows are present; Google is not operationally required. \\
+Identity & Firebase Authentication & Existing Google and email/password sessions; the invitation client silently obtains the current Firebase ID token. \\
 Database & Firebase Realtime Database & Main storage for assessments, meetings, requests, availability, NextGen, attendance, groups, and notes. \\
+Backend & Cloudflare Workers, Hono, TypeScript & First production API slice for authenticated participant meeting invitations and Brevo test delivery. \\
+Runtime validation & Zod & Strict meeting-invitation request validation, including recipients, date, time ordering, locale, location, and optional meeting URL. \\
+Token verification & \texttt{jose} & Firebase ID-token signature, issuer, audience, subject, and time-claim verification in the Worker. \\
+Backend deployment & Wrangler & Local Worker development and explicit production deployment using \texttt{npx wrangler deploy}. \\
+Email & Brevo and EmailJS & Participant meeting invitations use backend Brevo delivery; cancellation, People Development, and other legacy flows may still use EmailJS. \\
+Testing & Vitest, Cloudflare Vitest pool & Worker-compatible route tests with mocked outbound Brevo requests. \\
+Continuous integration & GitHub Actions & Backend tests run on relevant pushes and pull requests; deployment is not currently automated. \\
 Storage & Base64 in Realtime Database; bucket configured & PDFs are embedded in database records; Firebase Storage is configured but not consistently used. \\
-Email & EmailJS & Operational notification mechanism, duplicated across modules. \\
 Legacy integrations & Gmail API, Google Calendar, OpenRouter & Referenced but not operationally required and selected for removal. \\
-Configuration & YAML, environment variables, local constants & Assessment definitions and runtime service configuration. \\
-Localization & Custom React context and flat dictionary & English/Arabic locale switching with significant inline-string duplication. \\
+Configuration & YAML, environment variables, Wrangler variables, Worker secrets & Assessment definitions, public Firebase identifiers, local \texttt{.dev.vars}, and protected Brevo credentials. \\
+Localization & Custom React context and flat dictionary & English/Arabic locale switching with significant inline-string duplication; backend invitation templates support English and Arabic. \\
 \bottomrule
 \end{tabularx}
-\caption{Current technology inventory}
+\caption{Current technology inventory after the backend foundation}
 \end{table}
+
 
 \section{Current Authentication and Authorization}
 
-The current authorization model uses an \texttt{admins/} database branch, email-address key normalization, and role labels such as \texttt{superadmin} and \texttt{pastor}. Client components determine access and available actions. The frontend also contains automatic provisioning logic for hard-coded default administrator emails.
+The frontend continues to use Firebase Authentication and the existing \path{admins/} database branch for staff access decisions. Client components still interpret role labels and determine access to most current workflows.
 
-This approach has four major weaknesses:
+The new participant meeting-invitation endpoint adds a narrower backend authentication boundary. The frontend obtains the current Firebase ID token from the already signed-in user and sends it through:
 
-\begin{enumerate}
-  \item Role data is retrieved and interpreted in the browser.
-  \item UI restrictions can be mistaken for authorization controls.
-  \item Hard-coded account provisioning creates an uncontrolled privilege path.
-  \item The role model does not represent the intended separation between Pastor authority and technical administration.
-\end{enumerate}
+\begin{lstlisting}
+Authorization: Bearer <firebase-id-token>
+\end{lstlisting}
 
-\begin{warningbox}[-- Security Dependency]
-Firebase Security Rules may mitigate some direct-client risks, but the reviewed application cannot rely on unverified Rules as a substitute for a backend. The future design must enforce all sensitive decisions through server-side authorization and data-access policies.
+The Worker verifies the token using Google's Firebase signing keys and the \texttt{churchmeeting} project audience and issuer. Invalid, expired, or missing tokens are rejected with \texttt{401}. This reuses the existing Firebase session and does not introduce another login interface.
+
+The implemented backend route currently proves authentication, not complete pastor-role authorization. An attempted backend Realtime Database role lookup was intentionally removed because it expanded the migration into an unrequested role-system redesign. The existing frontend pastor-access model remains unchanged for this slice. The long-term target remains backend-enforced capabilities for all sensitive actions.
+
+\begin{warningbox}[-- Current Authorization Boundary]
+A valid Firebase account can satisfy the current invitation endpoint's authentication check. The route does not yet prove the caller's Pastor capability. This is an accepted transitional boundary for the implemented slice, not the final enterprise authorization model. Anonymous access is blocked, but role enforcement, token-revocation checks, and rate limiting remain future controls.
 \end{warningbox}
+
 
 \section{Current Code Organization}
 
@@ -602,6 +616,523 @@ The current organization leads to:
 \end{itemize}
 
 % ============================================================
+
+% ============================================================
+\chapter{Implemented Backend Foundation and Brevo Meeting Invitations}
+% ============================================================
+
+\section{Implementation Status}
+
+This chapter documents completed implementation work rather than a future-state recommendation. The backend foundation, test route, Firebase token verification, participant meeting-invitation route, frontend client, automated tests, GitHub Actions workflow, CORS configuration, Netlify adjustment, and Cloudflare deployment were implemented during the July 24, 2026 backend work.
+
+\begin{notebox}[-- Completed Production Slice]
+The migrated participant meeting-invitation path now follows \texttt{React frontend $\rightarrow$ authenticated Cloudflare Worker $\rightarrow$ Brevo}. The Brevo API key is no longer required in browser code for this workflow.
+\end{notebox}
+
+\section{Scope and Migration Decision}
+
+The backend work was intentionally incremental. It did not attempt to rewrite the entire Firebase application, replace the database, or redesign every permission. The selected first workflow was participant meeting invitations created from the Pastor Dashboard's Add Event form.
+
+The previous sensitive path was conceptually:
+
+\begin{center}
+\texttt{Pastor Dashboard $\rightarrow$ browser EmailJS/provider call}
+\end{center}
+
+The implemented path is:
+
+\begin{center}
+\texttt{Pastor Dashboard $\rightarrow$ frontend API client $\rightarrow$ Cloudflare Worker $\rightarrow$ Brevo}
+\end{center}
+
+Meeting creation and the existing Firebase data model remain in place. Only the sensitive external email-provider call was moved behind the backend for this feature.
+
+\section{Repository and File Hierarchy}
+
+The backend was created in the existing repository under \path{backend/}. The implemented hierarchy is:
+
+\begin{lstlisting}
+backend/
+|-- src/
+|   |-- auth/
+|   |   `-- firebaseAuth.ts
+|   |-- emails/
+|   |   `-- meetingInvitation.email.ts
+|   |-- middleware/
+|   |   `-- authentication.middleware.ts
+|   |-- routes/
+|   |   `-- meetingInvitations.routes.ts
+|   |-- schemas/
+|   |   `-- meetingInvitation.schema.ts
+|   |-- services/
+|   |   `-- brevo.service.ts
+|   `-- index.ts
+|-- test/
+|   `-- index.spec.ts
+|-- .dev.vars
+|-- .gitignore
+|-- package.json
+|-- vitest.config.ts
+`-- wrangler.jsonc
+\end{lstlisting}
+
+The frontend additions and modified integration point are:
+
+\begin{lstlisting}
+src/
+|-- services/
+|   `-- meetingInvitations.ts
+`-- components/
+    `-- pastor/
+        `-- hooks/
+            `-- useMeetings.ts
+\end{lstlisting}
+
+The GitHub Actions workflow is stored at:
+
+\begin{lstlisting}
+.github/workflows/backend-tests.yml
+\end{lstlisting}
+
+\section{Backend Initialization}
+
+The backend was scaffolded using the Hono Cloudflare Workers template. The initial root route returned:
+
+\begin{lstlisting}
+Hello Hono!
+\end{lstlisting}
+
+This route remains a basic health check. The backend package contains its own dependencies and scripts, allowing frontend and backend development to remain separated even though they share one repository.
+
+The principal backend dependencies are:
+
+\begin{itemize}
+  \item \textbf{Hono} for routing, middleware, JSON responses, and CORS.
+  \item \textbf{Zod} for runtime validation.
+  \item \textbf{\texttt{jose}} for Firebase JWT verification.
+  \item \textbf{Wrangler} for Worker development and deployment.
+  \item \textbf{Vitest} and \textbf{\texttt{@cloudflare/vitest-pool-workers}} for testing.
+\end{itemize}
+
+\section{Configuration and Secret Management}
+
+The backend distinguishes public configuration from secret provider credentials.
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{lightgray}{white}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\rowcolor{primary}
+\textcolor{white}{\textbf{Binding}} & \textcolor{white}{\textbf{Classification}} & \textcolor{white}{\textbf{Purpose}} \\
+\midrule
+\texttt{FIREBASE\_PROJECT\_ID} & Public configuration & Firebase token audience and issuer validation; current value is \texttt{churchmeeting}. \\
+\texttt{FIREBASE\_DATABASE\_URL} & Public configuration & Current Realtime Database identifier; retained for future backend use although no role lookup is used in the invitation route. \\
+\texttt{BREVO\_API\_KEY} & Secret & Authorizes the Worker to call Brevo. \\
+\texttt{BREVO\_SENDER\_EMAIL} & Protected configuration & Current verified sender address used by the Worker. \\
+\texttt{BREVO\_SENDER\_NAME} & Protected configuration & Display name for outgoing mail. \\
+\texttt{BREVO\_TEST\_RECIPIENT} & Protected configuration & Fixed recipient for the temporary backend test endpoint. \\
+\bottomrule
+\end{tabularx}
+\caption{Implemented Worker configuration}
+\end{table}
+
+Local development values are stored in:
+
+\begin{lstlisting}
+backend/.dev.vars
+\end{lstlisting}
+
+The file is ignored by Git, and the ignore behavior was explicitly verified. Production provider values are configured as Cloudflare Worker secrets rather than committed to \texttt{wrangler.jsonc}.
+
+The current non-secret Worker variables in \texttt{wrangler.jsonc} include:
+
+\begin{lstlisting}
+"vars": {
+  "FIREBASE_PROJECT_ID": "churchmeeting",
+  "FIREBASE_DATABASE_URL":
+    "https://churchmeeting-default-rtdb.firebaseio.com"
+}
+\end{lstlisting}
+
+\section{Brevo Test Endpoint}
+
+A temporary test endpoint was implemented before the real application workflow:
+
+\begin{lstlisting}
+POST /api/v1/email/test
+\end{lstlisting}
+
+The request accepts a strict \texttt{sandbox} Boolean. In sandbox mode, the Worker sends the Brevo header:
+
+\begin{lstlisting}
+X-Sib-Sandbox: drop
+\end{lstlisting}
+
+This allows provider validation without delivery. The endpoint uses a fixed server-side recipient and therefore does not accept an arbitrary browser-provided address.
+
+The endpoint was validated locally with a real email and after deployment with a production sandbox request.
+
+\section{CORS Configuration}
+
+The Worker applies CORS middleware to \path{/api/*}. The allowed origins are:
+
+\begin{lstlisting}
+https://lincministry.com
+http://localhost:5173
+\end{lstlisting}
+
+The allowed request headers are:
+
+\begin{lstlisting}
+Content-Type
+Authorization
+\end{lstlisting}
+
+The allowed methods are:
+
+\begin{lstlisting}
+GET
+POST
+OPTIONS
+\end{lstlisting}
+
+The preflight cache duration is 86,400 seconds. Production preflight behavior was verified before the invitation route was connected.
+
+\section{Firebase ID-Token Verification}
+
+The file \path{backend/src/auth/firebaseAuth.ts} uses \texttt{createRemoteJWKSet} and \texttt{jwtVerify} from \texttt{jose}. Verification is restricted to \texttt{RS256}. The expected audience is the Firebase project ID, and the expected issuer is:
+
+\begin{lstlisting}
+https://securetoken.google.com/churchmeeting
+\end{lstlisting}
+
+The verification module validates the token signature and standard time constraints, verifies issued-at and authentication-time claims, validates the subject length, and returns a normalized authenticated user containing:
+
+\begin{lstlisting}
+uid
+email
+emailVerified
+name
+picture
+signInProvider
+\end{lstlisting}
+
+The middleware at \path{backend/src/middleware/authentication.middleware.ts} requires the Bearer header, verifies the token once, and stores both the user and token in the Hono request context.
+
+The existing Firebase session is reused. The browser does not ask the Pastor to sign in a second time. Firebase can refresh the ID token through the existing authenticated session when required.
+
+\section{Authorization Scope Correction}
+
+During implementation, a backend middleware was initially created to query \path{admins/} and require the exact \texttt{pastor} value. This introduced a wider role-authorization redesign that was outside the intended migration scope. The role lookup was rejected and removed from the invitation route.
+
+A subsequent suggestion to remove all token-authentication files was also corrected because it would have made the Brevo endpoint anonymously callable.
+
+The accepted implementation is:
+
+\begin{itemize}
+  \item Require a valid Firebase-authenticated account.
+  \item Reuse the existing frontend session.
+  \item Do not introduce another login.
+  \item Do not perform a new backend Pastor-role lookup in this slice.
+  \item Preserve the current frontend Pastor-access model.
+\end{itemize}
+
+\section{Meeting Invitation Request Schema}
+
+The Zod schema at \path{backend/src/schemas/meetingInvitation.schema.ts} accepts:
+
+\begin{lstlisting}
+{
+  "locale": "en",
+  "recipients": [
+    {
+      "email": "member@example.com",
+      "name": "Member Name"
+    }
+  ],
+  "meeting": {
+    "title": "Meeting title",
+    "date": "2026-07-30",
+    "startTime": "10:00",
+    "endTime": "11:00",
+    "location": "LINC Ministry",
+    "meetLink": ""
+  }
+}
+\end{lstlisting}
+
+Validation includes:
+
+\begin{itemize}
+  \item Locale restricted to English or Arabic.
+  \item At least one recipient and a bounded recipient count.
+  \item Valid recipient email syntax and field lengths.
+  \item Strict \texttt{YYYY-MM-DD} calendar-date validation.
+  \item Strict 24-hour \texttt{HH:mm} time validation.
+  \item Meeting end time after start time.
+  \item Required title and bounded location.
+  \item Empty meeting link or a valid URL.
+  \item Rejection of unknown object fields through strict schemas.
+\end{itemize}
+
+\section{Bilingual Email Builder}
+
+The pure builder at \path{backend/src/emails/meetingInvitation.email.ts} creates English or Arabic invitation content. It generates both HTML and plain text.
+
+The builder:
+
+\begin{itemize}
+  \item Formats dates and times with \texttt{Intl.DateTimeFormat}.
+  \item Uses right-to-left HTML layout for Arabic.
+  \item Includes title, date, time, location, recipient name, and optional link.
+  \item Escapes user-controlled values before placing them into HTML.
+  \item Applies a fallback location when no location is supplied.
+  \item Does not call Firebase, Hono, Brevo, React, or another external service.
+\end{itemize}
+
+Keeping this function pure makes the email content independently testable.
+
+\section{Reusable Brevo Provider Service}
+
+The file \path{backend/src/services/brevo.service.ts} owns direct communication with:
+
+\begin{lstlisting}
+https://api.brevo.com/v3/smtp/email
+\end{lstlisting}
+
+It accepts recipient data and prepared email content, injects the Worker-side sender and API key, parses the provider response, extracts the message ID, and throws a structured \texttt{BrevoRequestError} when delivery fails.
+
+The meeting route does not contain the low-level provider implementation, and the provider service does not contain meeting-domain rules.
+
+\section{Meeting Invitation API}
+
+The production route is:
+
+\begin{lstlisting}
+POST /api/v1/meeting-invitations
+\end{lstlisting}
+
+The route execution order is:
+
+\begin{enumerate}
+  \item Verify the Firebase ID token.
+  \item Parse the JSON request.
+  \item Validate the payload with Zod.
+  \item Build one localized email per valid recipient.
+  \item Send each invitation through the Brevo service.
+  \item Collect successful and failed results.
+  \item Return a structured result.
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\rowcolors{2}{lightgray}{white}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\rowcolor{primary}
+\textcolor{white}{\textbf{Status}} & \textcolor{white}{\textbf{Meaning}} \\
+\midrule
+\texttt{201} & All requested invitations were delivered successfully. \\
+\texttt{207} & Some invitations were delivered and some failed. \\
+\texttt{400} & Invalid JSON or schema validation failure. \\
+\texttt{401} & Missing, invalid, or expired Firebase authentication token. \\
+\texttt{502} & No invitation could be delivered or the provider rejected the requests. \\
+\bottomrule
+\end{tabularx}
+\caption{Implemented invitation API responses}
+\end{table}
+
+The browser provides structured meeting data, not arbitrary HTML. The backend controls the actual email template.
+
+\section{Frontend API Client}
+
+The frontend service at \path{src/services/meetingInvitations.ts} performs the following actions:
+
+\begin{enumerate}
+  \item Read \texttt{auth.currentUser}.
+  \item Obtain the current Firebase ID token.
+  \item Call the Worker endpoint.
+  \item Send the token in the Bearer header.
+  \item Send structured invitation JSON.
+  \item Parse the backend response.
+  \item Return a Boolean success result to the meeting hook.
+\end{enumerate}
+
+The default backend base URL is:
+
+\begin{lstlisting}
+https://linc-backend.linc-ministry.workers.dev
+\end{lstlisting}
+
+A \texttt{VITE\_BACKEND\_BASE\_URL} override may be used for another environment.
+
+\section{Pastor Dashboard Integration}
+
+The meeting hook at \path{src/components/pastor/hooks/useMeetings.ts} was updated so participant invitations call:
+
+\begin{lstlisting}
+sendMeetingInvitationsViaBackend(...)
+\end{lstlisting}
+
+The hook filters selected participants to usable email addresses and sends one batch request containing the current locale, recipient names, recipient emails, and meeting details.
+
+The Add Event form in \path{PastorDashboard.tsx} submits through the current \texttt{useMeetings} hook. The hook barrel file correctly exports the modified implementation. This confirmed that the Add Event workflow is connected to the backend client.
+
+Other email workflows have not all been migrated. Requester cancellation and People Development notifications may still use EmailJS. Their continued imports do not mean that participant invitations still use EmailJS.
+
+\section{Automated Tests}
+
+The Worker test configuration uses Vitest with the Cloudflare Worker test pool. The initial test suite proves:
+
+\begin{enumerate}
+  \item The root route returns \texttt{Hello Hono!}.
+  \item Invalid sandbox input returns \texttt{400 VALIDATION\_ERROR}.
+  \item A mocked successful Brevo sandbox request returns success without contacting the real provider.
+\end{enumerate}
+
+The tests passed locally after the invitation route was mounted.
+
+Additional route-specific tests remain recommended for missing authentication, invalid tokens, invitation validation, complete success, partial failure, and complete provider failure.
+
+\section{GitHub Actions}
+
+The workflow at \path{.github/workflows/backend-tests.yml} runs for relevant backend pushes and pull requests. It uses Ubuntu, Node.js 24, \texttt{npm ci}, and \texttt{npm test} with the backend directory as the working directory.
+
+The workflow is associated with backend foundation issue \#12. It verifies the backend but does not currently deploy the Worker.
+
+\section{Netlify Secret-Scan Failure and Remediation}
+
+The frontend TypeScript and Vite build succeeded, but Netlify failed the deployment during its secret-scanning stage. It detected the value of \texttt{VITE\_FIREBASE\_PROJECT\_ID} inside \path{backend/wrangler.jsonc}. The same public project identifier also appeared inside the Firebase database URL.
+
+The value was not a private credential. Netlify was matching an environment-variable value against repository content.
+
+The remediation was to add:
+
+\begin{lstlisting}
+SECRETS_SCAN_OMIT_KEYS=VITE_FIREBASE_PROJECT_ID
+\end{lstlisting}
+
+to the Netlify environment configuration. The variable itself was not marked as containing a secret. A new Netlify deployment was required after saving the setting.
+
+\section{Separate Production Deployments}
+
+The backend code was not activated by the Netlify redeployment. The Worker had to be deployed separately using:
+
+\begin{lstlisting}
+npx wrangler deploy
+\end{lstlisting}
+
+The apparent continued EmailJS behavior was therefore partly a deployment-version problem: the new frontend expected a route that had not yet been deployed to Cloudflare.
+
+The operational rule is:
+
+\begin{center}
+\textbf{Frontend contract changes require Netlify deployment, and backend contract changes require Wrangler deployment.}
+\end{center}
+
+\section{Troubleshooting Lessons}
+
+The production investigation established several lessons:
+
+\begin{itemize}
+  \item A successful Vite build does not prove a successful Netlify deployment.
+  \item A Netlify secret-scan failure occurs after compilation and must be diagnosed separately.
+  \item An EmailJS import warning does not prove that the tested runtime path invoked EmailJS.
+  \item A remaining cancellation helper can keep EmailJS in a bundle even after participant invitations migrate.
+  \item The actual call chain must be traced from the Add Event form to \texttt{useMeetings}, then to the frontend service, Worker route, and Brevo.
+  \item The backend and frontend can be individually correct but incompatible when only one is deployed.
+  \item The active production state must be verified at both hosting platforms.
+\end{itemize}
+
+\section{Current Security Improvements}
+
+The implemented slice provides the following improvements:
+
+\begin{itemize}
+  \item The Brevo API key is absent from the React bundle.
+  \item Anonymous callers are blocked by Firebase token verification.
+  \item The backend validates all invitation data.
+  \item The browser cannot provide arbitrary email HTML.
+  \item Email HTML escapes meeting and recipient values.
+  \item CORS is restricted to the production site and local frontend.
+  \item Delivery failures are represented explicitly.
+  \item Provider communication is centralized.
+\end{itemize}
+
+\section{Current Limitations}
+
+The implemented slice intentionally does not yet provide:
+
+\begin{itemize}
+  \item Backend Pastor-role or capability enforcement.
+  \item Firebase token-revocation checking.
+  \item Cloudflare rate limiting.
+  \item Queue-based retries or durable delivery jobs.
+  \item A custom authenticated sender domain.
+  \item Automatic Worker deployment from GitHub Actions.
+  \item Migration of all EmailJS workflows.
+  \item Audit records in the application database.
+  \item Removal of the temporary Brevo test endpoint.
+\end{itemize}
+
+\section{Skills and Engineering Knowledge Developed}
+
+The completed work developed and demonstrated the following practical skills:
+
+\begin{enumerate}
+  \item Incremental backend migration without rewriting the full application.
+  \item Cloudflare Worker project creation, configuration, and deployment.
+  \item Hono route composition, middleware, CORS, and JSON error design.
+  \item Runtime validation using strict Zod schemas and business refinements.
+  \item Separation of secret Worker bindings from public frontend configuration.
+  \item Local secret management through \texttt{.dev.vars} and Git-ignore verification.
+  \item Brevo transactional-email integration and sandbox testing.
+  \item Firebase ID-token verification with remote JSON Web Keys.
+  \item Reuse of an existing Firebase session without adding a second login flow.
+  \item Bearer-token transport between a Vite frontend and a custom backend.
+  \item Pure bilingual English/Arabic email-template construction.
+  \item Right-to-left email rendering and localized date/time formatting.
+  \item HTML escaping for user-controlled transactional-email values.
+  \item Provider-adapter design and structured provider exceptions.
+  \item Complete, partial, and failed multi-recipient delivery handling.
+  \item Worker-compatible Vitest configuration and outbound request mocking.
+  \item GitHub Actions continuous integration for a nested backend package.
+  \item Netlify secret-scanner diagnosis and expected-value omission.
+  \item Multi-platform production deployment management.
+  \item Tracing a production event from UI submission to external provider.
+  \item Distinguishing dependency-bundle warnings from runtime behavior.
+  \item Correcting scope expansion when authentication work became an unrequested authorization overhaul.
+  \item Balancing transitional security with preservation of the existing Pastor workflow.
+  \item Documenting actual current architecture separately from target architecture.
+\end{enumerate}
+
+\section{Implemented Backend Details to Preserve}
+
+The following details are authoritative for subsequent backend work:
+
+\begin{itemize}
+  \item Backend directory: \path{backend/}.
+  \item Worker name: \texttt{linc-backend}.
+  \item Worker URL: \path{https://linc-backend.linc-ministry.workers.dev}.
+  \item Frontend URL: \path{https://lincministry.com}.
+  \item Local frontend origin: \path{http://localhost:5173}.
+  \item Firebase project ID: \texttt{churchmeeting}.
+  \item Firebase database URL: \path{https://churchmeeting-default-rtdb.firebaseio.com}.
+  \item Invitation endpoint: \path{/api/v1/meeting-invitations}.
+  \item Temporary test endpoint: \path{/api/v1/email/test}.
+  \item Frontend invitation client: \path{src/services/meetingInvitations.ts}.
+  \item Frontend integration hook: \path{src/components/pastor/hooks/useMeetings.ts}.
+  \item Participant meeting invitations use backend Brevo delivery.
+  \item Existing Firebase authentication is reused silently.
+  \item The current route requires authentication but not a backend Pastor-role lookup.
+  \item CORS allows \texttt{Content-Type} and \texttt{Authorization}.
+  \item Netlify omits \texttt{VITE\_FIREBASE\_PROJECT\_ID} from secret matching.
+  \item GitHub Actions tests the backend but does not deploy it.
+  \item Wrangler deployment remains a separate explicit action.
+\end{itemize}
+
+
 \chapter{Current Functional Modules}
 % ============================================================
 
@@ -652,7 +1183,7 @@ The active public booking page reads availability, confirmed meetings, unavailab
 
 The calendar component is the central operational monolith. It manages meetings, availability, unavailability, meeting requests, participant data, People Development assignments, PDFs, personal notes, NextGen approvals, questions, survey results, and AI calendar actions.
 
-\textbf{Disposition:} decompose into separate feature modules and backend services. Delete AI mutation paths, Google integration, fake Meet links, and browser-exposed model credentials.
+\textbf{Disposition:} continue the decomposition into separate feature modules and backend services. Participant meeting invitations have already moved to the Cloudflare Worker and Brevo. Delete remaining AI mutation paths, Google integration, fake Meet links, browser-exposed model credentials, and legacy EmailJS workflows in later slices.
 
 \section{NextGen Activities}
 
@@ -915,13 +1446,13 @@ A pragmatic target stack is:
 
 \begin{itemize}
   \item \textbf{Frontend:} React, TypeScript, Vite, feature modules, typed API client.
-  \item \textbf{Backend:} Node.js and TypeScript using NestJS or a similarly structured framework.
+  \item \textbf{Backend:} Cloudflare Workers with Hono and TypeScript are the implemented foundation. The platform may continue with structured Hono feature modules or move selected workloads to NestJS or another managed TypeScript service when background jobs, relational transactions, or runtime requirements exceed the edge-worker model.
   \item \textbf{Authentication:} Firebase Authentication retained initially; ID tokens verified by the backend through Firebase Admin SDK.
   \item \textbf{Primary database:} PostgreSQL for transactional and relational domain data.
   \item \textbf{Migration bridge:} Firebase Realtime Database retained temporarily behind backend repositories during staged migration.
   \item \textbf{File storage:} Firebase Storage or Google Cloud Storage with metadata in the primary database.
-  \item \textbf{Notifications:} provider-agnostic backend adapter with EmailJS replaced by a server-capable email provider when practical.
-  \item \textbf{Deployment:} containerized backend on Cloud Run or equivalent managed service; static frontend hosting; managed PostgreSQL.
+  \item \textbf{Notifications:} provider-agnostic backend adapters. Brevo is already implemented for participant meeting invitations; remaining EmailJS flows should migrate incrementally.
+  \item \textbf{Deployment:} Netlify for the current static frontend and Cloudflare Workers for the implemented edge backend. Managed containers or job runtimes may be added for workloads that require longer execution, queues, or private database connectivity.
   \item \textbf{Observability:} structured logs, exception tracking, metrics, health checks, and audit-event storage.
 \end{itemize}
 
@@ -1488,6 +2019,10 @@ The current \texttt{isAdmin}/\texttt{isSuperAdmin} layout props are replaced by 
 \chapter{Backend Implementation Design}
 % ============================================================
 
+\section{Implemented Foundation Versus Target Modules}
+
+The current Worker is intentionally smaller than the final module map. It already separates authentication, middleware, schemas, routes, email builders, and provider services. This is the correct starting discipline. Future domains should extend these boundaries rather than moving all application behavior into \path{backend/src/index.ts}.
+
 \section{Recommended Module Boundaries}
 
 \begin{lstlisting}[caption={Recommended backend modules}]
@@ -1605,6 +2140,22 @@ A feature is not complete until it has:
 % ============================================================
 \chapter{DevOps, Deployment, and Operations}
 % ============================================================
+
+\section{Current Implemented Delivery Pipeline}
+
+The current production system has three operational automation surfaces:
+
+\begin{itemize}
+  \item \textbf{Netlify} builds and publishes the React frontend.
+  \item \textbf{Cloudflare Wrangler} deploys the Worker backend manually.
+  \item \textbf{GitHub Actions} runs backend tests for relevant pushes and pull requests.
+\end{itemize}
+
+The frontend build runs \texttt{tsc -b \&\& vite build}. Netlify additionally performs repository secret scanning. The backend test workflow runs \texttt{npm ci} and \texttt{npm test} from the \path{backend/} directory. Automated Worker deployment is not yet configured.
+
+\begin{warningbox}[-- Deployment Coupling]
+An API change is not complete in production until the compatible frontend and Worker versions are both deployed. Release notes and future CI/CD should treat the two artifacts as one coordinated release even when hosted independently.
+\end{warningbox}
 
 \section{Environments}
 
@@ -1751,6 +2302,11 @@ At least quarterly, review:
 \end{itemize}
 
 \textbf{Indicative effort:} 180--280 hours.
+
+\begin{notebox}[-- Phase 1 Partial Completion]
+The initial Cloudflare Worker package, Hono entry point, Brevo provider adapter, Firebase token verification, CORS, Zod validation, Vitest tests, GitHub Actions testing, and one production frontend-to-backend workflow are complete. Capability authorization, audit persistence, rate limiting, broader repositories, automatic deployment, and additional domains remain outstanding.
+\end{notebox}
+
 
 \section{Phase 2: Booking and Notifications}
 
@@ -1935,14 +2491,16 @@ The strongest long-term option is to retain the intellectual property and licens
 \chapter{Conclusion}
 % ============================================================
 
-The LINC Ministry Portal contains a meaningful set of ministry workflows and demonstrates strong product initiative. Its current weakness is not a lack of functionality; it is the absence of a backend boundary, unified data model, enforceable authorization architecture, and operational discipline appropriate to the sensitivity of the data.
+The LINC Ministry Portal contains a meaningful set of ministry workflows and demonstrates strong product initiative. Its current weakness is not a lack of functionality; it is that most domains still lack a backend boundary, unified data model, enforceable authorization architecture, and operational discipline appropriate to the sensitivity of the data.
 
-The modernization should not merely reorganize React files. It must change where authority lives. The browser becomes a client. The backend becomes the system of record for decisions and workflow. The database becomes a protected persistence layer rather than a public application interface.
+The completed Cloudflare Worker and Brevo meeting-invitation migration proves that the system can be modernized incrementally without disrupting the existing Pastor experience. The browser now acts as an authenticated client for this workflow, the Worker validates the request and protects the provider credential, and Brevo delivery is separated from React code. This is the first concrete implementation of the target three-tier direction.
+
+The modernization must continue beyond reorganizing React files. Authority should progressively move into backend services. The database should become a protected persistence layer rather than a public application interface.
 
 By removing legacy AI, Google, Gmail, superadmin, duplicate booking, and base64-storage code; introducing a three-tier architecture; consolidating identity; enforcing capabilities; and building separate Pastor, Admin, and Testing workspaces, the platform can become secure, maintainable, enterprise-grade, and commercially transferable.
 
 \begin{infobox}[-- Final Direction]
-The target is not a larger version of the current frontend. The target is a properly engineered ministry platform with a backend-centric architecture, explicit domain boundaries, auditable authority, and a controlled migration path from the current system.
+The target is not a larger version of the current frontend. The implemented invitation Worker is the first backend slice, and the target is to extend that pattern into a properly engineered ministry platform with explicit domain boundaries, auditable authority, and a controlled migration path from the current hybrid system.
 \end{infobox}
 
 % ============================================================
@@ -1986,6 +2544,18 @@ The target is not a larger version of the current frontend. The target is a prop
 \texttt{PageTitle.tsx} & \statusrefactor & Remove hard-coded Pastor Dashboard suffix. \\
 \texttt{PrivacyPolicy.tsx} & \statusrefactor & Retain shell; version and rewrite policy. \\
 \texttt{TermsOfService.tsx} & \statusrefactor & Retain shell; rewrite to match platform and providers. \\
+\path{src/services/meetingInvitations.ts} & \statusactive & Typed frontend client that obtains the Firebase ID token and calls the Worker invitation endpoint. \\
+\path{src/components/pastor/hooks/useMeetings.ts} & \statusrefactor & Participant invitation path now uses backend Brevo delivery; remaining cancellation EmailJS flow should migrate later. \\
+\path{backend/src/index.ts} & \statusactive & Hono Worker entry point, CORS, health route, temporary test route, and invitation router mount. \\
+\path{backend/src/auth/firebaseAuth.ts} & \statusactive & Firebase ID-token verification using \texttt{jose} and Google signing keys. \\
+\path{backend/src/middleware/authentication.middleware.ts} & \statusactive & Bearer-token extraction, verification, and authenticated-user request context. \\
+\path{backend/src/schemas/meetingInvitation.schema.ts} & \statusactive & Strict Zod validation for invitation requests. \\
+\path{backend/src/emails/meetingInvitation.email.ts} & \statusactive & Pure bilingual English/Arabic HTML and plain-text invitation builder. \\
+\path{backend/src/services/brevo.service.ts} & \statusactive & Server-side Brevo provider adapter and structured error handling. \\
+\path{backend/src/routes/meetingInvitations.routes.ts} & \statusactive & Authenticated, validated multi-recipient invitation route with partial-failure reporting. \\
+\path{backend/test/index.spec.ts} & \statusrefactor & Existing Worker tests pass; expand with route authentication and delivery-result scenarios. \\
+\path{backend/wrangler.jsonc} & \statusactive & Worker name, entry point, compatibility date, and public Firebase bindings. \\
+\path{.github/workflows/backend-tests.yml} & \statusactive & Backend CI tests; deployment remains manual. \\
 \bottomrule
 \caption{Reviewed file classification}
 \end{longtable}
@@ -2113,6 +2683,8 @@ C-13 & Backups and restore procedures are tested. & Restore exercise report. \\
 C-14 & Architecture, API, operations, and user guides are complete. & Documentation index. \\
 C-15 & No critical or high security findings remain open. & Security review report. \\
 C-16 & The floating landing-page action dock is viewport-safe, direction-aware, reduced-motion compatible, and synchronized with the original action set. & Responsive end-to-end test matrix and accessibility verification. \\
+C-17 & Participant meeting invitations use the authenticated Worker and backend Brevo secret rather than browser-side provider credentials. & Worker deployment, Brevo log, and frontend network trace. \\
+C-18 & Frontend and Worker releases are coordinated and the invitation route has route-specific authentication, validation, and failure tests. & Release workflow and CI test report. \\
 \bottomrule
 \caption{Enterprise readiness checklist}
 \end{longtable}
@@ -2130,6 +2702,7 @@ C-16 & The floating landing-page action dock is viewport-safe, direction-aware, 
   \item Pastor decisions must remain distinct from technical administration.
   \item Existing historical data must be preserved unless a documented retention decision permits deletion.
   \item The landing page currently includes a local placeholder presentation carousel and an implemented floating action dock; the future administrator-managed carousel and Bible-verse manager remain planned content-management capabilities rather than existing production administration features.
+  \item The implemented Cloudflare Worker remains the supported backend for participant meeting invitations until a later architectural decision replaces or expands it.
 \end{itemize}
 
 \section{Open Verification Items}
@@ -2145,6 +2718,12 @@ C-16 & The floating landing-page action dock is viewport-safe, direction-aware, 
   \item Current email provider quotas and production sender configuration.
   \item Ownership and licensing of images, content, and third-party assets.
   \item Whether a PostgreSQL migration is required in the first commercial release or after the API facade is stable.
+  \item Production Cloudflare rate-limit policy for the invitation endpoint.
+  \item Whether Firebase token revocation must be checked for every request or only high-risk operations.
+  \item Removal or authentication tightening of the temporary \path{/api/v1/email/test} route.
+  \item Custom-domain authentication and sender-reputation configuration in Brevo.
+  \item Automatic coordinated deployment for Netlify and Cloudflare Workers.
+  \item Migration schedule for remaining EmailJS workflows.
 \end{itemize}
 
 \begin{notebox}[-- Documentation Maintenance]
