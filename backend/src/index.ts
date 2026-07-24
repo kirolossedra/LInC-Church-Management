@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { z } from 'zod'
 
 type Bindings = {
@@ -9,6 +10,19 @@ type Bindings = {
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
+
+app.use(
+  '/api/*',
+  cors({
+    origin: [
+      'https://lincministry.com',
+      'http://localhost:5173',
+    ],
+    allowHeaders: ['Content-Type'],
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    maxAge: 86400,
+  }),
+)
 
 const requestSchema = z
   .object({
