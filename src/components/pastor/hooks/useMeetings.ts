@@ -1,11 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import emailjs from '@emailjs/browser';
-import { push, ref } from 'firebase/database';
-import { format, parseISO } from 'date-fns';
-import { ar, enUS } from 'date-fns/locale';
-
-import { database } from '../../../firebase';
+import { format } from 'date-fns';
 import type { Meeting } from '../../../types';
+import {
+  sendMeetingInvitationsViaBackend,
+} from '../../../services/meetingInvitations';
 
 import {
   createMeeting,
@@ -13,7 +11,6 @@ import {
   getMeetingRequestEmail,
   sendMeetingStatusEmailViaEmailJs,
   subscribeToMeetings,
-  timeRangeToLabel,
   timeToHour,
   updateMeeting,
   updateMeetingRequest,
@@ -23,10 +20,6 @@ import {
   isUsableEmail,
   type PeopleDevelopmentParticipant,
 } from '../people-development';
-
-const EMAILJS_SERVICE_ID = 'service_v47g6or';
-const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
-const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
 
 type DisplayLocale = 'en' | 'ar';
 type TranslateFunction = (key: any) => string;
@@ -59,22 +52,11 @@ function createInitialMeeting(): Partial<Meeting> {
   };
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 export default function useMeetings({
   participants,
   locale,
   translate,
 }: UseMeetingsParams) {
-  const dateLocale = locale === 'ar' ? ar : enUS;
-
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [meetingLoading, setMeetingLoading] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -164,140 +146,36 @@ export default function useMeetings({
       return true;
     }
 
-    const selected = participants.filter(participant =>
-      selectedParticipants.includes(participant.id),
-    );
+    const recipients = participants
+      .filter(participant =>
+        selectedParticipants.includes(participant.id),
+      )
+      .filter(participant =>
+        isUsableEmail(participant.email),
+      )
+      .map(participant => ({
+        email: participant.email,
+        name:
+          participant.name ||
+          (locale === 'ar' ? 'المشارك' : 'Participant'),
+      }));
 
-    let allSucceeded = true;
-
-    for (const participant of selected) {
-      if (!isUsableEmail(participant.email)) {
-        continue;
-      }
-
-      const participantName =
-        participant.name ||
-        (locale === 'ar' ? 'المشارك' : 'Participant');
-
-      const meetingDate = format(
-        parseISO(meetingData.date),
-        'EEEE, MMMM d, yyyy',
-        { locale: dateLocale },
-      );
-
-      const meetingTime = timeRangeToLabel(
-        meetingData.startTime,
-        meetingData.endTime,
-        locale,
-      );
-
-      const safeParticipantName = escapeHtml(participantName);
-      const safeMeetingTitle = escapeHtml(meetingData.title);
-      const safeMeetingDate = escapeHtml(meetingDate);
-      const safeMeetingTime = escapeHtml(meetingTime);
-      const safeMeetingLocation = escapeHtml(
-        meetingData.location ||
-          (locale === 'ar' ? 'يحدد لاحقاً' : 'TBA'),
-      );
-      const safeMeetingLink = escapeHtml(meetingData.meetLink || '');
-
-      const onlineLinkHtml = meetingData.meetLink
-        ? `<p style="margin: 4px 0; font-size: 14px;"><strong>${
-            locale === 'ar'
-              ? 'رابط الاجتماع عبر الإنترنت'
-              : 'Online meeting link'
-          }:</strong> <a href="${safeMeetingLink}" style="color: #8b1e1e; font-weight: 700; word-break: break-all;">${safeMeetingLink}</a></p>`
-        : '';
-
-      const subject =
-        locale === 'ar'
-          ? `دعوة لاجتماع: ${meetingData.title}`
-          : `Meeting Invitation: ${meetingData.title}`;
-
-      const htmlBody = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #f5f4f0; border-radius: 22px;">
-          <div style="background: #8b1e1e; color: white; padding: 16px; border-radius: 14px; text-align: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; font-size: 20px;">${
-              locale === 'ar'
-                ? 'دعوة لاجتماع LINC'
-                : 'LINC Meeting Invitation'
-            }</h1>
-          </div>
-          <p style="color: #333; font-size: 15px;">${
-            locale === 'ar'
-              ? `مرحباً ${safeParticipantName}،`
-              : `Dear ${safeParticipantName},`
-          }</p>
-          <p style="color: #555; font-size: 14px;">${
-            locale === 'ar'
-              ? 'تمت دعوتك لحضور الاجتماع التالي:'
-              : 'You are invited to attend the following meeting:'
-          }</p>
-          <div style="background: white; padding: 16px; border-radius: 14px; border: 1px solid #e5e5e5; margin-bottom: 16px;">
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${
-              locale === 'ar' ? 'الاجتماع' : 'Meeting'
-            }:</strong> ${safeMeetingTitle}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${
-              locale === 'ar' ? 'التاريخ' : 'Date'
-            }:</strong> ${safeMeetingDate}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${
-              locale === 'ar' ? 'الوقت' : 'Time'
-            }:</strong> ${safeMeetingTime}</p>
-            <p style="margin: 4px 0; font-size: 14px;"><strong>${
-              locale === 'ar' ? 'المكان' : 'Location'
-            }:</strong> ${safeMeetingLocation}</p>
-            ${onlineLinkHtml}
-          </div>
-          <p style="color: #999; font-size: 12px; margin-top: 24px;">${
-            locale === 'ar'
-              ? 'نتطلع إلى رؤيتك هناك.'
-              : 'We look forward to seeing you there.'
-          }</p>
-        </div>
-      `.trim();
-
-      try {
-        const response = await emailjs.send(
-          EMAILJS_SERVICE_ID,
-          EMAILJS_TEMPLATE_ID,
-          {
-            to_email: participant.email,
-            subject,
-            fullName: participantName,
-            message_html: htmlBody,
-            reply_to: participant.email,
-          },
-          EMAILJS_PUBLIC_KEY,
-        );
-
-        await push(ref(database, 'emailJsSendLogs/'), {
-          recipientEmail: participant.email,
-          subject,
-          fullName: participantName,
-          sentUsing: 'EmailJS',
-          serviceId: EMAILJS_SERVICE_ID,
-          templateId: EMAILJS_TEMPLATE_ID,
-          source: 'calendarParticipantInvitation',
-          meetingDate: meetingData.date,
-          meetingStartTime: meetingData.startTime,
-          meetingEndTime: meetingData.endTime,
-          sentAt: Date.now(),
-          sentAtISO: new Date().toISOString(),
-          emailJsResponse: {
-            status: response.status,
-            text: response.text,
-          },
-        });
-      } catch (error) {
-        allSucceeded = false;
-        console.error(
-          `Failed to send meeting invitation to ${participant.email}:`,
-          error,
-        );
-      }
+    if (recipients.length === 0) {
+      return true;
     }
 
-    return allSucceeded;
+    return sendMeetingInvitationsViaBackend({
+      locale,
+      recipients,
+      meeting: {
+        title: meetingData.title,
+        date: meetingData.date,
+        startTime: meetingData.startTime,
+        endTime: meetingData.endTime,
+        location: meetingData.location,
+        meetLink: meetingData.meetLink,
+      },
+    });
   };
 
   const handleSaveMeeting = async (
