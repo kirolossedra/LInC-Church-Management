@@ -292,21 +292,24 @@ function getElementPositionSelector(element: HTMLElement): string {
       break;
     }
 
-    const parent = current.parentElement;
-    const tagName = current.tagName.toLowerCase();
+    const parentElement: HTMLElement | null = current.parentElement;
+    const currentTagName: string = current.tagName;
+    const tagName = currentTagName.toLowerCase();
 
-    if (!parent) {
+    if (!parentElement) {
       segments.unshift(tagName);
       break;
     }
 
-    const sameTagSiblings = Array.from(parent.children).filter(
-      child => child.tagName === current?.tagName,
+    const sameTagSiblings: Element[] = Array.from(
+      parentElement.children,
+    ).filter(
+      (child: Element): boolean => child.tagName === currentTagName,
     );
 
     const position = sameTagSiblings.indexOf(current) + 1;
     segments.unshift(`${tagName}:nth-of-type(${position})`);
-    current = parent;
+    current = parentElement;
   }
 
   return segments.join(' > ') || 'body';

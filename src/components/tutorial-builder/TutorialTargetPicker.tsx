@@ -40,8 +40,10 @@ export default function TutorialTargetPicker({
       return undefined;
     }
 
-    const findTarget = (eventTarget: EventTarget | null) => {
-      const element = eventTarget instanceof Element
+    const findTarget = (
+      eventTarget: EventTarget | null,
+    ): HTMLElement | null => {
+      const element: HTMLElement | null = eventTarget instanceof Element
         ? eventTarget.closest<HTMLElement>(TUTORIAL_INTERACTIVE_SELECTOR)
         : null;
 
