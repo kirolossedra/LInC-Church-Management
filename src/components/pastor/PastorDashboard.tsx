@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   addMonths,
   format,
@@ -27,12 +28,14 @@ import {
   Trophy,
   UserPlus,
   BarChart3,
+  BookOpenCheck,
 } from 'lucide-react';
 
 import { motion } from 'motion/react';
 
 import PageTitle from '../PageTitle';
 import { useI18n } from '../../i18n';
+import { TutorialBuilderSection } from '../tutorial-builder';
 
 import {
   PeopleAssignmentsCalendarModal,
@@ -84,6 +87,7 @@ type Participant = PeopleDevelopmentParticipant;
 export default function PastorDashboard() {
   const { t, dir, locale } = useI18n();
   const displayLocale = locale === 'ar' ? 'ar' : 'en';
+  const [showTutorialBuilder, setShowTutorialBuilder] = useState(false);
 
   const {
     participants,
@@ -437,7 +441,7 @@ export default function PastorDashboard() {
           }
         }
       `}</style>
-      <div className="pastor-calendar-ui min-h-screen space-y-8 px-4 py-6" style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }} dir={dir}>
+      <div data-tutorial-id="pastor-dashboard" className="pastor-calendar-ui min-h-screen space-y-8 px-4 py-6" style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }} dir={dir}>
       <PageTitle
         title={t('calendar.title')}
         subtitle={displayLocale === 'ar' ? 'إدارة الاجتماعات والإتاحة وطلبات الحجز وإشعارات المشاركين' : 'Manage meetings, availability, booking requests, and participant notifications'}
@@ -453,11 +457,12 @@ export default function PastorDashboard() {
         </div>
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex bg-stone-50 rounded-xl p-1 border border-gray-200">
-            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft size={20} /></button>
-            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight size={20} /></button>
+            <button data-tutorial-id="pastor-calendar-previous-month" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft size={20} /></button>
+            <button data-tutorial-id="pastor-calendar-next-month" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight size={20} /></button>
           </div>
           <button
             type="button"
+            data-tutorial-id="pastor-people-development-toggle"
             onClick={() => setShowPeopleDevelopment(!showPeopleDevelopment)}
             className={`pastor-main-button flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors border ${
               showPeopleDevelopment
@@ -478,6 +483,7 @@ export default function PastorDashboard() {
           </button>
           <button
             type="button"
+            data-tutorial-id="pastor-group-meetings-toggle"
             onClick={() =>
               setShowPeopleDevelopmentMeetingSchedules(
                 previous => !previous,
@@ -517,6 +523,30 @@ export default function PastorDashboard() {
           </button>
           <button
             type="button"
+            data-tutorial-id="pastor-tutorial-builder-toggle"
+            onClick={() => setShowTutorialBuilder(previous => !previous)}
+            className={`pastor-main-button flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
+              showTutorialBuilder
+                ? 'bg-violet-800 text-white border-violet-800'
+                : 'bg-violet-50 hover:bg-violet-100 text-violet-800 border-violet-200'
+            }`}
+          >
+            <BookOpenCheck size={16} />
+            <span>
+              {displayLocale === 'ar'
+                ? 'منشئ الدروس'
+                : 'Tutorial Builder'}
+            </span>
+            <ChevronDown
+              size={16}
+              className={`transition-transform ${
+                showTutorialBuilder ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          <button
+            type="button"
+            data-tutorial-id="pastor-nextgen-registrations-toggle"
             onClick={() => setShowNextGenRegistrations(!showNextGenRegistrations)}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
               showNextGenRegistrations
@@ -540,6 +570,7 @@ export default function PastorDashboard() {
           </button>
           <button
             type="button"
+            data-tutorial-id="pastor-nextgen-survey-toggle"
             onClick={() => setShowNextGenSurveyResults(!showNextGenSurveyResults)}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
               showNextGenSurveyResults
@@ -563,6 +594,7 @@ export default function PastorDashboard() {
           </button>
           <button
             type="button"
+            data-tutorial-id="pastor-nextgen-questions-toggle"
             onClick={() => setShowNextGenQuestions(!showNextGenQuestions)}
             className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-amber-200"
           >
@@ -575,6 +607,7 @@ export default function PastorDashboard() {
             )}
           </button>
           <button
+            data-tutorial-id="pastor-add-event"
             onClick={() => { setIsAddOpen(true); setEditingMeeting(null); setSelectedParticipants([]); setEmailSent(false); }}
             className="pastor-main-button flex items-center gap-2 bg-[#7a1717] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#7a1717]/20 transition-all hover:scale-105 active:scale-95"
           >
@@ -582,6 +615,7 @@ export default function PastorDashboard() {
             <span>{t('calendar.addEvent')}</span>
           </button>
           <button
+            data-tutorial-id="pastor-mark-available"
             onClick={() => {
               setShowAvailabilityModal(true);
               setEditingAvailability(null);
@@ -593,6 +627,7 @@ export default function PastorDashboard() {
             <span>{t('calendar.markAvailable')}</span>
           </button>
           <button
+            data-tutorial-id="pastor-mark-unavailable"
             onClick={() => {
               setShowUnavailabilityModal(true);
               setEditingUnavailability(null);
@@ -690,6 +725,16 @@ export default function PastorDashboard() {
           }
           onToggleActive={
             togglePeopleDevelopmentMeetingScheduleActive
+          }
+        />
+      )}
+
+      {showTutorialBuilder && (
+        <TutorialBuilderSection
+          expanded={showTutorialBuilder}
+          locale={displayLocale}
+          onToggleExpanded={() =>
+            setShowTutorialBuilder(previous => !previous)
           }
         />
       )}

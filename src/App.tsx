@@ -21,6 +21,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { LogIn, ShieldCheck, Mail, Lock, AlertCircle } from 'lucide-react';
 import { handleOAuthCallback, storeTokens } from './services/gmail';
 import { I18nProvider, useI18n } from './i18n';
+import { TutorialProvider } from './components/tutorial-builder';
 
 type Role = 'superadmin' | 'pastor';
 
@@ -415,7 +416,9 @@ export default function App() {
   return (
     <Router>
       <I18nProvider>
-        <AppRoutes />
+        <TutorialProvider>
+          <AppRoutes />
+        </TutorialProvider>
       </I18nProvider>
     </Router>
   );

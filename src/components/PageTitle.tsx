@@ -14,6 +14,7 @@ export default function PageTitle({ title, subtitle, icon }: PageTitleProps) {
 
   return (
     <motion.div
+      data-tutorial-id="page-title"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="bg-[rgba(255,255,255,0.92)] border border-[rgba(139,30,30,0.12)] rounded-[22px] p-[clamp(26px,5vw,46px)] shadow-[0_8px_28px_rgba(0,0,0,0.08)] mb-8"

@@ -44,7 +44,7 @@ export default function GuidePage() {
   ];
 
   return (
-    <div className="max-w-4xl mx-auto py-12 px-6" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
+    <div data-tutorial-id="guide-page" className="max-w-4xl mx-auto py-12 px-6" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
         <div className="w-16 h-16 bg-[#8b1e1e] rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg">
           <BookOpen size={32} />
@@ -57,6 +57,7 @@ export default function GuidePage() {
         {sections.map((section, i) => (
           <motion.div
             key={i}
+            data-tutorial-id={`guide-section-${i + 1}`}
             initial={{ opacity: 0, y: 10 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}

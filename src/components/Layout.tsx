@@ -1,13 +1,14 @@
-import React from 'react';
+import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { Church, LayoutDashboard, ClipboardList, Calendar as CalendarIcon, LogOut, Home, Globe, BookOpen, CalendarDays } from 'lucide-react';
 import { auth } from '../firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { Link } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import { TutorialLibrary } from './tutorial-builder';
 
 interface LayoutProps {
-  children: React.ReactNode;
+  children: ReactNode;
   activeTab?: string;
   isAdmin?: boolean;
   isSuperAdmin?: boolean;
@@ -21,7 +22,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
     <div className="min-h-screen bg-[#f5f4f0]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E5E5E5] z-50 md:top-0 md:bottom-auto md:border-b md:border-t-0 px-4 py-2 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to="/" data-tutorial-id="nav-brand-home" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-[#8B1E1E] rounded-md flex items-center justify-center text-white font-bold">
               <Church size={20} />
             </div>
@@ -32,6 +33,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
         <div className="flex gap-4 md:gap-6 overflow-x-auto no-scrollbar">
           <Link
             to="/"
+            data-tutorial-id="nav-home"
             className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'home' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
           >
             <Home size={20} />
@@ -39,6 +41,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
           </Link>
           <Link
             to="/assessment"
+            data-tutorial-id="nav-assessment"
             className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'assessment' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
           >
             <ClipboardList size={20} />
@@ -46,6 +49,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
           </Link>
           <Link
             to="/booking"
+            data-tutorial-id="nav-booking"
             className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'booking' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
           >
             <CalendarDays size={20} />
@@ -56,6 +60,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
             <>
               <Link
                 to="/calendar"
+                data-tutorial-id="nav-pastor-calendar"
                 className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'calendar' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
               >
                 <CalendarIcon size={20} />
@@ -63,6 +68,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
               </Link>
               <Link
                 to="/guide"
+                data-tutorial-id="nav-guide"
                 className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'guide' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
               >
                 <BookOpen size={20} />
@@ -71,6 +77,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
               {isSuperAdmin && (
                 <Link
                   to="/dashboard"
+                  data-tutorial-id="nav-admin-dashboard"
                   className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
                 >
                   <LayoutDashboard size={20} />
@@ -82,7 +89,12 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
         </div>
 
         <div className="flex items-center gap-2">
+          <TutorialLibrary
+            audience={isSuperAdmin ? 'superadmin' : isAdmin ? 'pastor' : 'congregation'}
+            locale={locale}
+          />
           <button
+            data-tutorial-id="nav-language-toggle"
             onClick={() => setLocale(locale === 'en' ? 'ar' : 'en')}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#8B1E1E] border border-[#8B1E1E] rounded-full hover:bg-[#f8eeee] transition-colors"
           >
@@ -91,6 +103,7 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
           </button>
           {user && (
             <button
+              data-tutorial-id="nav-sign-out"
               onClick={() => auth.signOut()}
               className="text-gray-500 hover:text-[#8B1E1E] transition-colors p-2"
               title={t('nav.signOut')}
