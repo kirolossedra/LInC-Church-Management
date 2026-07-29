@@ -13,6 +13,7 @@ import { waitForTutorialTarget } from './tutorialBuilder.utils';
 interface TutorialPlayerProps {
   tutorial: Tutorial;
   preview: boolean;
+  initialStepIndex: number;
   currentPath: string;
   navigate: NavigateFunction;
   onSimulationChange: (
@@ -91,6 +92,7 @@ function TutorialStepContent({
 export default function TutorialPlayer({
   tutorial,
   preview,
+  initialStepIndex,
   currentPath,
   navigate,
   onSimulationChange,
@@ -200,6 +202,7 @@ export default function TutorialPlayer({
       `}</style>
       <Joyride
         continuous
+        initialStepIndex={initialStepIndex}
         run
         scrollToFirstStep
         steps={steps}

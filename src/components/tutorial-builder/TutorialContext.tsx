@@ -44,7 +44,11 @@ interface TutorialContextValue {
   activeTutorial: Tutorial | null;
   previewMode: boolean;
   simulation: TutorialSimulationState | null;
-  startTutorial: (tutorial: Tutorial, preview?: boolean) => Promise<void>;
+  startTutorial: (
+    tutorial: Tutorial,
+    preview?: boolean,
+    initialStepIndex?: number,
+  ) => Promise<void>;
   stopTutorial: () => void;
   saveTutorial: (draft: TutorialDraft) => Promise<string>;
   deleteTutorial: (tutorial: Tutorial) => Promise<void>;
@@ -66,6 +70,7 @@ export function TutorialProvider({ children }: { children: ReactNode }) {
   const [previewMode, setPreviewMode] = useState(false);
   const [simulation, setSimulation] = useState<TutorialSimulationState | null>(null);
   const [playerKey, setPlayerKey] = useState(0);
+  const [initialStepIndex, setInitialStepIndex] = useState(0);
 
   useEffect(() => {
     setTutorialsLoading(true);
@@ -92,16 +97,27 @@ export function TutorialProvider({ children }: { children: ReactNode }) {
     setActiveTutorial(null);
     setPreviewMode(false);
     setSimulation(null);
+    setInitialStepIndex(0);
   }, []);
 
   const startTutorial = useCallback(
-    async (tutorial: Tutorial, preview = false) => {
+    async (
+      tutorial: Tutorial,
+      preview = false,
+      requestedStepIndex = 0,
+    ) => {
       if (tutorial.steps.length === 0) {
         throw new Error('This tutorial has no steps.');
       }
 
+      const safeInitialStepIndex = Math.min(
+        Math.max(0, requestedStepIndex),
+        tutorial.steps.length - 1,
+      );
+
       setSimulation(null);
       setPreviewMode(preview);
+      setInitialStepIndex(safeInitialStepIndex);
       setActiveTutorial(tutorial);
       setPlayerKey(previous => previous + 1);
 
@@ -249,6 +265,7 @@ export function TutorialProvider({ children }: { children: ReactNode }) {
           key={`${activeTutorial.id}-${playerKey}`}
           tutorial={activeTutorial}
           preview={previewMode}
+          initialStepIndex={initialStepIndex}
           currentPath={`${location.pathname}${location.search}`}
           navigate={navigate}
           onSimulationChange={setSimulation}

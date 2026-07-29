@@ -34,12 +34,15 @@ export default function TutorialBuilderSection({
     duplicateTutorial,
     toggleTutorialPublished,
     startTutorial,
+    activeTutorial,
+    previewMode,
   } = useTutorials();
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTutorial, setEditingTutorial] = useState<Tutorial | null>(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editorPreviewId, setEditorPreviewId] = useState<string | null>(null);
 
   const categoryCount = useMemo(
     () => new Set(tutorials.map(tutorial => tutorial.category)).size,
@@ -47,11 +50,13 @@ export default function TutorialBuilderSection({
   );
 
   const openCreate = () => {
+    setEditorPreviewId(null);
     setEditingTutorial(null);
     setEditorOpen(true);
   };
 
   const openEdit = (tutorial: Tutorial) => {
+    setEditorPreviewId(null);
     setEditingTutorial(tutorial);
     setEditorOpen(true);
   };
@@ -63,6 +68,7 @@ export default function TutorialBuilderSection({
       await saveTutorial(draft);
       setEditorOpen(false);
       setEditingTutorial(null);
+      setEditorPreviewId(null);
     } catch (error) {
       window.alert(
         error instanceof Error
@@ -76,10 +82,14 @@ export default function TutorialBuilderSection({
     }
   };
 
-  const handlePreviewDraft = async (draft: TutorialDraft) => {
+  const handlePreviewDraft = async (
+    draft: TutorialDraft,
+    initialStepIndex: number,
+  ) => {
     const now = Date.now();
+    const previewId = `tutorial-editor-preview-${now}`;
     const previewTutorial: Tutorial = {
-      id: draft.id || `tutorial-preview-${now}`,
+      id: previewId,
       title: draft.title,
       description: draft.description,
       category: draft.category,
@@ -93,8 +103,14 @@ export default function TutorialBuilderSection({
       updatedAtISO: new Date(now).toISOString(),
     };
 
-    setEditorOpen(false);
-    await startTutorial(previewTutorial, true);
+    setEditorPreviewId(previewId);
+
+    try {
+      await startTutorial(previewTutorial, true, initialStepIndex);
+    } catch (error) {
+      setEditorPreviewId(null);
+      throw error;
+    }
   };
 
   const handleDelete = async (tutorial: Tutorial) => {
@@ -159,7 +175,7 @@ export default function TutorialBuilderSection({
   };
 
   const handlePreview = async (tutorial: Tutorial) => {
-    await startTutorial(tutorial, true);
+    await startTutorial(tutorial, true, 0);
   };
 
   return (
@@ -358,9 +374,15 @@ export default function TutorialBuilderSection({
         tutorial={editingTutorial}
         locale={locale}
         saving={saving}
+        suspended={Boolean(
+          editorPreviewId &&
+          previewMode &&
+          activeTutorial?.id === editorPreviewId
+        )}
         onClose={() => {
           setEditorOpen(false);
           setEditingTutorial(null);
+          setEditorPreviewId(null);
         }}
         onSave={handleSave}
         onPreview={handlePreviewDraft}

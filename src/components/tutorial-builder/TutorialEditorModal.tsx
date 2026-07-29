@@ -41,9 +41,13 @@ interface TutorialEditorModalProps {
   tutorial: Tutorial | null;
   locale: 'en' | 'ar';
   saving: boolean;
+  suspended?: boolean;
   onClose: () => void;
   onSave: (draft: TutorialDraft) => Promise<void>;
-  onPreview: (draft: TutorialDraft) => Promise<void>;
+  onPreview: (
+    draft: TutorialDraft,
+    initialStepIndex: number,
+  ) => Promise<void>;
 }
 
 function copyFor(locale: 'en' | 'ar') {
@@ -59,7 +63,8 @@ function copyFor(locale: 'en' | 'ar') {
         audience: 'الجمهور',
         published: 'منشور للمستخدمين',
         steps: 'خطوات الدرس',
-        addStep: 'إضافة خطوة',
+        addStep: 'إضافة الحركة التالية',
+        addInformationStep: 'إضافة خطوة معلومات',
         noSteps: 'لا توجد خطوات بعد. أضف أول خطوة لبدء الدرس.',
         step: 'خطوة',
         stepTitle: 'عنوان الخطوة',
@@ -74,7 +79,8 @@ function copyFor(locale: 'en' | 'ar') {
         simulationDescription: 'ما الذي سيحدث بعد الضغط؟',
         duplicate: 'نسخ الخطوة',
         delete: 'حذف الخطوة',
-        preview: 'معاينة',
+        preview: 'معاينة من الخطوة الحالية',
+        previewFromBeginning: 'معاينة من البداية',
         save: 'حفظ الدرس',
         cancel: 'إلغاء',
         error: 'يرجى تصحيح الآتي:',
@@ -90,7 +96,8 @@ function copyFor(locale: 'en' | 'ar') {
         audience: 'Audience',
         published: 'Published for users',
         steps: 'Tutorial Steps',
-        addStep: 'Add Step',
+        addStep: 'Add Next Move',
+        addInformationStep: 'Add Information Step',
         noSteps: 'No steps yet. Add the first step to begin the tutorial.',
         step: 'Step',
         stepTitle: 'Step title',
@@ -105,7 +112,8 @@ function copyFor(locale: 'en' | 'ar') {
         simulationDescription: 'What happens after clicking?',
         duplicate: 'Duplicate step',
         delete: 'Delete step',
-        preview: 'Preview',
+        preview: 'Preview from Current Step',
+        previewFromBeginning: 'Preview from Beginning',
         save: 'Save Tutorial',
         cancel: 'Cancel',
         error: 'Please fix the following:',
@@ -117,6 +125,7 @@ export default function TutorialEditorModal({
   tutorial,
   locale,
   saving,
+  suspended = false,
   onClose,
   onSave,
   onPreview,
@@ -125,7 +134,11 @@ export default function TutorialEditorModal({
   const [draft, setDraft] = useState<TutorialDraft>(createTutorialDraft);
   const [expandedStepId, setExpandedStepId] = useState<string | null>(null);
   const [targetStepId, setTargetStepId] = useState<string | null>(null);
+  const [pendingInsertIndex, setPendingInsertIndex] = useState<number | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+
+  const targetPickerActive =
+    targetStepId !== null || pendingInsertIndex !== null;
 
   useEffect(() => {
     if (!open) {
@@ -139,6 +152,7 @@ export default function TutorialEditorModal({
     setDraft(nextDraft);
     setExpandedStepId(nextDraft.steps[0]?.id || null);
     setTargetStepId(null);
+    setPendingInsertIndex(null);
     setErrors([]);
   }, [open, tutorial]);
 
@@ -156,13 +170,41 @@ export default function TutorialEditorModal({
     }));
   };
 
-  const addStep = () => {
-    const step = createTutorialStep(draft.steps.length + 1);
-    setDraft(previous => ({
-      ...previous,
-      steps: [...previous.steps, step],
-    }));
+  const getInsertIndexAfterCurrentStep = () => {
+    const currentIndex = expandedStepId
+      ? draft.steps.findIndex(step => step.id === expandedStepId)
+      : -1;
+
+    return currentIndex >= 0 ? currentIndex + 1 : draft.steps.length;
+  };
+
+  const beginAddStep = () => {
+    setPendingInsertIndex(getInsertIndexAfterCurrentStep());
+    setTargetStepId(null);
+    setErrors([]);
+  };
+
+  const addInformationStep = () => {
+    const insertIndex = getInsertIndexAfterCurrentStep();
+    const step = {
+      ...createTutorialStep(insertIndex + 1),
+      action: 'information' as const,
+      target: 'body',
+      targetLabel: locale === 'ar' ? 'معلومات الصفحة' : 'Page information',
+      route: getCurrentRoute(),
+    };
+
+    setDraft(previous => {
+      const nextSteps = [...previous.steps];
+      nextSteps.splice(insertIndex, 0, step);
+
+      return {
+        ...previous,
+        steps: normalizeTutorialSteps(nextSteps),
+      };
+    });
     setExpandedStepId(step.id);
+    setErrors([]);
   };
 
   const deleteStep = (stepId: string) => {
@@ -217,6 +259,33 @@ export default function TutorialEditorModal({
   };
 
   const handleTargetSelect = (candidate: TutorialTargetCandidate) => {
+    if (pendingInsertIndex !== null) {
+      const insertIndex = Math.min(
+        Math.max(0, pendingInsertIndex),
+        draft.steps.length,
+      );
+      const step = {
+        ...createTutorialStep(insertIndex + 1),
+        target: candidate.selector,
+        targetLabel: candidate.label,
+        route: getCurrentRoute(),
+      };
+
+      setDraft(previous => {
+        const nextSteps = [...previous.steps];
+        nextSteps.splice(insertIndex, 0, step);
+
+        return {
+          ...previous,
+          steps: normalizeTutorialSteps(nextSteps),
+        };
+      });
+      setExpandedStepId(step.id);
+      setPendingInsertIndex(null);
+      setTargetStepId(null);
+      return;
+    }
+
     if (!targetStepId) {
       setTargetStepId(null);
       return;
@@ -248,15 +317,25 @@ export default function TutorialEditorModal({
     });
   };
 
-  const handlePreview = async () => {
+  const handlePreview = async (fromBeginning = false) => {
     if (!validate()) {
       return;
     }
 
-    await onPreview({
-      ...draft,
-      steps: normalizeTutorialSteps(draft.steps),
-    });
+    const currentStepIndex = expandedStepId
+      ? draft.steps.findIndex(step => step.id === expandedStepId)
+      : 0;
+    const initialStepIndex = fromBeginning
+      ? 0
+      : Math.max(0, currentStepIndex);
+
+    await onPreview(
+      {
+        ...draft,
+        steps: normalizeTutorialSteps(draft.steps),
+      },
+      initialStepIndex,
+    );
   };
 
   if (!open) {
@@ -265,10 +344,12 @@ export default function TutorialEditorModal({
 
   return (
     <>
-      {!targetStepId && (
+      {!targetPickerActive && (
         <div
           data-tutorial-builder-root="true"
-          className="fixed inset-0 z-[14000] flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:p-8"
+          className={`fixed inset-0 z-[14000] items-start justify-center overflow-y-auto bg-black/60 p-4 sm:p-8 ${
+            suspended ? 'hidden' : 'flex'
+          }`}
           dir={locale === 'ar' ? 'rtl' : 'ltr'}
           style={{ fontFamily: 'Arial, sans-serif' }}
         >
@@ -398,14 +479,24 @@ export default function TutorialEditorModal({
                       {draft.steps.length} {labels.steps.toLowerCase()}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={addStep}
-                    className="flex items-center gap-2 rounded-xl bg-[#7a1717] px-4 py-3 font-bold text-white hover:bg-[#641414]"
-                  >
-                    <Plus size={18} />
-                    {labels.addStep}
-                  </button>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={addInformationStep}
+                      className="flex items-center gap-2 rounded-xl border border-[#d7b7b7] bg-white px-4 py-3 text-sm font-bold text-[#7a1717] hover:bg-[#fff7f7]"
+                    >
+                      <Plus size={17} />
+                      {labels.addInformationStep}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={beginAddStep}
+                      className="flex items-center gap-2 rounded-xl bg-[#7a1717] px-4 py-3 font-bold text-white hover:bg-[#641414]"
+                    >
+                      <Crosshair size={18} />
+                      {labels.addStep}
+                    </button>
+                  </div>
                 </div>
 
                 {draft.steps.length === 0 && (
@@ -640,7 +731,15 @@ export default function TutorialEditorModal({
               </button>
               <button
                 type="button"
-                onClick={() => void handlePreview()}
+                onClick={() => void handlePreview(true)}
+                className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-3 font-bold text-gray-700 hover:bg-gray-50"
+              >
+                <Eye size={18} />
+                {labels.previewFromBeginning}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handlePreview(false)}
                 className="flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-5 py-3 font-bold text-sky-700 hover:bg-sky-100"
               >
                 <Eye size={18} />
@@ -661,10 +760,13 @@ export default function TutorialEditorModal({
       )}
 
       <TutorialTargetPicker
-        active={Boolean(targetStepId)}
+        active={!suspended && targetPickerActive}
         locale={locale}
         onSelect={handleTargetSelect}
-        onCancel={() => setTargetStepId(null)}
+        onCancel={() => {
+          setTargetStepId(null);
+          setPendingInsertIndex(null);
+        }}
       />
     </>
   );
