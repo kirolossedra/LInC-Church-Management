@@ -9,6 +9,7 @@ import {
 import type {
   PeopleDevelopmentEntry,
   PeopleDevelopmentGroupId,
+  PeopleDevelopmentMeetingSchedule,
   PeopleDevelopmentMember,
   PeoplePersonalNote,
 } from './peopleDevelopment.types';
@@ -288,4 +289,24 @@ export function getPeopleDevelopmentEmailRecipients(
         second.name,
       ),
   );
+}
+
+export function getPeopleDevelopmentMeetingSchedulesForGroup(
+  schedules: PeopleDevelopmentMeetingSchedule[],
+  groupId: PeopleDevelopmentGroupId,
+): PeopleDevelopmentMeetingSchedule[] {
+  return schedules.filter(
+    schedule =>
+      schedule.audience === 'shared' ||
+      (
+        schedule.audience === 'group' &&
+        schedule.group === groupId
+      ),
+  );
+}
+
+export function getActivePeopleDevelopmentMeetingSchedules(
+  schedules: PeopleDevelopmentMeetingSchedule[],
+): PeopleDevelopmentMeetingSchedule[] {
+  return schedules.filter(schedule => schedule.active);
 }

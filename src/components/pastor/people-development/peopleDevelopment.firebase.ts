@@ -10,18 +10,25 @@ import {
 import { database } from '../../../firebase';
 
 import {
+  PEOPLE_DEVELOPMENT_MEETING_SCHEDULES_PATH,
   PEOPLE_DEVELOPMENT_ROOT,
 } from './peopleDevelopment.constants';
 
 import type {
   PeopleDevelopmentAttachment,
   PeopleDevelopmentEntry,
+  PeopleDevelopmentMeetingSchedule,
   PeopleDevelopmentMember,
   PeoplePersonalNote,
 } from './peopleDevelopment.types';
 
 import {
+  normalizePeopleDevelopmentDateKey,
   normalizePeopleDevelopmentGroup,
+  normalizePeopleDevelopmentMeetingAudience,
+  normalizePeopleDevelopmentMeetingOrdinal,
+  normalizePeopleDevelopmentMeetingTime,
+  normalizePeopleDevelopmentMeetingWeekday,
   normalizePeoplePersonalNoteType,
 } from './peopleDevelopment.utils';
 
@@ -44,6 +51,17 @@ export interface CreatePeopleDevelopmentAssignmentInput {
 
 export type CreatePeoplePersonalNoteInput =
   Omit<PeoplePersonalNote, 'id'>;
+
+export type CreatePeopleDevelopmentMeetingScheduleInput =
+  Omit<PeopleDevelopmentMeetingSchedule, 'id'>;
+
+export type UpdatePeopleDevelopmentMeetingScheduleInput =
+  Partial<
+    Omit<
+      PeopleDevelopmentMeetingSchedule,
+      'id' | 'createdAt' | 'createdAtISO'
+    >
+  >;
 
 function normalizeNumber(value: unknown): number {
   const parsedValue = Number(value);
@@ -357,4 +375,165 @@ export async function updatePeopleDevelopmentRecords(
   }
 
   await update(ref(database), updates);
+}
+
+export function subscribeToPeopleDevelopmentMeetingSchedules(
+  onData: (
+    schedules: PeopleDevelopmentMeetingSchedule[],
+  ) => void,
+  onError?: FirebaseErrorHandler,
+): Unsubscribe {
+  const schedulesRef = ref(
+    database,
+    `${PEOPLE_DEVELOPMENT_MEETING_SCHEDULES_PATH}/`,
+  );
+
+  return onValue(
+    schedulesRef,
+    snapshot => {
+      const data = snapshot.val();
+
+      if (!data) {
+        onData([]);
+        return;
+      }
+
+      const schedules = Object.entries(data)
+        .map(([id, rawValue]) => {
+          const value = asRecord(rawValue);
+          const audience =
+            normalizePeopleDevelopmentMeetingAudience(
+              value.audience,
+            );
+
+          const group = audience === 'shared'
+            ? ''
+            : normalizePeopleDevelopmentGroup(value.group);
+
+          return {
+            id,
+            audience,
+            group,
+            ordinal:
+              normalizePeopleDevelopmentMeetingOrdinal(
+                value.ordinal,
+              ),
+            weekday:
+              normalizePeopleDevelopmentMeetingWeekday(
+                value.weekday,
+              ),
+            startTime:
+              normalizePeopleDevelopmentMeetingTime(
+                value.startTime,
+              ),
+            startDate:
+              normalizePeopleDevelopmentDateKey(
+                value.startDate,
+              ),
+            endDate:
+              normalizePeopleDevelopmentDateKey(
+                value.endDate,
+              ),
+            active: value.active !== false,
+            createdAt: normalizeNumber(value.createdAt),
+            createdAtISO: String(
+              value.createdAtISO || '',
+            ).trim(),
+            updatedAt: normalizeNumber(
+              value.updatedAt || value.createdAt,
+            ),
+            updatedAtISO: String(
+              value.updatedAtISO ||
+                value.createdAtISO ||
+                '',
+            ).trim(),
+          } satisfies PeopleDevelopmentMeetingSchedule;
+        })
+        .filter(schedule =>
+          Boolean(
+            schedule.audience === 'shared' ||
+              schedule.group,
+          ),
+        )
+        .sort((first, second) => {
+          if (first.audience !== second.audience) {
+            return first.audience === 'shared' ? -1 : 1;
+          }
+
+          if (first.group !== second.group) {
+            return first.group.localeCompare(second.group);
+          }
+
+          return first.startTime.localeCompare(second.startTime);
+        });
+
+      onData(schedules);
+    },
+    error => {
+      console.error(
+        'Failed to load People Development meeting schedules:',
+        error,
+      );
+      onData([]);
+      onError?.(error);
+    },
+  );
+}
+
+export async function createPeopleDevelopmentMeetingSchedule(
+  schedule: CreatePeopleDevelopmentMeetingScheduleInput,
+): Promise<string> {
+  const scheduleRef = await push(
+    ref(
+      database,
+      `${PEOPLE_DEVELOPMENT_MEETING_SCHEDULES_PATH}/`,
+    ),
+    schedule,
+  );
+
+  return scheduleRef.key || '';
+}
+
+export async function updatePeopleDevelopmentMeetingSchedule(
+  scheduleId: string,
+  updates: UpdatePeopleDevelopmentMeetingScheduleInput,
+): Promise<void> {
+  const normalizedScheduleId = String(
+    scheduleId || '',
+  ).trim();
+
+  if (!normalizedScheduleId) {
+    throw new Error(
+      'People Development meeting schedule ID is missing.',
+    );
+  }
+
+  await update(
+    ref(
+      database,
+      `${PEOPLE_DEVELOPMENT_MEETING_SCHEDULES_PATH}/${normalizedScheduleId}`,
+    ),
+    updates,
+  );
+}
+
+export async function deletePeopleDevelopmentMeetingSchedule(
+  scheduleId: string,
+): Promise<void> {
+  const normalizedScheduleId = String(
+    scheduleId || '',
+  ).trim();
+
+  if (!normalizedScheduleId) {
+    throw new Error(
+      'People Development meeting schedule ID is missing.',
+    );
+  }
+
+  await remove(
+    ref(
+      database,
+      `${PEOPLE_DEVELOPMENT_MEETING_SCHEDULES_PATH}/${normalizedScheduleId}`,
+    ),
+  );
 }

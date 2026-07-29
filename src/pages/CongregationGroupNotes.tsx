@@ -6,6 +6,12 @@ import { ar, enUS } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '../i18n';
 import {
+  PeopleDevelopmentMeetingsCalendar,
+  getPeopleDevelopmentMeetingSchedulesForGroup,
+  subscribeToPeopleDevelopmentMeetingSchedules,
+  type PeopleDevelopmentMeetingSchedule,
+} from '../components/pastor/people-development';
+import {
   BookOpen,
   CheckCircle,
   Clock,
@@ -503,6 +509,9 @@ export default function CongregationGroupNotes() {
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAssignment, setSelectedAssignment] = useState<GroupAssignment | null>(null);
+  const [meetingSchedules, setMeetingSchedules] = useState<PeopleDevelopmentMeetingSchedule[]>([]);
+  const [meetingSchedulesLoading, setMeetingSchedulesLoading] = useState(false);
+  const [meetingCalendarMonth, setMeetingCalendarMonth] = useState(new Date());
 
   const groupConfig = getGroupConfig(profile?.group || '');
   const groupLabel = profile?.group ? getGroupLabel(profile.group, displayLocale) : '';
@@ -555,6 +564,33 @@ export default function CongregationGroupNotes() {
 
     return () => unsubscribe();
   }, [profile?.group, displayLocale]);
+
+  useEffect(() => {
+    if (!profile?.group) {
+      setMeetingSchedules([]);
+      setMeetingSchedulesLoading(false);
+      return undefined;
+    }
+
+    setMeetingSchedulesLoading(true);
+
+    return subscribeToPeopleDevelopmentMeetingSchedules(
+      schedules => {
+        setMeetingSchedules(
+          getPeopleDevelopmentMeetingSchedulesForGroup(
+            schedules,
+            profile.group as PeopleDevelopmentGroupId,
+          ).filter(schedule => schedule.active),
+        );
+        setMeetingSchedulesLoading(false);
+      },
+      error => {
+        console.error('Failed to load group meeting schedules:', error);
+        setMeetingSchedules([]);
+        setMeetingSchedulesLoading(false);
+      },
+    );
+  }, [profile?.group]);
 
   const filteredAssignments = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -643,6 +679,8 @@ export default function CongregationGroupNotes() {
   const handleLogout = () => {
     setProfile(null);
     setAssignments([]);
+    setMeetingSchedules([]);
+    setMeetingCalendarMonth(new Date());
     setSearchTerm('');
     setSelectedAssignment(null);
     setLoginStatus('idle');
@@ -838,6 +876,33 @@ export default function CongregationGroupNotes() {
                         </div>
                       </div>
                     </div>
+                  </section>
+
+                  <section className="rounded-3xl border border-[#ead9d0] bg-[#fffdf9] p-5 shadow-sm sm:p-7">
+                    <div className="mb-5">
+                      <div className="mb-2 flex items-center gap-2 text-[#7a1717]">
+                        <Clock size={20} />
+                        <h3 className="text-2xl font-black">
+                          {isAr
+                            ? 'تقويم اجتماعات مجموعتك'
+                            : 'Your Group Meetings Calendar'}
+                        </h3>
+                      </div>
+                      <p className="text-[#6b4b4b]">
+                        {isAr
+                          ? 'يعرض اجتماعات مجموعتك والاجتماعات المشتركة لكل المجموعات.'
+                          : 'Shows meetings for your assigned group and shared meetings for all groups.'}
+                      </p>
+                    </div>
+
+                    <PeopleDevelopmentMeetingsCalendar
+                      schedules={meetingSchedules}
+                      month={meetingCalendarMonth}
+                      locale={displayLocale}
+                      loading={meetingSchedulesLoading}
+                      compact
+                      onMonthChange={setMeetingCalendarMonth}
+                    />
                   </section>
 
                   {latestAssignment && (

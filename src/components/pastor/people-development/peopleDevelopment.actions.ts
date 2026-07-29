@@ -4,15 +4,20 @@ import {
 
 import {
   createPeopleDevelopmentAssignment,
+  createPeopleDevelopmentMeetingSchedule,
   createPeoplePersonalNote,
   deletePeopleDevelopmentAssignment,
+  deletePeopleDevelopmentMeetingSchedule,
   deletePeoplePersonalNote,
+  updatePeopleDevelopmentMeetingSchedule,
   updatePeopleDevelopmentRecords,
 } from './peopleDevelopment.firebase';
 
 import type {
   PeopleDevelopmentAttachment,
   PeopleDevelopmentGroupId,
+  PeopleDevelopmentMeetingSchedule,
+  PeopleDevelopmentMeetingScheduleDraft,
   PeoplePersonalNote,
   PeoplePersonalNoteType,
 } from './peopleDevelopment.types';
@@ -367,5 +372,137 @@ export async function removePeoplePersonalNote(
 ): Promise<void> {
   await deletePeoplePersonalNote(
     noteId,
+  );
+}
+
+export interface SavePeopleDevelopmentMeetingScheduleParams {
+  scheduleId?: string;
+  draft: PeopleDevelopmentMeetingScheduleDraft;
+  timestamp?: number;
+}
+
+function validatePeopleDevelopmentMeetingScheduleDraft(
+  draft: PeopleDevelopmentMeetingScheduleDraft,
+): void {
+  if (
+    draft.audience === 'group' &&
+    !draft.group
+  ) {
+    throw new Error(
+      'Select a People Development group for this meeting.',
+    );
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.startDate)) {
+    throw new Error(
+      'Select a valid schedule start date.',
+    );
+  }
+
+  if (
+    draft.endDate &&
+    !/^\d{4}-\d{2}-\d{2}$/.test(draft.endDate)
+  ) {
+    throw new Error(
+      'Select a valid schedule end date.',
+    );
+  }
+
+  if (
+    draft.endDate &&
+    draft.endDate < draft.startDate
+  ) {
+    throw new Error(
+      'The schedule end date cannot be before its start date.',
+    );
+  }
+
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draft.startTime)) {
+    throw new Error(
+      'Select a valid meeting time.',
+    );
+  }
+}
+
+export async function savePeopleDevelopmentMeetingSchedule(
+  params: SavePeopleDevelopmentMeetingScheduleParams,
+): Promise<PeopleDevelopmentMeetingSchedule> {
+  validatePeopleDevelopmentMeetingScheduleDraft(
+    params.draft,
+  );
+
+  const timestamp = params.timestamp ?? Date.now();
+  const timestampISO = new Date(timestamp).toISOString();
+  const scheduleId = String(
+    params.scheduleId || '',
+  ).trim();
+
+  const normalizedDraft: PeopleDevelopmentMeetingScheduleDraft = {
+    ...params.draft,
+    group:
+      params.draft.audience === 'shared'
+        ? ''
+        : params.draft.group,
+  };
+
+  if (scheduleId) {
+    await updatePeopleDevelopmentMeetingSchedule(
+      scheduleId,
+      {
+        ...normalizedDraft,
+        updatedAt: timestamp,
+        updatedAtISO: timestampISO,
+      },
+    );
+
+    return {
+      id: scheduleId,
+      ...normalizedDraft,
+      createdAt: 0,
+      createdAtISO: '',
+      updatedAt: timestamp,
+      updatedAtISO: timestampISO,
+    };
+  }
+
+  const createdSchedule = {
+    ...normalizedDraft,
+    createdAt: timestamp,
+    createdAtISO: timestampISO,
+    updatedAt: timestamp,
+    updatedAtISO: timestampISO,
+  };
+
+  const createdScheduleId =
+    await createPeopleDevelopmentMeetingSchedule(
+      createdSchedule,
+    );
+
+  return {
+    id: createdScheduleId,
+    ...createdSchedule,
+  };
+}
+
+export async function removePeopleDevelopmentMeetingSchedule(
+  scheduleId: string,
+): Promise<void> {
+  await deletePeopleDevelopmentMeetingSchedule(
+    scheduleId,
+  );
+}
+
+export async function setPeopleDevelopmentMeetingScheduleActive(
+  scheduleId: string,
+  active: boolean,
+  timestamp = Date.now(),
+): Promise<void> {
+  await updatePeopleDevelopmentMeetingSchedule(
+    scheduleId,
+    {
+      active,
+      updatedAt: timestamp,
+      updatedAtISO: new Date(timestamp).toISOString(),
+    },
   );
 }

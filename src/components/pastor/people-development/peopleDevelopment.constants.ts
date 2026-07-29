@@ -129,3 +129,72 @@ export const PEOPLE_DEVELOPMENT_GROUPS: PeopleDevelopmentGroupDefinition[] = [
     badgeClass: 'bg-lime-100 text-lime-800 border-lime-200',
   },
 ];
+
+export const PEOPLE_DEVELOPMENT_MEETING_SCHEDULES_PATH =
+  `${PEOPLE_DEVELOPMENT_ROOT}/meetingSchedules`;
+
+export const PEOPLE_DEVELOPMENT_MEETING_ORDINALS = [
+  {
+    value: 1,
+    labelEn: 'First',
+    labelAr: 'الأول',
+  },
+  {
+    value: 2,
+    labelEn: 'Second',
+    labelAr: 'الثاني',
+  },
+  {
+    value: 3,
+    labelEn: 'Third',
+    labelAr: 'الثالث',
+  },
+  {
+    value: 4,
+    labelEn: 'Fourth',
+    labelAr: 'الرابع',
+  },
+  {
+    value: 'last',
+    labelEn: 'Last',
+    labelAr: 'الأخير',
+  },
+] as const;
+
+export const PEOPLE_DEVELOPMENT_MEETING_WEEKDAYS = [
+  {
+    value: 0,
+    labelEn: 'Sunday',
+    labelAr: 'الأحد',
+  },
+  {
+    value: 1,
+    labelEn: 'Monday',
+    labelAr: 'الاثنين',
+  },
+  {
+    value: 2,
+    labelEn: 'Tuesday',
+    labelAr: 'الثلاثاء',
+  },
+  {
+    value: 3,
+    labelEn: 'Wednesday',
+    labelAr: 'الأربعاء',
+  },
+  {
+    value: 4,
+    labelEn: 'Thursday',
+    labelAr: 'الخميس',
+  },
+  {
+    value: 5,
+    labelEn: 'Friday',
+    labelAr: 'الجمعة',
+  },
+  {
+    value: 6,
+    labelEn: 'Saturday',
+    labelAr: 'السبت',
+  },
+] as const;

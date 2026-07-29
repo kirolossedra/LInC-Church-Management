@@ -61,3 +61,60 @@ export interface PeoplePersonalNote {
   createdAtISO: string;
   source: string;
 }
+
+export type PeopleDevelopmentMeetingAudience =
+  | 'group'
+  | 'shared';
+
+export type PeopleDevelopmentMeetingOrdinal =
+  | 1
+  | 2
+  | 3
+  | 4
+  | 'last';
+
+export type PeopleDevelopmentMeetingWeekday =
+  | 0
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6;
+
+export interface PeopleDevelopmentMeetingSchedule {
+  id: string;
+  audience: PeopleDevelopmentMeetingAudience;
+  group: PeopleDevelopmentGroupId | '';
+  ordinal: PeopleDevelopmentMeetingOrdinal;
+  weekday: PeopleDevelopmentMeetingWeekday;
+  startTime: string;
+  startDate: string;
+  endDate: string;
+  active: boolean;
+  createdAt: number;
+  createdAtISO: string;
+  updatedAt: number;
+  updatedAtISO: string;
+}
+
+export interface PeopleDevelopmentMeetingScheduleDraft {
+  audience: PeopleDevelopmentMeetingAudience;
+  group: PeopleDevelopmentGroupId | '';
+  ordinal: PeopleDevelopmentMeetingOrdinal;
+  weekday: PeopleDevelopmentMeetingWeekday;
+  startTime: string;
+  startDate: string;
+  endDate: string;
+  active: boolean;
+}
+
+export interface PeopleDevelopmentMeetingOccurrence {
+  scheduleId: string;
+  date: string;
+  dateValue: Date;
+  startTime: string;
+  audience: PeopleDevelopmentMeetingAudience;
+  group: PeopleDevelopmentGroupId | '';
+  title: string;
+}

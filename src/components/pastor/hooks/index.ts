@@ -60,3 +60,13 @@ export type {
   UsePeopleDevelopmentParams,
   UsePeopleDevelopmentResult,
 } from './usePeopleDevelopment';
+
+
+export {
+  default as usePeopleDevelopmentMeetingSchedules,
+} from './usePeopleDevelopmentMeetingSchedules';
+
+export type {
+  UsePeopleDevelopmentMeetingSchedulesParams,
+  UsePeopleDevelopmentMeetingSchedulesResult,
+} from './usePeopleDevelopmentMeetingSchedules';

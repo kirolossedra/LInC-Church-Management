@@ -36,6 +36,7 @@ import { useI18n } from '../../i18n';
 
 import {
   PeopleAssignmentsCalendarModal,
+  PeopleDevelopmentMeetingSchedulesSection,
   PeopleDevelopmentSection,
   PeoplePersonalNoteModal,
   type PeopleDevelopmentParticipant,
@@ -75,6 +76,7 @@ import {
   useNextGen,
   useParticipants,
   usePeopleDevelopment,
+  usePeopleDevelopmentMeetingSchedules,
 } from './hooks';
 
 type Participant = PeopleDevelopmentParticipant;
@@ -249,6 +251,28 @@ export default function PastorDashboard() {
     deleteAssignmentAttachment: handleDeletePeopleDevelopmentAttachment,
   } = usePeopleDevelopment({
     participants,
+    locale: displayLocale,
+  });
+
+  const {
+    showPeopleDevelopmentMeetingSchedules,
+    setShowPeopleDevelopmentMeetingSchedules,
+    peopleDevelopmentMeetingSchedules,
+    peopleDevelopmentMeetingSchedulesLoading,
+    peopleDevelopmentMeetingScheduleSaving,
+    peopleDevelopmentMeetingScheduleDeletingId,
+    peopleDevelopmentMeetingScheduleEditingId,
+    peopleDevelopmentMeetingScheduleDraft,
+    peopleDevelopmentMeetingsCalendarMonth,
+    setPeopleDevelopmentMeetingsCalendarMonth,
+    setPeopleDevelopmentMeetingScheduleDraftField,
+    startCreatingPeopleDevelopmentMeetingSchedule,
+    startEditingPeopleDevelopmentMeetingSchedule,
+    cancelEditingPeopleDevelopmentMeetingSchedule,
+    saveCurrentPeopleDevelopmentMeetingSchedule,
+    deletePeopleDevelopmentMeetingSchedule,
+    togglePeopleDevelopmentMeetingScheduleActive,
+  } = usePeopleDevelopmentMeetingSchedules({
     locale: displayLocale,
   });
 
@@ -454,6 +478,45 @@ export default function PastorDashboard() {
           </button>
           <button
             type="button"
+            onClick={() =>
+              setShowPeopleDevelopmentMeetingSchedules(
+                previous => !previous,
+              )
+            }
+            className={`pastor-main-button flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
+              showPeopleDevelopmentMeetingSchedules
+                ? 'bg-sky-700 text-white border-sky-700'
+                : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'
+            }`}
+          >
+            <CalendarIcon size={16} />
+            <span>
+              {displayLocale === 'ar'
+                ? 'اجتماعات المجموعات'
+                : 'Group Meetings'}
+            </span>
+            {peopleDevelopmentMeetingSchedules.length > 0 && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                  showPeopleDevelopmentMeetingSchedules
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white text-sky-700'
+                }`}
+              >
+                {peopleDevelopmentMeetingSchedules.length}
+              </span>
+            )}
+            <ChevronDown
+              size={16}
+              className={`transition-transform ${
+                showPeopleDevelopmentMeetingSchedules
+                  ? 'rotate-180'
+                  : ''
+              }`}
+            />
+          </button>
+          <button
+            type="button"
             onClick={() => setShowNextGenRegistrations(!showNextGenRegistrations)}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
               showNextGenRegistrations
@@ -585,6 +648,49 @@ export default function PastorDashboard() {
             openPeopleAssignmentsPopup
           }
           onOpenPersonalNote={openPeopleNotePopup}
+        />
+      )}
+
+      {showPeopleDevelopmentMeetingSchedules && (
+        <PeopleDevelopmentMeetingSchedulesSection
+          expanded={showPeopleDevelopmentMeetingSchedules}
+          locale={displayLocale}
+          schedules={peopleDevelopmentMeetingSchedules}
+          loading={peopleDevelopmentMeetingSchedulesLoading}
+          saving={peopleDevelopmentMeetingScheduleSaving}
+          deletingId={peopleDevelopmentMeetingScheduleDeletingId}
+          editingId={peopleDevelopmentMeetingScheduleEditingId}
+          draft={peopleDevelopmentMeetingScheduleDraft}
+          month={peopleDevelopmentMeetingsCalendarMonth}
+          onToggleExpanded={() =>
+            setShowPeopleDevelopmentMeetingSchedules(
+              previous => !previous,
+            )
+          }
+          onMonthChange={
+            setPeopleDevelopmentMeetingsCalendarMonth
+          }
+          onDraftChange={
+            setPeopleDevelopmentMeetingScheduleDraftField
+          }
+          onStartCreate={
+            startCreatingPeopleDevelopmentMeetingSchedule
+          }
+          onStartEdit={
+            startEditingPeopleDevelopmentMeetingSchedule
+          }
+          onCancelEdit={
+            cancelEditingPeopleDevelopmentMeetingSchedule
+          }
+          onSave={
+            saveCurrentPeopleDevelopmentMeetingSchedule
+          }
+          onDelete={
+            deletePeopleDevelopmentMeetingSchedule
+          }
+          onToggleActive={
+            togglePeopleDevelopmentMeetingScheduleActive
+          }
         />
       )}
 
