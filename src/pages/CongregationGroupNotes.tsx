@@ -7,13 +7,20 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '../i18n';
 import {
   PeopleDevelopmentMeetingsCalendar,
+  formatPeopleDevelopmentMeetingTime,
+  getNextPeopleDevelopmentMeetingOccurrence,
+  getPeopleDevelopmentMeetingRecurrenceLabel,
   getPeopleDevelopmentMeetingSchedulesForGroup,
   subscribeToPeopleDevelopmentMeetingSchedules,
+  type PeopleDevelopmentMeetingOccurrence,
   type PeopleDevelopmentMeetingSchedule,
 } from '../components/pastor/people-development';
 import {
   BookOpen,
+  CalendarDays,
   CheckCircle,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Download,
   ExternalLink,
@@ -91,6 +98,38 @@ interface GroupAssignment {
   createdAtISO: string;
   source?: string;
   attachments: GroupAssignmentAttachment[];
+}
+
+interface NextMeetingSummary {
+  schedule: PeopleDevelopmentMeetingSchedule;
+  occurrence: PeopleDevelopmentMeetingOccurrence;
+}
+
+function getMeetingOccurrenceTimestamp(
+  occurrence: PeopleDevelopmentMeetingOccurrence,
+): number {
+  const [hours = 0, minutes = 0] = occurrence.startTime
+    .split(':')
+    .map(value => Number(value));
+  const occurrenceDate = new Date(occurrence.dateValue);
+
+  occurrenceDate.setHours(hours, minutes, 0, 0);
+  return occurrenceDate.getTime();
+}
+
+function formatMeetingOccurrenceDate(
+  dateValue: Date,
+  locale: 'en' | 'ar',
+): string {
+  return format(
+    dateValue,
+    locale === 'ar'
+      ? 'EEEE، d MMMM yyyy'
+      : 'EEEE, MMMM d, yyyy',
+    {
+      locale: locale === 'ar' ? ar : enUS,
+    },
+  );
 }
 
 const PEOPLE_DEVELOPMENT_GROUPS: PeopleDevelopmentGroupConfig[] = [
@@ -512,6 +551,7 @@ export default function CongregationGroupNotes() {
   const [meetingSchedules, setMeetingSchedules] = useState<PeopleDevelopmentMeetingSchedule[]>([]);
   const [meetingSchedulesLoading, setMeetingSchedulesLoading] = useState(false);
   const [meetingCalendarMonth, setMeetingCalendarMonth] = useState(new Date());
+  const [isMeetingCalendarExpanded, setIsMeetingCalendarExpanded] = useState(false);
 
   const groupConfig = getGroupConfig(profile?.group || '');
   const groupLabel = profile?.group ? getGroupLabel(profile.group, displayLocale) : '';
@@ -606,6 +646,37 @@ export default function CongregationGroupNotes() {
 
   const latestAssignment = assignments[0] || null;
 
+  const nextMeetingSummaries = useMemo<NextMeetingSummary[]>(() => {
+    const now = new Date();
+
+    return meetingSchedules
+      .map(schedule => {
+        const occurrence = getNextPeopleDevelopmentMeetingOccurrence(
+          schedule,
+          now,
+          displayLocale,
+        );
+
+        return occurrence
+          ? { schedule, occurrence }
+          : null;
+      })
+      .filter((summary): summary is NextMeetingSummary => Boolean(summary))
+      .sort(
+        (first, second) =>
+          getMeetingOccurrenceTimestamp(first.occurrence) -
+          getMeetingOccurrenceTimestamp(second.occurrence),
+      );
+  }, [meetingSchedules, displayLocale]);
+
+  const nextGroupMeeting = nextMeetingSummaries.find(
+    summary => summary.schedule.audience === 'group',
+  ) || null;
+
+  const nextSharedMeeting = nextMeetingSummaries.find(
+    summary => summary.schedule.audience === 'shared',
+  ) || null;
+
   const openAttachment = (attachment: GroupAssignmentAttachment) => {
     try {
       const attachmentUrl = createDecodedAttachmentUrl(attachment);
@@ -681,6 +752,7 @@ export default function CongregationGroupNotes() {
     setAssignments([]);
     setMeetingSchedules([]);
     setMeetingCalendarMonth(new Date());
+    setIsMeetingCalendarExpanded(false);
     setSearchTerm('');
     setSelectedAssignment(null);
     setLoginStatus('idle');
@@ -853,6 +925,80 @@ export default function CongregationGroupNotes() {
 
               {profile.group && groupConfig && (
                 <>
+                  <section className="overflow-hidden rounded-3xl border-2 border-[#d8aaaa] bg-[#7a1717] text-white shadow-lg shadow-[#7a1717]/10">
+                    <div className="flex items-center gap-3 border-b border-white/15 px-5 py-4 sm:px-7">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+                        <CalendarDays size={23} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-black sm:text-2xl">
+                          {isAr ? 'اجتماعاتك القادمة' : 'Your Upcoming Meetings'}
+                        </h3>
+                        <p className="mt-1 text-sm text-white/80">
+                          {isAr
+                            ? 'موعد اجتماع مجموعتك القادم، والاجتماع المشترك عند وجوده.'
+                            : 'Your next group meeting and the next all-groups meeting, when scheduled.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {meetingSchedulesLoading ? (
+                      <div className="flex items-center gap-3 px-5 py-6 sm:px-7">
+                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        <span>{isAr ? 'جار تحميل الاجتماعات...' : 'Loading upcoming meetings...'}</span>
+                      </div>
+                    ) : (
+                      <div className={`grid gap-3 p-4 sm:p-5 ${nextSharedMeeting ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+                        <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
+                          <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-white/80">
+                            <Users size={17} />
+                            {isAr ? 'اجتماع مجموعتك القادم' : 'Your Next Group Meeting'}
+                          </div>
+
+                          {nextGroupMeeting ? (
+                            <>
+                              <div className="text-xl font-black">
+                                {nextGroupMeeting.occurrence.title}
+                              </div>
+                              <div className="mt-3 space-y-1 text-sm text-white/90">
+                                <div>{formatMeetingOccurrenceDate(nextGroupMeeting.occurrence.dateValue, displayLocale)}</div>
+                                <div>{formatPeopleDevelopmentMeetingTime(nextGroupMeeting.occurrence.startTime, displayLocale)}</div>
+                                <div className="text-white/70">
+                                  {getPeopleDevelopmentMeetingRecurrenceLabel(nextGroupMeeting.schedule, displayLocale)}
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-white/80">
+                              {isAr
+                                ? 'لا يوجد اجتماع قادم مجدول لمجموعتك حالياً.'
+                                : 'No upcoming group meeting is currently scheduled.'}
+                            </p>
+                          )}
+                        </div>
+
+                        {nextSharedMeeting && (
+                          <div className="rounded-2xl border border-amber-200/50 bg-amber-50 p-4 text-amber-950">
+                            <div className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-amber-800">
+                              <Users size={17} />
+                              {isAr ? 'الاجتماع المشترك القادم' : 'Next All-Groups Meeting'}
+                            </div>
+                            <div className="text-xl font-black">
+                              {nextSharedMeeting.occurrence.title}
+                            </div>
+                            <div className="mt-3 space-y-1 text-sm text-amber-900">
+                              <div>{formatMeetingOccurrenceDate(nextSharedMeeting.occurrence.dateValue, displayLocale)}</div>
+                              <div>{formatPeopleDevelopmentMeetingTime(nextSharedMeeting.occurrence.startTime, displayLocale)}</div>
+                              <div className="text-amber-800/80">
+                                {getPeopleDevelopmentMeetingRecurrenceLabel(nextSharedMeeting.schedule, displayLocale)}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </section>
+
                   <section className={`rounded-3xl border-2 p-5 shadow-sm sm:p-7 ${groupConfig.cardClass}`}>
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <div>
@@ -878,31 +1024,61 @@ export default function CongregationGroupNotes() {
                     </div>
                   </section>
 
-                  <section className="rounded-3xl border border-[#ead9d0] bg-[#fffdf9] p-5 shadow-sm sm:p-7">
-                    <div className="mb-5">
-                      <div className="mb-2 flex items-center gap-2 text-[#7a1717]">
-                        <Clock size={20} />
-                        <h3 className="text-2xl font-black">
+                  <section className="overflow-hidden rounded-3xl border border-[#ead9d0] bg-[#fffdf9] shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setIsMeetingCalendarExpanded(current => !current)}
+                      aria-expanded={isMeetingCalendarExpanded}
+                      className="flex w-full flex-col gap-4 p-5 text-start transition-colors hover:bg-[#fffaf6] sm:flex-row sm:items-center sm:justify-between sm:p-7"
+                    >
+                      <div>
+                        <div className="mb-2 flex items-center gap-2 text-[#7a1717]">
+                          <Clock size={20} />
+                          <h3 className="text-2xl font-black">
+                            {isAr
+                              ? 'تقويم اجتماعات مجموعتك'
+                              : 'Your Group Meetings Calendar'}
+                          </h3>
+                        </div>
+                        <p className="text-[#6b4b4b]">
                           {isAr
-                            ? 'تقويم اجتماعات مجموعتك'
-                            : 'Your Group Meetings Calendar'}
-                        </h3>
+                            ? 'يعرض اجتماعات مجموعتك والاجتماعات المشتركة لكل المجموعات.'
+                            : 'Shows meetings for your assigned group and shared meetings for all groups.'}
+                        </p>
                       </div>
-                      <p className="text-[#6b4b4b]">
-                        {isAr
-                          ? 'يعرض اجتماعات مجموعتك والاجتماعات المشتركة لكل المجموعات.'
-                          : 'Shows meetings for your assigned group and shared meetings for all groups.'}
-                      </p>
-                    </div>
 
-                    <PeopleDevelopmentMeetingsCalendar
-                      schedules={meetingSchedules}
-                      month={meetingCalendarMonth}
-                      locale={displayLocale}
-                      loading={meetingSchedulesLoading}
-                      compact
-                      onMonthChange={setMeetingCalendarMonth}
-                    />
+                      <span className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl border border-[#d8aaaa] bg-[#f8eeee] px-4 py-3 text-sm font-black text-[#7a1717]">
+                        {isMeetingCalendarExpanded
+                          ? (isAr ? 'إخفاء التقويم' : 'Hide Calendar')
+                          : (isAr ? 'عرض التقويم' : 'Show Calendar')}
+                        {isMeetingCalendarExpanded
+                          ? <ChevronUp size={18} />
+                          : <ChevronDown size={18} />}
+                      </span>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {isMeetingCalendarExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="border-t border-[#ead9d0] p-5 sm:p-7">
+                            <PeopleDevelopmentMeetingsCalendar
+                              schedules={meetingSchedules}
+                              month={meetingCalendarMonth}
+                              locale={displayLocale}
+                              loading={meetingSchedulesLoading}
+                              compact
+                              onMonthChange={setMeetingCalendarMonth}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </section>
 
                   {latestAssignment && (

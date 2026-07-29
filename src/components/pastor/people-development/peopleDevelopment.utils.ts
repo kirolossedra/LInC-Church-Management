@@ -505,7 +505,7 @@ export function getNextPeopleDevelopmentMeetingOccurrence(
     0,
   );
 
-  const fromKey = getPeopleDevelopmentLocalDateKey(fromDate);
+  const fromTimestamp = fromDate.getTime();
 
   for (let offset = 0; offset < 24; offset += 1) {
     const candidateMonth = new Date(
@@ -525,8 +525,17 @@ export function getNextPeopleDevelopmentMeetingOccurrence(
         locale,
       )[0];
 
-    if (occurrence && occurrence.date >= fromKey) {
-      return occurrence;
+    if (occurrence) {
+      const [hours = 0, minutes = 0] = occurrence.startTime
+        .split(':')
+        .map(value => Number(value));
+      const occurrenceDateTime = new Date(occurrence.dateValue);
+
+      occurrenceDateTime.setHours(hours, minutes, 0, 0);
+
+      if (occurrenceDateTime.getTime() >= fromTimestamp) {
+        return occurrence;
+      }
     }
   }
 
