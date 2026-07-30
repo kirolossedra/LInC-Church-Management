@@ -10,7 +10,6 @@ export const TUTORIAL_PROGRESS_PATH = 'tutorialBuilder/progress';
 export const TUTORIAL_AUDIENCES: readonly TutorialAudience[] = [
   'all',
   'pastor',
-  'superadmin',
   'congregation',
 ];
 

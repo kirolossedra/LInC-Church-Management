@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import AssessmentForm from './components/AssessmentForm';
-import AdminDashboard from './pages/AdminDashboard';
 import PastorDashboard from './components/pastor/PastorDashboard';
 import LandingPage from './pages/LandingPage';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -15,7 +14,7 @@ import AttendancePage from './pages/AttendancePage';
 import CongregationGroupNotes from './pages/CongregationGroupNotes';
 import AdministratorPanel from './components/admin/AdministratorPanel';
 import { auth, signInWithGoogle, signInWithEmail, signUpWithEmail } from './firebase';
-import { ref, onValue, set } from 'firebase/database';
+import { ref, onValue } from 'firebase/database';
 import { database } from './firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { LogIn, ShieldCheck, Mail, Lock, AlertCircle } from 'lucide-react';
@@ -23,7 +22,7 @@ import { handleOAuthCallback, storeTokens } from './services/gmail';
 import { I18nProvider, useI18n } from './i18n';
 import { TutorialProvider } from './components/tutorial-builder';
 
-type Role = 'superadmin' | 'pastor';
+type Role = 'pastor';
 
 function ProtectedRoute({
   children,
@@ -256,34 +255,21 @@ function AppRoutes() {
     const adminsRef = ref(database, 'admins/');
 
     const unsubscribe = onValue(adminsRef, snapshot => {
-      const data = snapshot.val();
+      const data = snapshot.val() || {};
+      const parsed: Record<string, Role> = {};
 
-      if (data) {
-        const parsed: Record<string, Role> = {};
+      Object.keys(data).forEach(k => {
+        const role = String(data[k] || '').trim().toLowerCase();
 
-        Object.keys(data).forEach(k => {
-          const email = k.replace(/,/g, '.').toLowerCase().trim();
-          const raw = data[k];
-          const role: Role = raw === 'superadmin' ? 'superadmin' : 'pastor';
-          parsed[email] = role;
-        });
+        if (role !== 'pastor') {
+          return;
+        }
 
-        setAdmins(parsed);
-      } else {
-        const defaults: Record<string, Role> = {};
-        defaults['georgejoseph5000@gmail.com'] = 'superadmin';
-        defaults['georgtawadrous@gmail.com'] = 'pastor';
+        const email = k.replace(/,/g, '.').toLowerCase().trim();
+        parsed[email] = 'pastor';
+      });
 
-        const init: Record<string, string> = {};
-
-        Object.entries(defaults).forEach(([e, r]) => {
-          init[e.toLowerCase().trim().replace(/\./g, ',')] = r;
-        });
-
-        set(ref(database, 'admins/'), init);
-        setAdmins(defaults);
-      }
-
+      setAdmins(parsed);
       setAdminsLoaded(true);
     });
 
@@ -292,14 +278,11 @@ function AppRoutes() {
 
   const appLoading = authLoading || !adminsLoaded;
   const userEmail = user?.email?.toLowerCase().trim() || '';
-  const adminRole = admins[userEmail];
-  const isPastor = !!adminRole;
-  const isSuperAdmin = adminRole === 'superadmin';
+  const isPastor = admins[userEmail] === 'pastor';
 
   const getActiveTab = () => {
     const path = location.pathname;
 
-    if (path === '/dashboard') return 'dashboard';
     if (path === '/calendar') return 'calendar';
     if (path === '/pastor/people-notes') return 'people-notes';
     if (path === '/assessment') return 'assessment';
@@ -314,20 +297,9 @@ function AppRoutes() {
       <Route path="/" element={<LandingPage />} />
 
       <Route
-        path="/dashboard"
-        element={
-          <Layout activeTab={getActiveTab()} isAdmin={!!isSuperAdmin} isSuperAdmin={!!isSuperAdmin}>
-            <ProtectedRoute hasAccess={!!isSuperAdmin} loading={appLoading} fallbackUrl={isPastor ? '/calendar' : undefined}>
-              <AdminDashboard isSuperAdmin={!!isSuperAdmin} userEmail={userEmail} />
-            </ProtectedRoute>
-          </Layout>
-        }
-      />
-
-      <Route
         path="/calendar"
         element={
-          <Layout activeTab={getActiveTab()} isAdmin={!!isPastor} isSuperAdmin={!!isSuperAdmin}>
+          <Layout activeTab={getActiveTab()} isAdmin={!!isPastor}>
             <ProtectedRoute hasAccess={!!isPastor} loading={appLoading}>
               <PastorDashboard />
             </ProtectedRoute>
@@ -338,7 +310,7 @@ function AppRoutes() {
       <Route
         path="/pastor/people-notes"
         element={
-          <Layout activeTab={getActiveTab()} isAdmin={!!isPastor} isSuperAdmin={!!isSuperAdmin}>
+          <Layout activeTab={getActiveTab()} isAdmin={!!isPastor}>
             <ProtectedRoute hasAccess={!!isPastor} loading={appLoading}>
               <PeopleNotesPage />
             </ProtectedRoute>
@@ -349,7 +321,7 @@ function AppRoutes() {
       <Route
         path="/guide"
         element={
-          <Layout activeTab={getActiveTab()} isAdmin={!!isPastor} isSuperAdmin={!!isSuperAdmin}>
+          <Layout activeTab={getActiveTab()} isAdmin={!!isPastor}>
             <ProtectedRoute hasAccess={!!isPastor} loading={appLoading}>
               <GuidePage />
             </ProtectedRoute>
@@ -360,7 +332,7 @@ function AppRoutes() {
       <Route
         path="/assessment"
         element={
-          <Layout activeTab={getActiveTab()} isAdmin={false} isSuperAdmin={false}>
+          <Layout activeTab={getActiveTab()} isAdmin={false}>
             <AssessmentForm />
           </Layout>
         }
@@ -369,7 +341,7 @@ function AppRoutes() {
       <Route
         path="/booking"
         element={
-          <Layout activeTab="booking" isAdmin={false} isSuperAdmin={false}>
+          <Layout activeTab="booking" isAdmin={false}>
             <BookingCalendar />
           </Layout>
         }
@@ -378,7 +350,7 @@ function AppRoutes() {
       <Route
         path="/nextgen-activities"
         element={
-          <Layout activeTab="nextgen-activities" isAdmin={false} isSuperAdmin={false}>
+          <Layout activeTab="nextgen-activities" isAdmin={false}>
             <NextGenActivities />
           </Layout>
         }
@@ -387,7 +359,7 @@ function AppRoutes() {
       <Route
         path="/attendance"
         element={
-          <Layout activeTab="attendance" isAdmin={false} isSuperAdmin={false}>
+          <Layout activeTab="attendance" isAdmin={false}>
             <AttendancePage />
           </Layout>
         }
@@ -396,7 +368,7 @@ function AppRoutes() {
       <Route
         path="/group-notes"
         element={
-          <Layout activeTab={getActiveTab()} isAdmin={false} isSuperAdmin={false}>
+          <Layout activeTab={getActiveTab()} isAdmin={false}>
             <CongregationGroupNotes />
           </Layout>
         }

@@ -1,7 +1,6 @@
 export type TutorialAudience =
   | 'all'
   | 'pastor'
-  | 'superadmin'
   | 'congregation';
 
 export type TutorialStepAction =

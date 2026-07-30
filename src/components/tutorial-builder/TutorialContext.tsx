@@ -185,13 +185,6 @@ export function TutorialProvider({ children }: { children: ReactNode }) {
           return true;
         }
 
-        if (audience === 'superadmin') {
-          return (
-            tutorial.audience === 'superadmin' ||
-            tutorial.audience === 'pastor'
-          );
-        }
-
         return tutorial.audience === audience;
       }),
     [tutorials],

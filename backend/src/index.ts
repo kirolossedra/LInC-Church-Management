@@ -10,8 +10,6 @@ type Bindings = {
   BREVO_SENDER_EMAIL: string
   BREVO_SENDER_NAME: string
   BREVO_TEST_RECIPIENT: string
-  FIREBASE_PROJECT_ID: string
-  FIREBASE_DATABASE_URL: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -23,10 +21,7 @@ app.use(
       'https://lincministry.com',
       'http://localhost:5173',
     ],
-    allowHeaders: [
-      'Content-Type',
-      'Authorization',
-    ],
+    allowHeaders: ['Content-Type'],
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     maxAge: 86400,
   }),

@@ -1,5 +1,3 @@
-import { auth } from '../firebase';
-
 export type MeetingInvitationLocale = 'en' | 'ar';
 
 export interface MeetingInvitationRecipient {
@@ -43,29 +41,6 @@ const BACKEND_BASE_URL = (
 export async function sendMeetingInvitationsViaBackend(
   request: SendMeetingInvitationsRequest,
 ): Promise<boolean> {
-  const currentUser = auth.currentUser;
-
-  if (!currentUser) {
-    console.error(
-      'Meeting invitations require an authenticated Firebase user.',
-    );
-
-    return false;
-  }
-
-  let firebaseIdToken: string;
-
-  try {
-    firebaseIdToken = await currentUser.getIdToken();
-  } catch (error) {
-    console.error(
-      'Unable to obtain the Firebase authentication token:',
-      error,
-    );
-
-    return false;
-  }
-
   let response: Response;
 
   try {
@@ -76,7 +51,6 @@ export async function sendMeetingInvitationsViaBackend(
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${firebaseIdToken}`,
         },
         body: JSON.stringify(request),
       },

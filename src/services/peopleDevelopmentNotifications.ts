@@ -1,5 +1,3 @@
-import { auth } from '../firebase';
-
 import type {
   PeopleDevelopmentGroupId,
 } from '../components/pastor/people-development/peopleDevelopment.types';
@@ -34,6 +32,9 @@ export interface PeopleDevelopmentNotificationResult {
   failedCount: number;
   apiRequestCount: number;
   deliveryMode: 'bcc';
+  errorCode?: string;
+  errorMessage?: string;
+  httpStatus?: number;
 }
 
 interface PeopleDevelopmentNotificationApiResponse {
@@ -59,6 +60,11 @@ const BACKEND_BASE_URL = (
 
 function createFailedResult(
   requestedCount: number,
+  error: {
+    code: string;
+    message: string;
+    httpStatus?: number;
+  },
 ): PeopleDevelopmentNotificationResult {
   return {
     success: false,
@@ -68,6 +74,9 @@ function createFailedResult(
     failedCount: requestedCount,
     apiRequestCount: 0,
     deliveryMode: 'bcc',
+    errorCode: error.code,
+    errorMessage: error.message,
+    httpStatus: error.httpStatus,
   };
 }
 
@@ -75,29 +84,6 @@ export async function sendPeopleDevelopmentNotificationViaBackend(
   request: SendPeopleDevelopmentNotificationRequest,
 ): Promise<PeopleDevelopmentNotificationResult> {
   const requestedCount = request.recipients.length;
-  const currentUser = auth.currentUser;
-
-  if (!currentUser) {
-    console.error(
-      'People Development notifications require an authenticated Firebase user.',
-    );
-
-    return createFailedResult(requestedCount);
-  }
-
-  let firebaseIdToken: string;
-
-  try {
-    firebaseIdToken = await currentUser.getIdToken();
-  } catch (error) {
-    console.error(
-      'Unable to obtain the Firebase authentication token:',
-      error,
-    );
-
-    return createFailedResult(requestedCount);
-  }
-
   let response: Response;
 
   try {
@@ -108,7 +94,6 @@ export async function sendPeopleDevelopmentNotificationViaBackend(
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${firebaseIdToken}`,
         },
         body: JSON.stringify(request),
       },
@@ -119,7 +104,10 @@ export async function sendPeopleDevelopmentNotificationViaBackend(
       error,
     );
 
-    return createFailedResult(requestedCount);
+    return createFailedResult(requestedCount, {
+      code: 'BACKEND_UNREACHABLE',
+      message: 'The LinC backend could not be reached.',
+    });
   }
 
   let responseBody: PeopleDevelopmentNotificationApiResponse | null = null;
@@ -144,30 +132,29 @@ export async function sendPeopleDevelopmentNotificationViaBackend(
 
     return {
       success: false,
-      requestedCount:
-        data?.requestedCount ?? requestedCount,
-      recipientCount:
-        data?.recipientCount ?? requestedCount,
+      requestedCount: data?.requestedCount ?? requestedCount,
+      recipientCount: data?.recipientCount ?? requestedCount,
       sentCount: data?.sentCount ?? 0,
-      failedCount:
-        data?.failedCount ?? requestedCount,
-      apiRequestCount:
-        data?.apiRequestCount ?? 1,
+      failedCount: data?.failedCount ?? requestedCount,
+      apiRequestCount: data?.apiRequestCount ?? 1,
       deliveryMode: 'bcc',
+      errorCode:
+        responseBody?.error?.code ||
+        'PEOPLE_DEVELOPMENT_NOTIFICATION_FAILED',
+      errorMessage:
+        responseBody?.error?.message ||
+        'The People Development notification could not be sent.',
+      httpStatus: response.status,
     };
   }
 
   return {
     success: true,
-    requestedCount:
-      data?.requestedCount ?? requestedCount,
-    recipientCount:
-      data?.recipientCount ?? requestedCount,
-    sentCount:
-      data?.sentCount ?? requestedCount,
+    requestedCount: data?.requestedCount ?? requestedCount,
+    recipientCount: data?.recipientCount ?? requestedCount,
+    sentCount: data?.sentCount ?? requestedCount,
     failedCount: data?.failedCount ?? 0,
-    apiRequestCount:
-      data?.apiRequestCount ?? 1,
+    apiRequestCount: data?.apiRequestCount ?? 1,
     deliveryMode: 'bcc',
   };
 }

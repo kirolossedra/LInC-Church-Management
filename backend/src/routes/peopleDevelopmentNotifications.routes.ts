@@ -5,17 +5,6 @@ import {
 } from '../emails/peopleDevelopmentNotification.email'
 
 import {
-  requireFirebaseAuth,
-  type AuthenticationBindings,
-  type AuthenticationVariables,
-} from '../middleware/authentication.middleware'
-
-import {
-  requirePastorRole,
-  type PastorAuthorizationBindings,
-} from '../middleware/authorization.middleware'
-
-import {
   peopleDevelopmentNotificationRequestSchema,
 } from '../schemas/peopleDevelopmentNotification.schema'
 
@@ -26,21 +15,9 @@ import {
   type BrevoRecipient,
 } from '../services/brevo.service'
 
-type PeopleDevelopmentNotificationBindings =
-  AuthenticationBindings &
-  PastorAuthorizationBindings &
-  BrevoBindings
-
-type PeopleDevelopmentNotificationVariables =
-  AuthenticationVariables
-
 const routes = new Hono<{
-  Bindings: PeopleDevelopmentNotificationBindings
-  Variables: PeopleDevelopmentNotificationVariables
+  Bindings: BrevoBindings
 }>()
-
-routes.use('*', requireFirebaseAuth)
-routes.use('*', requirePastorRole)
 
 routes.post('/', async context => {
   let requestBody: unknown

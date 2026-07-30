@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { Church, LayoutDashboard, ClipboardList, Calendar as CalendarIcon, LogOut, Home, Globe, BookOpen, CalendarDays } from 'lucide-react';
+import { Church, ClipboardList, Calendar as CalendarIcon, LogOut, Home, Globe, BookOpen, CalendarDays } from 'lucide-react';
 import { auth } from '../firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { Link } from 'react-router-dom';
@@ -11,10 +11,9 @@ interface LayoutProps {
   children: ReactNode;
   activeTab?: string;
   isAdmin?: boolean;
-  isSuperAdmin?: boolean;
 }
 
-export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: LayoutProps) {
+export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
   const [user] = useAuthState(auth);
   const { t, dir, locale, setLocale } = useI18n();
 
@@ -74,23 +73,13 @@ export default function Layout({ children, activeTab, isAdmin, isSuperAdmin }: L
                 <BookOpen size={20} />
                 <span className="text-[10px] md:text-sm uppercase tracking-wider">{t('nav.guide')}</span>
               </Link>
-              {isSuperAdmin && (
-                <Link
-                  to="/dashboard"
-                  data-tutorial-id="nav-admin-dashboard"
-                  className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
-                >
-                  <LayoutDashboard size={20} />
-                  <span className="text-[10px] md:text-sm uppercase tracking-wider">Admin</span>
-                </Link>
-              )}
             </>
           )}
         </div>
 
         <div className="flex items-center gap-2">
           <TutorialLibrary
-            audience={isSuperAdmin ? 'superadmin' : isAdmin ? 'pastor' : 'congregation'}
+            audience={isAdmin ? 'pastor' : 'congregation'}
             locale={locale}
           />
           <button

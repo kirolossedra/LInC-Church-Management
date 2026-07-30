@@ -812,10 +812,18 @@ export default function usePeopleDevelopment({
       !notificationResult.success ||
       notificationResult.failedCount > 0
     ) {
+      const diagnostic = [
+        notificationResult.errorMessage,
+        notificationResult.errorCode,
+        notificationResult.httpStatus
+          ? `HTTP ${notificationResult.httpStatus}`
+          : '',
+      ].filter(Boolean).join(' — ');
+
       window.alert(
         locale === 'ar'
-          ? `تم حفظ المنشور. تم إرسال ${notificationResult.sentCount} إشعار، وفشل إرسال ${notificationResult.failedCount}.`
-          : `Post saved. ${notificationResult.sentCount} notification(s) sent, ${notificationResult.failedCount} failed.`,
+          ? `تم حفظ المنشور. تم إرسال ${notificationResult.sentCount} إشعار، وفشل إرسال ${notificationResult.failedCount}.${diagnostic ? `\n\nالسبب: ${diagnostic}` : ''}`
+          : `Post saved. ${notificationResult.sentCount} notification(s) sent, ${notificationResult.failedCount} failed.${diagnostic ? `\n\nReason: ${diagnostic}` : ''}`,
       );
 
       return;

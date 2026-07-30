@@ -40,7 +40,7 @@ function normalizeAudience(value: unknown): TutorialAudience {
   const normalized = String(value || '').trim() as TutorialAudience;
   return TUTORIAL_AUDIENCES.includes(normalized)
     ? normalized
-    : 'all';
+    : 'pastor';
 }
 
 function normalizeAction(value: unknown): TutorialStepAction {
@@ -226,10 +226,6 @@ export function tutorialMatchesAudience(
 ): boolean {
   if (tutorial.audience === 'all') {
     return true;
-  }
-
-  if (audience === 'superadmin') {
-    return tutorial.audience === 'superadmin' || tutorial.audience === 'pastor';
   }
 
   return tutorial.audience === audience;

@@ -21,7 +21,7 @@ import PageTitle from '../components/PageTitle';
 import { useI18n } from '../i18n';
 
 type DevelopmentType = 'strength' | 'growth';
-type Role = 'superadmin' | 'pastor';
+type Role = 'pastor';
 
 interface DevelopmentComment {
   id: string;
@@ -158,8 +158,14 @@ export default function PeopleNotesPage() {
       const parsed: Record<string, Role> = {};
 
       Object.keys(data).forEach(k => {
+        const role = String(data[k] || '').trim().toLowerCase();
+
+        if (role !== 'pastor') {
+          return;
+        }
+
         const email = k.replace(/,/g, '.').toLowerCase().trim();
-        parsed[email] = data[k] === 'superadmin' ? 'superadmin' : 'pastor';
+        parsed[email] = 'pastor';
       });
 
       setUserRole(parsed[currentUserEmail]);
@@ -169,7 +175,7 @@ export default function PeopleNotesPage() {
     return () => unsubscribe();
   }, [currentUserEmail]);
 
-  const hasPastorAccess = roleLoaded && (userRole === 'pastor' || userRole === 'superadmin');
+  const hasPastorAccess = roleLoaded && userRole === 'pastor';
 
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');

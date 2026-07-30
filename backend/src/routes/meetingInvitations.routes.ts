@@ -5,17 +5,6 @@ import {
 } from '../emails/meetingInvitation.email'
 
 import {
-  requireFirebaseAuth,
-  type AuthenticationBindings,
-  type AuthenticationVariables,
-} from '../middleware/authentication.middleware'
-
-import {
-  requirePastorRole,
-  type PastorAuthorizationBindings,
-} from '../middleware/authorization.middleware'
-
-import {
   meetingInvitationRequestSchema,
 } from '../schemas/meetingInvitation.schema'
 
@@ -26,28 +15,9 @@ import {
   type BrevoRecipient,
 } from '../services/brevo.service'
 
-type MeetingInvitationBindings =
-  AuthenticationBindings &
-  PastorAuthorizationBindings &
-  BrevoBindings
-
-type MeetingInvitationVariables =
-  AuthenticationVariables
-
 const meetingInvitationsRoutes = new Hono<{
-  Bindings: MeetingInvitationBindings
-  Variables: MeetingInvitationVariables
+  Bindings: BrevoBindings
 }>()
-
-meetingInvitationsRoutes.use(
-  '*',
-  requireFirebaseAuth,
-)
-
-meetingInvitationsRoutes.use(
-  '*',
-  requirePastorRole,
-)
 
 meetingInvitationsRoutes.post('/', async context => {
   let requestBody: unknown

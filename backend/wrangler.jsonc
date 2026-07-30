@@ -6,10 +6,6 @@
   // "compatibility_flags": [
   //   "nodejs_compat"
   // ],
-  "vars": {
-    "FIREBASE_PROJECT_ID": "churchmeeting",
-    "FIREBASE_DATABASE_URL": "https://churchmeeting-default-rtdb.firebaseio.com"
-  },
   // "kv_namespaces": [
   //   {
   //     "binding": "MY_KV_NAMESPACE",
