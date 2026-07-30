@@ -601,7 +601,9 @@ export default function CongregationGroupNotes() {
   }, []);
 
   useEffect(() => {
-    if (!profile?.group) {
+    const groupId = profile?.group;
+
+    if (!groupId) {
       setAssignments([]);
       setAssignmentsLoading(false);
       return undefined;
@@ -623,7 +625,7 @@ export default function CongregationGroupNotes() {
 
         const parsed = Object.entries(data)
           .map(([id, value]: [string, any]) => normalizeAssignment(id, value, displayLocale))
-          .filter((assignment): assignment is GroupAssignment => Boolean(assignment && assignment.groups.includes(profile.group)))
+          .filter((assignment): assignment is GroupAssignment => Boolean(assignment && assignment.groups.includes(groupId)))
           .sort((a, b) => b.createdAt - a.createdAt);
 
         setAssignments(parsed);
