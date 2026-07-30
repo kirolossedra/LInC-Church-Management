@@ -4,9 +4,21 @@ export type BrevoBindings = {
   BREVO_SENDER_NAME: string
 }
 
+export interface BrevoRecipient {
+  email: string
+  name: string
+}
+
 export interface BrevoEmailRequest {
   recipientEmail: string
   recipientName: string
+  subject: string
+  htmlContent: string
+  textContent: string
+}
+
+export interface BrevoBccEmailRequest {
+  recipients: BrevoRecipient[]
   subject: string
   htmlContent: string
   textContent: string
@@ -31,9 +43,9 @@ export class BrevoRequestError extends Error {
   }
 }
 
-export async function sendBrevoEmail(
+async function sendBrevoRequest(
   bindings: BrevoBindings,
-  email: BrevoEmailRequest,
+  payload: Record<string, unknown>,
 ): Promise<BrevoEmailResult> {
   let response: Response
 
@@ -47,21 +59,7 @@ export async function sendBrevoEmail(
           'Content-Type': 'application/json',
           'api-key': bindings.BREVO_API_KEY,
         },
-        body: JSON.stringify({
-          sender: {
-            email: bindings.BREVO_SENDER_EMAIL,
-            name: bindings.BREVO_SENDER_NAME,
-          },
-          to: [
-            {
-              email: email.recipientEmail,
-              name: email.recipientName,
-            },
-          ],
-          subject: email.subject,
-          htmlContent: email.htmlContent,
-          textContent: email.textContent,
-        }),
+        body: JSON.stringify(payload),
       },
     )
   } catch (error) {
@@ -101,4 +99,53 @@ export async function sendBrevoEmail(
   return {
     messageId: responseBody.messageId ?? null,
   }
+}
+
+export async function sendBrevoEmail(
+  bindings: BrevoBindings,
+  email: BrevoEmailRequest,
+): Promise<BrevoEmailResult> {
+  return sendBrevoRequest(bindings, {
+    sender: {
+      email: bindings.BREVO_SENDER_EMAIL,
+      name: bindings.BREVO_SENDER_NAME,
+    },
+    to: [
+      {
+        email: email.recipientEmail,
+        name: email.recipientName,
+      },
+    ],
+    subject: email.subject,
+    htmlContent: email.htmlContent,
+    textContent: email.textContent,
+  })
+}
+
+export async function sendBrevoBccEmail(
+  bindings: BrevoBindings,
+  email: BrevoBccEmailRequest,
+): Promise<BrevoEmailResult> {
+  if (email.recipients.length === 0) {
+    throw new BrevoRequestError(
+      'At least one BCC recipient is required.',
+    )
+  }
+
+  return sendBrevoRequest(bindings, {
+    sender: {
+      email: bindings.BREVO_SENDER_EMAIL,
+      name: bindings.BREVO_SENDER_NAME,
+    },
+    to: [
+      {
+        email: bindings.BREVO_SENDER_EMAIL,
+        name: bindings.BREVO_SENDER_NAME,
+      },
+    ],
+    bcc: email.recipients,
+    subject: email.subject,
+    htmlContent: email.htmlContent,
+    textContent: email.textContent,
+  })
 }

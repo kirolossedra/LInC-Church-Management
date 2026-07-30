@@ -25,6 +25,7 @@ import type {
 import {
   normalizePeopleDevelopmentDateKey,
   normalizePeopleDevelopmentGroup,
+  normalizePeopleDevelopmentGroups,
   normalizePeopleDevelopmentMeetingAudience,
   normalizePeopleDevelopmentMeetingOrdinal,
   normalizePeopleDevelopmentMeetingTime,
@@ -39,6 +40,7 @@ export type PeopleDevelopmentMembersByKey =
 
 export interface CreatePeopleDevelopmentAssignmentInput {
   group: PeopleDevelopmentEntry['group'];
+  groups: PeopleDevelopmentEntry['groups'];
   groupLabel: string;
   text: string;
   date: string;
@@ -193,9 +195,16 @@ export function subscribeToPeopleDevelopmentAssignments(
                 )
             : [];
 
+          const groups =
+            normalizePeopleDevelopmentGroups(
+              value.groups,
+              value.group,
+            );
+
           return {
             id,
-            group: normalizePeopleDevelopmentGroup(value.group),
+            group: groups[0] || '',
+            groups,
             text: String(value.text || '').trim(),
             date: String(value.date || '').trim(),
             createdAt: normalizeNumber(value.createdAt),
@@ -208,7 +217,7 @@ export function subscribeToPeopleDevelopmentAssignments(
             entry,
           ): entry is PeopleDevelopmentEntry =>
             Boolean(
-              entry.group &&
+              entry.groups.length > 0 &&
                 (entry.text || entry.attachments.length > 0),
             ),
         )

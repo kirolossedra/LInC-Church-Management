@@ -93,7 +93,7 @@ export const meetingInvitationRequestSchema = z
     recipients: z
       .array(recipientSchema)
       .min(1)
-      .max(50),
+      .max(1999),
     meeting: meetingSchema,
   })
   .strict()

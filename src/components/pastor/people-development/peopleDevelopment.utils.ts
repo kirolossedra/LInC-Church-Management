@@ -101,6 +101,41 @@ export function normalizePeopleDevelopmentGroup(
   return '';
 }
 
+export function normalizePeopleDevelopmentGroups(
+  value: unknown,
+  fallbackGroup: unknown = '',
+): PeopleDevelopmentGroupId[] {
+  const rawGroups = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object'
+      ? Object.values(value as Record<string, unknown>)
+      : [];
+
+  const normalizedGroups = rawGroups
+    .map(normalizePeopleDevelopmentGroup)
+    .filter(
+      (
+        groupId,
+      ): groupId is PeopleDevelopmentGroupId =>
+        Boolean(groupId),
+    );
+
+  const normalizedFallback =
+    normalizePeopleDevelopmentGroup(
+      fallbackGroup,
+    );
+
+  if (normalizedFallback) {
+    normalizedGroups.unshift(
+      normalizedFallback,
+    );
+  }
+
+  return Array.from(
+    new Set(normalizedGroups),
+  );
+}
+
 export function normalizePeoplePersonalNoteType(
   value: unknown,
 ): PeoplePersonalNoteType {

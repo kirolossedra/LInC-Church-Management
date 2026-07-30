@@ -5,20 +5,16 @@ import {
   type FormEvent,
 } from 'react';
 
-import emailjs from '@emailjs/browser';
 import {
-  push,
-  ref,
-} from 'firebase/database';
-
-import { database } from '../../../firebase';
+  sendPeopleDevelopmentNotificationViaBackend,
+  type PeopleDevelopmentNotificationResult,
+} from '../../../services/peopleDevelopmentNotifications';
 
 import {
   MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
   PEOPLE_DEVELOPMENT_GROUPS,
   PEOPLE_DEVELOPMENT_ROOT,
   assignPersonToPeopleDevelopmentGroup,
-  buildPeopleDevelopmentAssignmentNotificationEmailHtml,
   formatFileSize,
   getParticipantPeopleDevelopmentGroup,
   getPeopleAssignmentDateKey,
@@ -26,7 +22,6 @@ import {
   getPeopleDevelopmentEmailRecipients,
   getPeopleDevelopmentGroupAssignments,
   getPeopleDevelopmentGroupLabel,
-  getPeopleDevelopmentStaticGroupLabel,
   postPeopleDevelopmentAssignment,
   readFileAsBase64,
   removePeopleDevelopmentAssignment,
@@ -44,10 +39,6 @@ import {
   type PeoplePersonalNoteType,
 } from '../people-development';
 
-const EMAILJS_SERVICE_ID = 'service_v47g6or';
-const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
-const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
-
 type DisplayLocale = 'en' | 'ar';
 
 export interface UsePeopleDevelopmentParams {
@@ -57,18 +48,12 @@ export interface UsePeopleDevelopmentParams {
 
 interface PeopleDevelopmentNotificationParams {
   assignmentId: string;
-  groupId: PeopleDevelopmentGroupId;
+  groupIds: PeopleDevelopmentGroupId[];
   text: string;
   date: string;
   createdAt: number;
   createdAtISO: string;
   attachments: PeopleDevelopmentAttachment[];
-}
-
-interface PeopleDevelopmentNotificationResult {
-  totalCount: number;
-  sentCount: number;
-  failedCount: number;
 }
 
 function createGroupRecord<T>(
@@ -133,6 +118,11 @@ export default function usePeopleDevelopment({
   );
 
   const [
+    peopleDevelopmentPostingCombined,
+    setPeopleDevelopmentPostingCombined,
+  ] = useState(false);
+
+  const [
     peopleDevelopmentDeletingKey,
     setPeopleDevelopmentDeletingKey,
   ] = useState<string | null>(null);
@@ -184,6 +174,26 @@ export default function usePeopleDevelopment({
   ] = useState<
     Record<PeopleDevelopmentGroupId, string>
   >(() => createGroupRecord(() => ''));
+
+  const [
+    peopleCombinedAssignmentGroups,
+    setPeopleCombinedAssignmentGroups,
+  ] = useState<PeopleDevelopmentGroupId[]>([]);
+
+  const [
+    peopleCombinedAssignmentDraft,
+    setPeopleCombinedAssignmentDraft,
+  ] = useState('');
+
+  const [
+    peopleCombinedAssignmentFile,
+    setPeopleCombinedAssignmentFile,
+  ] = useState<File | null>(null);
+
+  const [
+    peopleCombinedAssignmentFileInputResetKey,
+    setPeopleCombinedAssignmentFileInputResetKey,
+  ] = useState(0);
 
   const [
     showPeopleNotePopup,
@@ -544,6 +554,12 @@ export default function usePeopleDevelopment({
     );
   };
 
+  const resetCombinedAssignmentFileInput = () => {
+    setPeopleCombinedAssignmentFileInputResetKey(
+      previous => previous + 1,
+    );
+  };
+
   const clearAssignmentFile = (
     groupId: PeopleDevelopmentGroupId,
   ) => {
@@ -555,27 +571,17 @@ export default function usePeopleDevelopment({
     resetAssignmentFileInput(groupId);
   };
 
-  const changeAssignmentFile = (
-    groupId: PeopleDevelopmentGroupId,
-    file: File | null,
-  ) => {
-    if (!file) {
-      setPeopleAssignmentFiles(
-        previous => ({
-          ...previous,
-          [groupId]: null,
-        }),
-      );
+  const clearCombinedAssignmentFile = () => {
+    setPeopleCombinedAssignmentFile(null);
+    resetCombinedAssignmentFileInput();
+  };
 
-      return;
-    }
-
+  const validateAssignmentFile = (
+    file: File,
+  ): boolean => {
     const isPdf =
-      file.type ===
-        'application/pdf' ||
-      file.name
-        .toLowerCase()
-        .endsWith('.pdf');
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf');
 
     if (!isPdf) {
       window.alert(
@@ -584,18 +590,7 @@ export default function usePeopleDevelopment({
           : 'Only PDF files can be attached for now.',
       );
 
-      setPeopleAssignmentFiles(
-        previous => ({
-          ...previous,
-          [groupId]: null,
-        }),
-      );
-
-      resetAssignmentFileInput(
-        groupId,
-      );
-
-      return;
+      return false;
     }
 
     if (
@@ -612,17 +607,32 @@ export default function usePeopleDevelopment({
             )} or less.`,
       );
 
-      setPeopleAssignmentFiles(
-        previous => ({
-          ...previous,
-          [groupId]: null,
-        }),
-      );
+      return false;
+    }
 
-      resetAssignmentFileInput(
-        groupId,
-      );
+    return true;
+  };
 
+  const changeAssignmentFile = (
+    groupId: PeopleDevelopmentGroupId,
+    file: File | null,
+  ) => {
+    if (!file) {
+      setPeopleAssignmentFiles(previous => ({
+        ...previous,
+        [groupId]: null,
+      }));
+
+      return;
+    }
+
+    if (!validateAssignmentFile(file)) {
+      setPeopleAssignmentFiles(previous => ({
+        ...previous,
+        [groupId]: null,
+      }));
+
+      resetAssignmentFileInput(groupId);
       return;
     }
 
@@ -630,6 +640,78 @@ export default function usePeopleDevelopment({
       ...previous,
       [groupId]: file,
     }));
+  };
+
+  const changeCombinedAssignmentFile = (
+    file: File | null,
+  ) => {
+    if (!file) {
+      setPeopleCombinedAssignmentFile(null);
+      return;
+    }
+
+    if (!validateAssignmentFile(file)) {
+      setPeopleCombinedAssignmentFile(null);
+      resetCombinedAssignmentFileInput();
+      return;
+    }
+
+    setPeopleCombinedAssignmentFile(file);
+  };
+
+  const toggleCombinedAssignmentGroup = (
+    groupId: PeopleDevelopmentGroupId,
+  ) => {
+    setPeopleCombinedAssignmentGroups(
+      previous =>
+        previous.includes(groupId)
+          ? previous.filter(
+              selectedGroupId =>
+                selectedGroupId !== groupId,
+            )
+          : [...previous, groupId],
+    );
+  };
+
+  const selectAllCombinedAssignmentGroups = () => {
+    setPeopleCombinedAssignmentGroups(
+      PEOPLE_DEVELOPMENT_GROUPS.map(
+        group => group.id,
+      ),
+    );
+  };
+
+  const clearCombinedAssignmentGroups = () => {
+    setPeopleCombinedAssignmentGroups([]);
+  };
+
+  const createAssignmentAttachments = async (
+    selectedFile: File | null,
+  ): Promise<PeopleDevelopmentAttachment[]> => {
+    if (!selectedFile) {
+      return [];
+    }
+
+    const uploadedAt = Date.now();
+    const uploadedAtISO =
+      new Date(uploadedAt).toISOString();
+    const base64 =
+      await readFileAsBase64(selectedFile);
+
+    return [
+      {
+        name: selectedFile.name,
+        type:
+          selectedFile.type ||
+          'application/pdf',
+        size: selectedFile.size,
+        encoding: 'base64',
+        storage: 'realtimeDatabase',
+        base64,
+        uploadedAt,
+        uploadedAtISO,
+      },
+    ];
   };
 
   const sendAssignmentNotificationEmails =
@@ -640,20 +722,20 @@ export default function usePeopleDevelopment({
         getPeopleDevelopmentEmailRecipients(
           participants,
           peopleDevelopmentMembers,
-          params.groupId,
+          params.groupIds,
         );
 
-      const groupLabelEn =
-        getPeopleDevelopmentStaticGroupLabel(
-          params.groupId,
-          'en',
-        );
-
-      const groupLabelAr =
-        getPeopleDevelopmentStaticGroupLabel(
-          params.groupId,
-          'ar',
-        );
+      if (recipients.length === 0) {
+        return {
+          success: true,
+          requestedCount: 0,
+          recipientCount: 0,
+          sentCount: 0,
+          failedCount: 0,
+          apiRequestCount: 0,
+          deliveryMode: 'bcc',
+        };
+      }
 
       const appUrl =
         typeof window !== 'undefined'
@@ -679,310 +761,165 @@ export default function usePeopleDevelopment({
           : params.createdAtISO ||
             params.date;
 
-      let sentCount = 0;
-      let failedCount = 0;
-
-      for (
-        const recipient of recipients
-      ) {
-        const recipientEmail =
-          String(
-            recipient.email || '',
-          ).trim();
-
-        const recipientName =
-          recipient.name &&
-          recipient.name !== 'N/A'
-            ? recipient.name
-            : recipient.firstName ||
-              'Friend';
-
-        const subject =
-          `LinC People Development Update - ${groupLabelEn} / تحديث نمو الأشخاص - ${groupLabelAr}`;
-
-        const htmlBody =
-          buildPeopleDevelopmentAssignmentNotificationEmailHtml(
-            {
-              recipientName,
-              groupLabelEn,
-              groupLabelAr,
-              noteText:
-                params.text,
-              attachments:
-                params.attachments,
-              postedAtLabel,
-              appUrl,
-            },
-          );
-
-        try {
-          const response =
-            await emailjs.send(
-              EMAILJS_SERVICE_ID,
-              EMAILJS_TEMPLATE_ID,
-              {
-                to_email:
-                  recipientEmail,
-                subject,
-                fullName:
-                  recipientName,
-                message_html:
-                  htmlBody,
-                reply_to: '',
-              },
-              EMAILJS_PUBLIC_KEY,
-            );
-
-          sentCount += 1;
-
-          try {
-            await push(
-              ref(
-                database,
-                'emailJsSendLogs/',
+      return sendPeopleDevelopmentNotificationViaBackend(
+        {
+          assignmentId: params.assignmentId,
+          groups: params.groupIds,
+          recipients: recipients.map(
+            recipient => ({
+              email: recipient.email,
+              name:
+                recipient.name &&
+                recipient.name !== 'N/A'
+                  ? recipient.name
+                  : recipient.firstName ||
+                    'Participant',
+            }),
+          ),
+          post: {
+            text: params.text,
+            postedAtLabel,
+            appUrl,
+            attachments:
+              params.attachments.map(
+                attachment => ({
+                  name: attachment.name,
+                  size: attachment.size,
+                }),
               ),
-              {
-                recipientEmail,
-                subject,
-                fullName:
-                  recipientName,
-                sentUsing:
-                  'EmailJS',
-                serviceId:
-                  EMAILJS_SERVICE_ID,
-                templateId:
-                  EMAILJS_TEMPLATE_ID,
-                source:
-                  'peopleDevelopmentAssignmentNotification',
-                assignmentId:
-                  params.assignmentId,
-                group:
-                  params.groupId,
-                groupLabelEn,
-                groupLabelAr,
-                attachmentNames:
-                  params.attachments.map(
-                    attachment =>
-                      attachment.name,
-                  ),
-                sentAt:
-                  Date.now(),
-                sentAtISO:
-                  new Date().toISOString(),
-                emailJsResponse: {
-                  status:
-                    response.status,
-                  text:
-                    response.text,
-                },
-              },
-            );
-          } catch (logError) {
-            console.error(
-              'Failed to log People Development notification success:',
-              logError,
-            );
-          }
-        } catch (error) {
-          failedCount += 1;
-
-          console.error(
-            `Failed to send People Development assignment notification to ${recipientEmail}:`,
-            error,
-          );
-
-          try {
-            await push(
-              ref(
-                database,
-                'emailJsSendLogs/',
-              ),
-              {
-                recipientEmail,
-                subject,
-                fullName:
-                  recipientName,
-                sentUsing:
-                  'EmailJS',
-                serviceId:
-                  EMAILJS_SERVICE_ID,
-                templateId:
-                  EMAILJS_TEMPLATE_ID,
-                source:
-                  'peopleDevelopmentAssignmentNotification',
-                assignmentId:
-                  params.assignmentId,
-                group:
-                  params.groupId,
-                groupLabelEn,
-                groupLabelAr,
-                failed: true,
-                errorMessage:
-                  error instanceof Error
-                    ? error.message
-                    : String(error),
-                attemptedAt:
-                  Date.now(),
-                attemptedAtISO:
-                  new Date().toISOString(),
-              },
-            );
-          } catch (logError) {
-            console.error(
-              'Failed to log People Development notification failure:',
-              logError,
-            );
-          }
-        }
-      }
-
-      return {
-        totalCount:
-          recipients.length,
-        sentCount,
-        failedCount,
-      };
+          },
+        },
+      );
     };
 
-  const postAssignment = async (
-    groupId: PeopleDevelopmentGroupId,
+  const showAssignmentNotificationResult = (
+    notificationResult: PeopleDevelopmentNotificationResult,
+    groupCount: number,
   ) => {
-    const text =
-      (
-        peopleAssignmentDrafts[
-          groupId
-        ] || ''
-      ).trim();
+    if (
+      notificationResult.requestedCount === 0
+    ) {
+      window.alert(
+        locale === 'ar'
+          ? 'تم حفظ المنشور، لكن لا يوجد أعضاء في المجموعات المحددة لديهم بريد إلكتروني صالح.'
+          : 'Post saved, but no members in the selected group(s) have valid email addresses.',
+      );
 
-    const selectedFile =
-      peopleAssignmentFiles[
-        groupId
-      ];
+      return;
+    }
 
     if (
-      !text &&
-      !selectedFile
+      !notificationResult.success ||
+      notificationResult.failedCount > 0
     ) {
+      window.alert(
+        locale === 'ar'
+          ? `تم حفظ المنشور. تم إرسال ${notificationResult.sentCount} إشعار، وفشل إرسال ${notificationResult.failedCount}.`
+          : `Post saved. ${notificationResult.sentCount} notification(s) sent, ${notificationResult.failedCount} failed.`,
+      );
+
+      return;
+    }
+
+    window.alert(
+      locale === 'ar'
+        ? `تم حفظ المنشور في ${groupCount} مجموعة وإرسال إشعار إلى ${notificationResult.sentCount} عضو/أعضاء باستخدام طلب بريد واحد بنسخة مخفية.`
+        : `Post saved to ${groupCount} group(s), and ${notificationResult.sentCount} member(s) were notified using one BCC email request.`,
+    );
+  };
+
+  const postAssignmentToGroups = async (
+    groupIds: PeopleDevelopmentGroupId[],
+    textValue: string,
+    selectedFile: File | null,
+  ) => {
+    const groups = Array.from(
+      new Set(groupIds),
+    );
+    const text = textValue.trim();
+
+    if (groups.length === 0) {
+      window.alert(
+        locale === 'ar'
+          ? 'اختر مجموعة واحدة على الأقل.'
+          : 'Select at least one group.',
+      );
+
+      return false;
+    }
+
+    if (!text && !selectedFile) {
       window.alert(
         locale === 'ar'
           ? 'اكتب نص الملاحظة أو أرفق ملف PDF أولاً.'
           : 'Write a note or attach a PDF first.',
       );
 
-      return;
+      return false;
     }
 
+    const attachments =
+      await createAssignmentAttachments(
+        selectedFile,
+      );
+
+    const postedAssignment =
+      await postPeopleDevelopmentAssignment({
+        groups,
+        groupLabel: groups
+          .map(getGroupDisplayLabel)
+          .join(', '),
+        text,
+        attachments,
+        source: 'pastorCalendar',
+      });
+
+    const notificationResult =
+      await sendAssignmentNotificationEmails({
+        assignmentId:
+          postedAssignment.assignmentId,
+        groupIds:
+          postedAssignment.groups,
+        text: postedAssignment.text,
+        date: postedAssignment.date,
+        createdAt:
+          postedAssignment.createdAt,
+        createdAtISO:
+          postedAssignment.createdAtISO,
+        attachments:
+          postedAssignment.attachments,
+      });
+
+    showAssignmentNotificationResult(
+      notificationResult,
+      groups.length,
+    );
+
+    return true;
+  };
+
+  const postAssignment = async (
+    groupId: PeopleDevelopmentGroupId,
+  ) => {
     setPeopleDevelopmentPostingGroup(
       groupId,
     );
 
     try {
-      const attachments:
-        PeopleDevelopmentAttachment[] =
-        [];
+      const posted =
+        await postAssignmentToGroups(
+          [groupId],
+          peopleAssignmentDrafts[groupId] || '',
+          peopleAssignmentFiles[groupId],
+        );
 
-      if (selectedFile) {
-        const uploadedAt =
-          Date.now();
-
-        const uploadedAtISO =
-          new Date(
-            uploadedAt,
-          ).toISOString();
-
-        const base64 =
-          await readFileAsBase64(
-            selectedFile,
-          );
-
-        attachments.push({
-          name:
-            selectedFile.name,
-          type:
-            selectedFile.type ||
-            'application/pdf',
-          size:
-            selectedFile.size,
-          encoding: 'base64',
-          storage:
-            'realtimeDatabase',
-          base64,
-          uploadedAt,
-          uploadedAtISO,
-        });
+      if (posted) {
+        setAssignmentDraft(groupId, '');
+        clearAssignmentFile(groupId);
       }
-
-      const postedAssignment =
-        await postPeopleDevelopmentAssignment(
-          {
-            group: groupId,
-            groupLabel:
-              getGroupDisplayLabel(
-                groupId,
-              ),
-            text,
-            attachments,
-            source:
-              'pastorCalendar',
-          },
-        );
-
-      const notificationResult =
-        await sendAssignmentNotificationEmails(
-          {
-            assignmentId:
-              postedAssignment.assignmentId,
-            groupId,
-            text:
-              postedAssignment.text,
-            date:
-              postedAssignment.date,
-            createdAt:
-              postedAssignment.createdAt,
-            createdAtISO:
-              postedAssignment.createdAtISO,
-            attachments:
-              postedAssignment.attachments,
-          },
-        );
-
-      if (
-        notificationResult.totalCount ===
-        0
-      ) {
-        window.alert(
-          locale === 'ar'
-            ? 'تم حفظ الملاحظة / التكليف، لكن لا يوجد أعضاء في هذه المجموعة لديهم بريد إلكتروني صالح.'
-            : 'Note / assignment saved, but no group members with valid email addresses were found.',
-        );
-      } else if (
-        notificationResult.failedCount >
-        0
-      ) {
-        window.alert(
-          locale === 'ar'
-            ? `تم حفظ الملاحظة / التكليف. تم إرسال ${notificationResult.sentCount} بريد، وفشل إرسال ${notificationResult.failedCount}.`
-            : `Note / assignment saved. ${notificationResult.sentCount} email(s) sent, ${notificationResult.failedCount} failed.`,
-        );
-      } else {
-        window.alert(
-          locale === 'ar'
-            ? `تم حفظ الملاحظة / التكليف وإرسال بريد إلى ${notificationResult.sentCount} عضو/أعضاء في المجموعة.`
-            : `Note / assignment saved and email notifications sent to ${notificationResult.sentCount} group member(s).`,
-        );
-      }
-
-      setAssignmentDraft(
-        groupId,
-        '',
-      );
-
-      clearAssignmentFile(
-        groupId,
-      );
     } catch (error) {
       console.error(
-        'Failed to post people development assignment:',
+        'Failed to post People Development assignment:',
         error,
       );
 
@@ -992,20 +929,57 @@ export default function usePeopleDevelopment({
           : 'Failed to save the note or assignment.',
       );
     } finally {
-      setPeopleDevelopmentPostingGroup(
-        null,
+      setPeopleDevelopmentPostingGroup(null);
+    }
+  };
+
+  const postCombinedAssignment = async () => {
+    setPeopleDevelopmentPostingCombined(true);
+
+    try {
+      const posted =
+        await postAssignmentToGroups(
+          peopleCombinedAssignmentGroups,
+          peopleCombinedAssignmentDraft,
+          peopleCombinedAssignmentFile,
+        );
+
+      if (posted) {
+        setPeopleCombinedAssignmentDraft('');
+        setPeopleCombinedAssignmentGroups([]);
+        clearCombinedAssignmentFile();
+      }
+    } catch (error) {
+      console.error(
+        'Failed to post combined People Development assignment:',
+        error,
       );
+
+      window.alert(
+        locale === 'ar'
+          ? 'فشل حفظ المنشور المشترك.'
+          : 'Failed to save the combined post.',
+      );
+    } finally {
+      setPeopleDevelopmentPostingCombined(false);
     }
   };
 
   const deleteAssignment = async (
     entry: PeopleDevelopmentEntry,
   ) => {
+    const isCombinedPost =
+      entry.groups.length > 1;
+
     const confirmed =
       window.confirm(
         locale === 'ar'
-          ? 'هل أنت متأكد أنك تريد حذف هذا المنشور بالكامل مع جميع ملفاته؟ لا يمكن التراجع عن هذا الإجراء.'
-          : 'Delete this entire post and all of its files? This action cannot be undone.',
+          ? isCombinedPost
+            ? 'سيتم حذف هذا المنشور المشترك من جميع المجموعات المحددة مع جميع ملفاته. لا يمكن التراجع عن هذا الإجراء. هل تريد المتابعة؟'
+            : 'هل أنت متأكد أنك تريد حذف هذا المنشور بالكامل مع جميع ملفاته؟ لا يمكن التراجع عن هذا الإجراء.'
+          : isCombinedPost
+            ? 'This combined post will be deleted from every selected group with all of its files. This action cannot be undone. Continue?'
+            : 'Delete this entire post and all of its files? This action cannot be undone.',
       );
 
     if (!confirmed) {
@@ -1186,6 +1160,7 @@ export default function usePeopleDevelopment({
 
     peopleDevelopmentSavingKey,
     peopleDevelopmentPostingGroup,
+    peopleDevelopmentPostingCombined,
     peopleDevelopmentDeletingKey,
 
     peopleAssignmentsPopupGroup,
@@ -1197,6 +1172,12 @@ export default function usePeopleDevelopment({
     peopleAssignmentFiles,
     peopleAssignmentFileInputResetKeys,
     peopleGroupSelectDrafts,
+
+    peopleCombinedAssignmentGroups,
+    peopleCombinedAssignmentDraft,
+    setPeopleCombinedAssignmentDraft,
+    peopleCombinedAssignmentFile,
+    peopleCombinedAssignmentFileInputResetKey,
 
     showPeopleNotePopup,
     selectedPeopleNotePerson,
@@ -1234,6 +1215,13 @@ export default function usePeopleDevelopment({
     changeAssignmentFile,
     clearAssignmentFile,
     postAssignment,
+
+    toggleCombinedAssignmentGroup,
+    selectAllCombinedAssignmentGroups,
+    clearCombinedAssignmentGroups,
+    changeCombinedAssignmentFile,
+    clearCombinedAssignmentFile,
+    postCombinedAssignment,
 
     deleteAssignment,
     deleteAssignmentAttachment,

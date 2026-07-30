@@ -23,6 +23,7 @@ import {
   type PeopleDevelopmentGroupDefinition,
 } from './peopleDevelopment.constants';
 
+import PeopleDevelopmentCombinedPostPanel from './PeopleDevelopmentCombinedPostPanel';
 import PeopleDevelopmentGroupPanel from './PeopleDevelopmentGroupPanel';
 
 import type {
@@ -56,6 +57,12 @@ export interface PeopleDevelopmentSectionProps {
   draggedMemberKey: string | null;
   savingMemberKey: string | null;
   postingGroup: PeopleDevelopmentGroupId | null;
+  postingCombined: boolean;
+
+  combinedSelectedGroupIds: PeopleDevelopmentGroupId[];
+  combinedDraftText: string;
+  combinedSelectedFile: File | null;
+  combinedFileInputResetKey: number;
 
   assignmentDrafts: Record<
     PeopleDevelopmentGroupId,
@@ -115,6 +122,17 @@ export interface PeopleDevelopmentSectionProps {
     groupId: PeopleDevelopmentGroupId,
   ) => Promise<void> | void;
 
+  onToggleCombinedGroup: (
+    groupId: PeopleDevelopmentGroupId,
+  ) => void;
+
+  onSelectAllCombinedGroups: () => void;
+  onClearCombinedGroups: () => void;
+  onCombinedDraftTextChange: (value: string) => void;
+  onCombinedFileChange: (file: File | null) => void;
+  onClearCombinedFile: () => void;
+  onPostCombinedAssignment: () => Promise<void> | void;
+
   onGroupSelectDraftChange: (
     groupId: PeopleDevelopmentGroupId,
     memberKey: string,
@@ -170,6 +188,11 @@ export default function PeopleDevelopmentSection({
   draggedMemberKey,
   savingMemberKey,
   postingGroup,
+  postingCombined,
+  combinedSelectedGroupIds,
+  combinedDraftText,
+  combinedSelectedFile,
+  combinedFileInputResetKey,
   assignmentDrafts,
   assignmentFiles,
   assignmentFileInputResetKeys,
@@ -183,6 +206,13 @@ export default function PeopleDevelopmentSection({
   onFileChange,
   onClearFile,
   onPostAssignment,
+  onToggleCombinedGroup,
+  onSelectAllCombinedGroups,
+  onClearCombinedGroups,
+  onCombinedDraftTextChange,
+  onCombinedFileChange,
+  onClearCombinedFile,
+  onPostCombinedAssignment,
   onGroupSelectDraftChange,
   onOpenAssignments,
   onOpenPersonalNote,
@@ -784,6 +814,40 @@ export default function PeopleDevelopmentSection({
               </div>
             )}
           </section>
+
+          <PeopleDevelopmentCombinedPostPanel
+            locale={locale}
+            selectedGroupIds={
+              combinedSelectedGroupIds
+            }
+            draftText={combinedDraftText}
+            selectedFile={combinedSelectedFile}
+            fileInputResetKey={
+              combinedFileInputResetKey
+            }
+            posting={postingCombined}
+            onToggleGroup={
+              onToggleCombinedGroup
+            }
+            onSelectAllGroups={
+              onSelectAllCombinedGroups
+            }
+            onClearGroups={
+              onClearCombinedGroups
+            }
+            onDraftTextChange={
+              onCombinedDraftTextChange
+            }
+            onFileChange={
+              onCombinedFileChange
+            }
+            onClearFile={
+              onClearCombinedFile
+            }
+            onPost={
+              onPostCombinedAssignment
+            }
+          />
 
           <section>
             <div className="mb-2 sm:mb-4">

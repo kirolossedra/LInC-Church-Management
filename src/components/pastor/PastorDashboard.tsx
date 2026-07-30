@@ -217,6 +217,7 @@ export default function PastorDashboard() {
     setDraggedPeopleMemberKey,
     peopleDevelopmentSavingKey,
     peopleDevelopmentPostingGroup,
+    peopleDevelopmentPostingCombined,
     peopleDevelopmentDeletingKey,
     peopleAssignmentsPopupGroup,
     peopleAssignmentsPopupMonth,
@@ -226,6 +227,11 @@ export default function PastorDashboard() {
     peopleAssignmentFiles,
     peopleAssignmentFileInputResetKeys,
     peopleGroupSelectDrafts,
+    peopleCombinedAssignmentGroups,
+    peopleCombinedAssignmentDraft,
+    setPeopleCombinedAssignmentDraft,
+    peopleCombinedAssignmentFile,
+    peopleCombinedAssignmentFileInputResetKey,
     showPeopleNotePopup,
     selectedPeopleNotePerson,
     peopleNoteType,
@@ -251,6 +257,18 @@ export default function PastorDashboard() {
     changeAssignmentFile: handlePeopleAssignmentFileChange,
     clearAssignmentFile: clearPeopleAssignmentFile,
     postAssignment: handlePostPeopleDevelopmentAssignment,
+    toggleCombinedAssignmentGroup:
+      handleToggleCombinedAssignmentGroup,
+    selectAllCombinedAssignmentGroups:
+      handleSelectAllCombinedAssignmentGroups,
+    clearCombinedAssignmentGroups:
+      handleClearCombinedAssignmentGroups,
+    changeCombinedAssignmentFile:
+      handleCombinedAssignmentFileChange,
+    clearCombinedAssignmentFile:
+      clearCombinedAssignmentFile,
+    postCombinedAssignment:
+      handlePostCombinedAssignment,
     deleteAssignment: handleDeletePeopleDevelopmentPost,
     deleteAssignmentAttachment: handleDeletePeopleDevelopmentAttachment,
   } = usePeopleDevelopment({
@@ -653,6 +671,21 @@ export default function PastorDashboard() {
           draggedMemberKey={draggedPeopleMemberKey}
           savingMemberKey={peopleDevelopmentSavingKey}
           postingGroup={peopleDevelopmentPostingGroup}
+          postingCombined={
+            peopleDevelopmentPostingCombined
+          }
+          combinedSelectedGroupIds={
+            peopleCombinedAssignmentGroups
+          }
+          combinedDraftText={
+            peopleCombinedAssignmentDraft
+          }
+          combinedSelectedFile={
+            peopleCombinedAssignmentFile
+          }
+          combinedFileInputResetKey={
+            peopleCombinedAssignmentFileInputResetKey
+          }
           assignmentDrafts={peopleAssignmentDrafts}
           assignmentFiles={peopleAssignmentFiles}
           assignmentFileInputResetKeys={
@@ -677,6 +710,27 @@ export default function PastorDashboard() {
           onClearFile={clearPeopleAssignmentFile}
           onPostAssignment={
             handlePostPeopleDevelopmentAssignment
+          }
+          onToggleCombinedGroup={
+            handleToggleCombinedAssignmentGroup
+          }
+          onSelectAllCombinedGroups={
+            handleSelectAllCombinedAssignmentGroups
+          }
+          onClearCombinedGroups={
+            handleClearCombinedAssignmentGroups
+          }
+          onCombinedDraftTextChange={
+            setPeopleCombinedAssignmentDraft
+          }
+          onCombinedFileChange={
+            handleCombinedAssignmentFileChange
+          }
+          onClearCombinedFile={
+            clearCombinedAssignmentFile
+          }
+          onPostCombinedAssignment={
+            handlePostCombinedAssignment
           }
           onGroupSelectDraftChange={setGroupSelectDraft}
           onOpenAssignments={

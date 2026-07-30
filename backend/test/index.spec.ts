@@ -6,6 +6,9 @@ const mockBindings = {
   BREVO_SENDER_EMAIL: 'sender@example.com',
   BREVO_SENDER_NAME: 'LinC Test Sender',
   BREVO_TEST_RECIPIENT: 'recipient@example.com',
+  FIREBASE_PROJECT_ID: 'churchmeeting',
+  FIREBASE_DATABASE_URL:
+    'https://churchmeeting-default-rtdb.firebaseio.com',
 }
 
 afterEach(() => {

@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 
 import {
-  buildMeetingInvitationEmail,
-} from '../emails/meetingInvitation.email'
+  buildPeopleDevelopmentNotificationEmail,
+} from '../emails/peopleDevelopmentNotification.email'
 
 import {
   requireFirebaseAuth,
@@ -16,8 +16,8 @@ import {
 } from '../middleware/authorization.middleware'
 
 import {
-  meetingInvitationRequestSchema,
-} from '../schemas/meetingInvitation.schema'
+  peopleDevelopmentNotificationRequestSchema,
+} from '../schemas/peopleDevelopmentNotification.schema'
 
 import {
   BrevoRequestError,
@@ -26,30 +26,23 @@ import {
   type BrevoRecipient,
 } from '../services/brevo.service'
 
-type MeetingInvitationBindings =
+type PeopleDevelopmentNotificationBindings =
   AuthenticationBindings &
   PastorAuthorizationBindings &
   BrevoBindings
 
-type MeetingInvitationVariables =
+type PeopleDevelopmentNotificationVariables =
   AuthenticationVariables
 
-const meetingInvitationsRoutes = new Hono<{
-  Bindings: MeetingInvitationBindings
-  Variables: MeetingInvitationVariables
+const routes = new Hono<{
+  Bindings: PeopleDevelopmentNotificationBindings
+  Variables: PeopleDevelopmentNotificationVariables
 }>()
 
-meetingInvitationsRoutes.use(
-  '*',
-  requireFirebaseAuth,
-)
+routes.use('*', requireFirebaseAuth)
+routes.use('*', requirePastorRole)
 
-meetingInvitationsRoutes.use(
-  '*',
-  requirePastorRole,
-)
-
-meetingInvitationsRoutes.post('/', async context => {
+routes.post('/', async context => {
   let requestBody: unknown
 
   try {
@@ -69,7 +62,7 @@ meetingInvitationsRoutes.post('/', async context => {
   }
 
   const validation =
-    meetingInvitationRequestSchema.safeParse(
+    peopleDevelopmentNotificationRequestSchema.safeParse(
       requestBody,
     )
 
@@ -80,7 +73,7 @@ meetingInvitationsRoutes.post('/', async context => {
         error: {
           code: 'VALIDATION_ERROR',
           message:
-            'The meeting invitation request is invalid.',
+            'The People Development notification request is invalid.',
           details: validation.error.issues,
         },
       },
@@ -88,18 +81,12 @@ meetingInvitationsRoutes.post('/', async context => {
     )
   }
 
-  const {
-    locale,
-    meeting,
-    recipients: requestedRecipients,
-  } = validation.data
-
   const recipientsByEmail = new Map<
     string,
     BrevoRecipient
   >()
 
-  requestedRecipients.forEach(recipient => {
+  validation.data.recipients.forEach(recipient => {
     recipientsByEmail.set(
       recipient.email.toLowerCase(),
       recipient,
@@ -110,20 +97,20 @@ meetingInvitationsRoutes.post('/', async context => {
     recipientsByEmail.values(),
   )
 
-  const invitation =
-    buildMeetingInvitationEmail(
-      locale,
-      meeting,
-    )
+  const email =
+    buildPeopleDevelopmentNotificationEmail({
+      ...validation.data,
+      recipients,
+    })
 
   try {
     const result = await sendBrevoBccEmail(
       context.env,
       {
         recipients,
-        subject: invitation.subject,
-        htmlContent: invitation.htmlContent,
-        textContent: invitation.textContent,
+        subject: email.subject,
+        htmlContent: email.htmlContent,
+        textContent: email.textContent,
       },
     )
 
@@ -131,8 +118,10 @@ meetingInvitationsRoutes.post('/', async context => {
       {
         success: true,
         data: {
+          assignmentId:
+            validation.data.assignmentId,
           requestedCount:
-            requestedRecipients.length,
+            validation.data.recipients.length,
           recipientCount: recipients.length,
           sentCount: recipients.length,
           failedCount: 0,
@@ -146,15 +135,17 @@ meetingInvitationsRoutes.post('/', async context => {
   } catch (error) {
     if (error instanceof BrevoRequestError) {
       console.error(
-        'Meeting invitation BCC delivery failed:',
+        'People Development BCC delivery failed:',
         {
+          assignmentId:
+            validation.data.assignmentId,
           providerStatus: error.providerStatus,
           message: error.message,
         },
       )
     } else {
       console.error(
-        'Unexpected meeting invitation error:',
+        'Unexpected People Development notification error:',
         error,
       )
     }
@@ -163,13 +154,15 @@ meetingInvitationsRoutes.post('/', async context => {
       {
         success: false,
         error: {
-          code: 'MEETING_INVITATIONS_FAILED',
+          code: 'PEOPLE_DEVELOPMENT_NOTIFICATION_FAILED',
           message:
-            'The meeting invitations could not be sent.',
+            'The People Development notification could not be sent.',
         },
         data: {
+          assignmentId:
+            validation.data.assignmentId,
           requestedCount:
-            requestedRecipients.length,
+            validation.data.recipients.length,
           recipientCount: recipients.length,
           sentCount: 0,
           failedCount: recipients.length,
@@ -182,4 +175,4 @@ meetingInvitationsRoutes.post('/', async context => {
   }
 })
 
-export default meetingInvitationsRoutes
+export default routes

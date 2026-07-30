@@ -82,7 +82,7 @@ export function getPeopleDevelopmentGroupAssignments(
   groupId: PeopleDevelopmentGroupId,
 ): PeopleDevelopmentEntry[] {
   return entries.filter(
-    entry => entry.group === groupId,
+    entry => entry.groups.includes(groupId),
   );
 }
 
@@ -245,13 +245,20 @@ export function searchPeopleDevelopmentParticipants(
 export function getPeopleDevelopmentEmailRecipients(
   participants: PeopleDevelopmentParticipant[],
   members: PeopleDevelopmentMembersByKey,
-  groupId: PeopleDevelopmentGroupId,
+  groupIds: PeopleDevelopmentGroupId[],
 ): PeopleDevelopmentParticipant[] {
-  const peopleInGroup =
-    getPeopleDevelopmentGroupParticipants(
-      participants,
-      members,
-      groupId,
+  const selectedGroups = new Set(
+    groupIds,
+  );
+
+  const peopleInSelectedGroups =
+    participants.filter(participant =>
+      selectedGroups.has(
+        getParticipantPeopleDevelopmentGroup(
+          participant,
+          members,
+        ) as PeopleDevelopmentGroupId,
+      ),
     );
 
   const peopleByEmail =
@@ -260,7 +267,7 @@ export function getPeopleDevelopmentEmailRecipients(
       PeopleDevelopmentParticipant
     >();
 
-  peopleInGroup.forEach(
+  peopleInSelectedGroups.forEach(
     participant => {
       const email =
         String(

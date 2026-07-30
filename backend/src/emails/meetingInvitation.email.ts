@@ -69,7 +69,6 @@ function formatMeetingTime(
 }
 
 function buildEnglishEmail(
-  recipientName: string,
   meeting: MeetingData,
 ): MeetingInvitationEmail {
   const meetingDate = formatMeetingDate(
@@ -83,7 +82,6 @@ function buildEnglishEmail(
 
   const location = meeting.location || 'TBA'
 
-  const safeName = escapeHtml(recipientName)
   const safeTitle = escapeHtml(meeting.title)
   const safeDate = escapeHtml(meetingDate)
   const safeTime = escapeHtml(meetingTime)
@@ -123,7 +121,7 @@ function buildEnglishEmail(
             </div>
 
             <p style="color: #333; font-size: 15px;">
-              Dear ${safeName},
+              Hello,
             </p>
 
             <p style="color: #555; font-size: 14px;">
@@ -159,7 +157,7 @@ function buildEnglishEmail(
     `.trim(),
 
     textContent: [
-      `Dear ${recipientName},`,
+      'Hello,',
       '',
       'You are invited to attend the following meeting:',
       '',
@@ -174,7 +172,6 @@ function buildEnglishEmail(
 }
 
 function buildArabicEmail(
-  recipientName: string,
   meeting: MeetingData,
 ): MeetingInvitationEmail {
   const meetingDate = formatMeetingDate(
@@ -188,7 +185,6 @@ function buildArabicEmail(
 
   const location = meeting.location || 'يحدد لاحقاً'
 
-  const safeName = escapeHtml(recipientName)
   const safeTitle = escapeHtml(meeting.title)
   const safeDate = escapeHtml(meetingDate)
   const safeTime = escapeHtml(meetingTime)
@@ -228,7 +224,7 @@ function buildArabicEmail(
             </div>
 
             <p style="color: #333; font-size: 15px;">
-              مرحباً ${safeName}،
+              مرحباً،
             </p>
 
             <p style="color: #555; font-size: 14px;">
@@ -264,7 +260,7 @@ function buildArabicEmail(
     `.trim(),
 
     textContent: [
-      `مرحباً ${recipientName}،`,
+      'مرحباً،',
       '',
       'تمت دعوتك لحضور الاجتماع التالي:',
       '',
@@ -280,10 +276,9 @@ function buildArabicEmail(
 
 export function buildMeetingInvitationEmail(
   locale: InvitationLocale,
-  recipientName: string,
   meeting: MeetingData,
 ): MeetingInvitationEmail {
   return locale === 'ar'
-    ? buildArabicEmail(recipientName, meeting)
-    : buildEnglishEmail(recipientName, meeting)
+    ? buildArabicEmail(meeting)
+    : buildEnglishEmail(meeting)
 }

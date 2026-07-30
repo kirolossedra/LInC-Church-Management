@@ -50,7 +50,7 @@ export interface SavePeoplePersonalNoteParams {
 }
 
 export interface PostPeopleDevelopmentAssignmentParams {
-  group: PeopleDevelopmentGroupId;
+  groups: PeopleDevelopmentGroupId[];
   groupLabel: string;
   text: string;
   attachments: PeopleDevelopmentAttachment[];
@@ -61,6 +61,7 @@ export interface PostPeopleDevelopmentAssignmentParams {
 export interface PostedPeopleDevelopmentAssignment {
   assignmentId: string;
   group: PeopleDevelopmentGroupId;
+  groups: PeopleDevelopmentGroupId[];
   groupLabel: string;
   text: string;
   date: string;
@@ -299,6 +300,16 @@ export async function postPeopleDevelopmentAssignment(
   const attachments =
     params.attachments || [];
 
+  const groups = Array.from(
+    new Set(params.groups),
+  );
+
+  if (groups.length === 0) {
+    throw new Error(
+      'At least one People Development group is required.',
+    );
+  }
+
   if (
     !text &&
     attachments.length === 0
@@ -320,7 +331,8 @@ export async function postPeopleDevelopmentAssignment(
 
   const assignmentId =
     await createPeopleDevelopmentAssignment({
-      group: params.group,
+      group: groups[0],
+      groups,
 
       groupLabel: String(
         params.groupLabel || '',
@@ -345,7 +357,8 @@ export async function postPeopleDevelopmentAssignment(
 
   return {
     assignmentId,
-    group: params.group,
+    group: groups[0],
+    groups,
 
     groupLabel: String(
       params.groupLabel || '',

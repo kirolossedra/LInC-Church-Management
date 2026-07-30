@@ -91,6 +91,7 @@ interface GroupAssignmentAttachment {
 interface GroupAssignment {
   id: string;
   group: PeopleDevelopmentGroupId;
+  groups: PeopleDevelopmentGroupId[];
   groupLabel: string;
   text: string;
   date: string;
@@ -363,6 +364,36 @@ function getGroupDescription(groupId: PeopleDevelopmentGroupId | '', displayLoca
   return displayLocale === 'ar' ? config.descriptionAr : config.descriptionEn;
 }
 
+function normalizeAssignmentGroups(
+  value: unknown,
+  fallbackGroup: PeopleDevelopmentGroupId | '',
+): PeopleDevelopmentGroupId[] {
+  const rawGroups = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object'
+      ? Object.values(value as Record<string, unknown>)
+      : [];
+
+  const normalizedGroups = rawGroups
+    .map(group => normalizePeopleDevelopmentGroup(group))
+    .filter((group): group is PeopleDevelopmentGroupId => Boolean(group));
+
+  if (fallbackGroup) {
+    normalizedGroups.unshift(fallbackGroup);
+  }
+
+  return Array.from(new Set(normalizedGroups));
+}
+
+function getAssignmentDisplayGroupLabel(
+  assignment: GroupAssignment,
+  currentGroupLabel: string,
+): string {
+  return assignment.groups.length > 1
+    ? currentGroupLabel
+    : assignment.groupLabel || currentGroupLabel;
+}
+
 function formatDateLabel(dateValue: string, fallbackTimestamp: number, displayLocale: 'en' | 'ar'): string {
   const dateLocale = displayLocale === 'ar' ? ar : enUS;
 
@@ -474,7 +505,9 @@ function buildProfileFromFormRecord(formId: string, raw: any, userIdentifier: st
 }
 
 function normalizeAssignment(id: string, value: any, displayLocale: 'en' | 'ar'): GroupAssignment | null {
-  const group = normalizePeopleDevelopmentGroup(value?.group);
+  const fallbackGroup = normalizePeopleDevelopmentGroup(value?.group);
+  const groups = normalizeAssignmentGroups(value?.groups, fallbackGroup);
+  const group = groups[0] || '';
   const text = String(value?.text || '').trim();
   const attachments = normalizeAssignmentAttachments(value);
 
@@ -483,6 +516,7 @@ function normalizeAssignment(id: string, value: any, displayLocale: 'en' | 'ar')
   return {
     id,
     group,
+    groups,
     groupLabel: String(value?.groupLabel || getGroupLabel(group, displayLocale) || '').trim(),
     text,
     date: String(value?.date || '').trim(),
@@ -589,7 +623,7 @@ export default function CongregationGroupNotes() {
 
         const parsed = Object.entries(data)
           .map(([id, value]: [string, any]) => normalizeAssignment(id, value, displayLocale))
-          .filter((assignment): assignment is GroupAssignment => Boolean(assignment && assignment.group === profile.group))
+          .filter((assignment): assignment is GroupAssignment => Boolean(assignment && assignment.groups.includes(profile.group)))
           .sort((a, b) => b.createdAt - a.createdAt);
 
         setAssignments(parsed);
@@ -1170,7 +1204,7 @@ export default function CongregationGroupNotes() {
                           >
                             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                               <span className={`rounded-full border px-3 py-1 text-sm font-black ${groupConfig.badgeClass}`}>
-                                {assignment.groupLabel || groupLabel}
+                                {getAssignmentDisplayGroupLabel(assignment, groupLabel)}
                               </span>
                               <span className="inline-flex items-center gap-1 text-sm text-[#7a1717]/65">
                                 <Clock size={14} />
@@ -1256,7 +1290,7 @@ export default function CongregationGroupNotes() {
                 <div className="mb-4 flex flex-wrap gap-2">
                   {groupConfig && (
                     <span className={`rounded-full border px-3 py-1 text-sm font-black ${groupConfig.badgeClass}`}>
-                      {selectedAssignment.groupLabel || groupLabel}
+                      {getAssignmentDisplayGroupLabel(selectedAssignment, groupLabel)}
                     </span>
                   )}
                   <span className="rounded-full border border-[#ead9d0] bg-white px-3 py-1 text-sm text-[#6b4b4b]">

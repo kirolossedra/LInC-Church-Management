@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { z } from 'zod'
 
 import meetingInvitationsRoutes from './routes/meetingInvitations.routes'
+import peopleDevelopmentNotificationsRoutes from './routes/peopleDevelopmentNotifications.routes'
 
 type Bindings = {
   BREVO_API_KEY: string
@@ -10,6 +11,7 @@ type Bindings = {
   BREVO_SENDER_NAME: string
   BREVO_TEST_RECIPIENT: string
   FIREBASE_PROJECT_ID: string
+  FIREBASE_DATABASE_URL: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -148,6 +150,11 @@ app.post('/api/v1/email/test', async (c) => {
 app.route(
   '/api/v1/meeting-invitations',
   meetingInvitationsRoutes,
+)
+
+app.route(
+  '/api/v1/people-development/notifications',
+  peopleDevelopmentNotificationsRoutes,
 )
 
 export default app

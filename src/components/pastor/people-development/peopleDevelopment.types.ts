@@ -39,6 +39,7 @@ export interface PeopleDevelopmentAttachment {
 export interface PeopleDevelopmentEntry {
   id: string;
   group: PeopleDevelopmentGroupId;
+  groups: PeopleDevelopmentGroupId[];
   text: string;
   date: string;
   createdAt: number;

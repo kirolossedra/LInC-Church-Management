@@ -1,4 +1,5 @@
 export { default as PeopleAssignmentsCalendarModal } from './PeopleAssignmentsCalendarModal';
+export { default as PeopleDevelopmentCombinedPostPanel } from './PeopleDevelopmentCombinedPostPanel';
 export { default as PeopleDevelopmentGroupPanel } from './PeopleDevelopmentGroupPanel';
 export { default as PeopleDevelopmentMeetingSchedulesSection } from './PeopleDevelopmentMeetingSchedulesSection';
 export { default as PeopleDevelopmentMeetingsCalendar } from './PeopleDevelopmentMeetingsCalendar';
