@@ -2,7 +2,7 @@ package com.churchone.backend.security;
 
 import com.churchone.backend.dto.ApiErrorDetails;
 import com.churchone.backend.dto.ApiErrorResponse;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;

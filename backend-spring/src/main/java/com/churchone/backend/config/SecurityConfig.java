@@ -3,7 +3,7 @@ package com.churchone.backend.config;
 import com.churchone.backend.security.ApiSecurityResponseWriter;
 import com.churchone.backend.security.FirebaseBearerAuthenticationFilter;
 import com.churchone.backend.security.FirebaseSessionAuthenticator;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
