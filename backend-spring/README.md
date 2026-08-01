@@ -1,71 +1,103 @@
 # ChurchOne Spring Backend
 
-This is the new Java 21 and Spring Boot backend foundation. It is intentionally separate from the existing `backend/` Hono Worker, which remains unchanged and continues serving production during migration.
+This Java 21 Spring Boot service is being built beside the existing `backend/` Hono Worker. Hono remains the production backend until each Java route is tested and deliberately switched over.
 
-## Current scope
+## Current scope — version 0.0.2
 
-- Spring Boot application foundation
-- Public `GET /` and `GET /health` endpoints
-- Actuator `GET /actuator/health` endpoint
-- CORS defaults matching the existing ChurchOne frontend
-- Docker image tuned for a small Back4app container
-- Automated Maven tests in GitHub Actions
+- Public `GET /`, `GET /health`, and `GET /actuator/health`
+- Firebase Admin Java SDK initialization
+- Verification of the existing Firebase ID token from `Authorization: Bearer <token>`
+- Pastor authorization through the existing Realtime Database `admins/` branch
+- Exact accepted Pastor role: `pastor`
+- No custom login and no second Pastor token
+- Existing `/administrator` frontend pipeline remains untouched
+- Stateless Spring Security with JSON `401`, `403`, and `503` responses
+- Automated unit and MockMvc security tests
 
-No ChurchOne production route has been moved from Hono yet.
+The meeting-invitation and People Development email routes still run through Hono. This package does not switch the production frontend to Spring Boot.
 
-## Local run
+## Authentication endpoints
 
-Requires Java 21 and Maven:
+### `GET /api/v1/auth/session`
 
-```bash
+Requires the Firebase ID token already available in the signed-in browser session:
+
+```http
+Authorization: Bearer <firebase-id-token>
+```
+
+A valid Firebase account receives `200`. The response states whether the email is currently stored as `pastor` under the existing `admins/` branch.
+
+### `GET /api/v1/auth/pastor-access`
+
+Requires both:
+
+1. A valid Firebase ID token.
+2. An exact `pastor` value for the normalized email under `admins/`.
+
+A valid non-Pastor Firebase account receives `403`. A missing or invalid token receives `401`.
+
+## Why this does not add another login
+
+Firebase Authentication remains responsible for the user login. Later, the React client will call `currentUser.getIdToken()` and send that already-issued token to Spring Boot. The Pastor does not enter credentials again, and Spring Boot does not issue a separate ChurchOne token.
+
+## Required Back4app environment variables
+
+Configure these before deploying version `0.0.2`:
+
+| Variable | Required | Value |
+|---|---:|---|
+| `FIREBASE_ENABLED` | Yes | `true` |
+| `FIREBASE_PROJECT_ID` | Yes | The same Firebase project ID used by Netlify |
+| `FIREBASE_DATABASE_URL` | Yes | The existing Realtime Database URL |
+| `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` | Yes on Back4app | Base64 of the Firebase Admin service-account JSON |
+| `FIREBASE_CHECK_REVOKED_TOKENS` | No | Default `false` |
+| `FIREBASE_ROLE_LOOKUP_TIMEOUT` | No | Default `5s` |
+| `APP_VERSION` | Recommended | `0.0.2` |
+| `CORS_ALLOWED_ORIGINS` | No | Defaults to production and local frontend origins |
+
+Do not commit the Firebase service-account JSON or its encoded value.
+
+## Obtain and encode the Firebase service account
+
+1. Open the existing Firebase project.
+2. Open **Project settings → Service accounts**.
+3. Generate a new private key for Firebase Admin.
+4. Save the downloaded JSON outside the repository.
+5. From PowerShell, run this from `backend-spring`:
+
+```powershell
+.\scripts\encode-firebase-service-account.ps1 -Path "C:\secure\firebase-service-account.json"
+```
+
+6. Copy the single Base64 output into the Back4app variable `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`.
+7. Delete unnecessary local copies of the key after securely storing the required copy.
+
+## Local run without Firebase
+
+The application can still start for health and test work with Firebase disabled:
+
+```powershell
+$env:FIREBASE_ENABLED="false"
 mvn spring-boot:run
 ```
 
-Then open:
+Protected authentication endpoints return `503` until Firebase is configured.
 
-```text
-http://localhost:8080/health
+## Local run with Firebase
+
+```powershell
+$env:FIREBASE_ENABLED="true"
+$env:FIREBASE_PROJECT_ID="your-project-id"
+$env:FIREBASE_DATABASE_URL="https://your-project-default-rtdb.firebaseio.com"
+$env:FIREBASE_SERVICE_ACCOUNT_JSON_BASE64="your-base64-value"
+mvn spring-boot:run
 ```
 
-## Local Docker test
-
-From this directory:
+## Automated tests
 
 ```bash
-docker build -t churchone-spring-backend .
-docker run --rm -p 8080:8080 churchone-spring-backend
+mvn --batch-mode --no-transfer-progress clean verify
 ```
 
-## Back4app initial deployment settings
-
-Use these values on the container setup screen:
-
-- **Name:** `churchone-spring-backend`
-- **Branch:** `main`
-- **Root directory:** `backend-spring`
-- **Dockerfile:** `Dockerfile`
-- **Port:** `8080`
-- **Health path:** `/actuator/health`
-
-No environment variables are mandatory for the first health-only deployment.
-
-Optional variables:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | `8080` | Container HTTP port |
-| `APP_VERSION` | `0.0.1` | Version returned by `/health` |
-| `CORS_ALLOWED_ORIGINS` | `https://lincministry.com,http://localhost:5173` | Comma-separated allowed frontend origins |
-
-## Expected response
-
-`GET /health` returns a response similar to:
-
-```json
-{
-  "status": "UP",
-  "service": "churchone-spring-backend",
-  "version": "0.0.1",
-  "timestamp": "2026-08-01T00:00:00Z"
-}
-```
+The existing GitHub Actions workflow runs this command whenever `backend-spring/**` changes.
