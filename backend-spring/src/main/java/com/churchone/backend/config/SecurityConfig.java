@@ -74,6 +74,10 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/actuator/info"
                         ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/email/test"
+                        ).permitAll()
                         .requestMatchers("/api/v1/auth/session").authenticated()
                         .requestMatchers("/api/v1/auth/pastor-access").hasRole("PASTOR")
                         .requestMatchers("/api/**").denyAll()

@@ -14,7 +14,7 @@ RUN addgroup -S churchone && adduser -S churchone -G churchone
 
 WORKDIR /app
 
-COPY --from=builder /workspace/target/churchone-spring-backend-0.0.2-SNAPSHOT.jar app.jar
+COPY --from=builder /workspace/target/churchone-spring-backend-0.0.3-SNAPSHOT.jar app.jar
 
 ENV JAVA_TOOL_OPTIONS="-Xms32m -Xmx96m -XX:MaxMetaspaceSize=80m -XX:ReservedCodeCacheSize=20m -XX:MaxDirectMemorySize=8m -Xss256k -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError"
 ENV PORT=8080
