@@ -5,6 +5,10 @@ import { z } from 'zod'
 import meetingInvitationsRoutes from './routes/meetingInvitations.routes'
 import peopleDevelopmentNotificationsRoutes from './routes/peopleDevelopmentNotifications.routes'
 import {
+  createNextGenMissionMapRoutes,
+  type NextGenMissionMapDependencies,
+} from './routes/nextGenMissionMap.routes'
+import {
   createAuthRoutes,
   type AuthRoutesDependencies,
 } from './routes/auth.routes'
@@ -12,6 +16,7 @@ import type { AppEnv } from './types/app'
 
 export type AppDependencies = {
   auth?: AuthRoutesDependencies
+  nextGenMissionMap?: NextGenMissionMapDependencies
 }
 
 export function createApp(
@@ -148,6 +153,13 @@ const requestSchema = z
   })
 
   app.route('/api/v1/auth', createAuthRoutes(dependencies.auth))
+
+  app.route(
+    '/api/v1/nextgen/mission-map',
+    createNextGenMissionMapRoutes(
+      dependencies.nextGenMissionMap,
+    ),
+  )
 
   app.route(
     '/api/v1/meeting-invitations',

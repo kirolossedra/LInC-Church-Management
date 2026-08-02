@@ -13,6 +13,7 @@ import {
   Loader2,
   LockKeyhole,
   LogOut,
+  MapPinned,
   Save,
   Send,
   Sparkles,
@@ -24,8 +25,9 @@ import {
 import { get, onValue, push, ref, runTransaction, update } from 'firebase/database';
 import { database } from '../firebase';
 import { useI18n } from '../i18n';
+import MontrealMissionTripMap from '../components/nextgen/MontrealMissionTripMap';
 
-type EntryMode = 'signup' | 'existing' | null;
+type EntryMode = 'signup' | 'existing' | 'mission-map' | null;
 type NextGenUserStatus = 'pending' | 'approved' | 'rejected';
 type VoteType = 'upvote' | 'downvote';
 type SurveyBinaryAnswer = '' | 'A' | 'B';
@@ -1402,7 +1404,7 @@ export default function NextGenActivities() {
 
           {!activeUser && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
                 <motion.button
                   type="button"
                   onClick={() => chooseEntryMode('signup')}
@@ -1458,6 +1460,34 @@ export default function NextGenActivities() {
                     <ChevronDown size={22} className={`transition-transform ${entryMode === 'existing' ? 'rotate-180' : ''}`} />
                   </div>
                 </motion.button>
+
+                <motion.button
+                  type="button"
+                  onClick={() => chooseEntryMode('mission-map')}
+                  whileTap={{ scale: 0.98 }}
+                  className={`text-left p-7 rounded-[28px] border-2 transition-all shadow-sm group ${
+                    entryMode === 'mission-map'
+                      ? 'bg-[#3f0f0f] border-[#3f0f0f] text-white shadow-[0_14px_34px_rgba(63,15,15,0.24)]'
+                      : 'bg-white border-[rgba(139,30,30,0.12)] text-[#641414] hover:bg-[#f8eeee] hover:border-[#8b1e1e] hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(139,30,30,0.14)]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-14 h-14 grid place-items-center rounded-2xl transition-colors ${entryMode === 'mission-map' ? 'bg-white/15 text-white' : 'bg-[#f8eeee] text-[#8b1e1e] group-hover:bg-[#8b1e1e] group-hover:text-white'}`}>
+                        <MapPinned size={26} />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold">
+                          {isArabic ? 'خريطة رحلة مونتريال' : 'Montréal Mission Trip Map'}
+                        </h2>
+                        <p className={`text-sm mt-1 ${entryMode === 'mission-map' ? 'text-white/80' : 'text-[#777]'}`}>
+                          {isArabic ? 'دخول Firebase مخصص للمواقع والمسارات.' : 'Dedicated Firebase login for trip locations and routes.'}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronDown size={22} className={`transition-transform ${entryMode === 'mission-map' ? 'rotate-180' : ''}`} />
+                  </div>
+                </motion.button>
               </div>
 
               {(accessError || accessMessage) && (
@@ -1473,6 +1503,12 @@ export default function NextGenActivities() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {entryMode === 'mission-map' && (
+                <MontrealMissionTripMap
+                  onClose={() => setEntryMode(null)}
+                />
               )}
 
               {entryMode === 'signup' && (

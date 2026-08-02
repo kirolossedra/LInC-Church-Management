@@ -19,6 +19,7 @@ BREVO_SENDER_EMAIL=
 BREVO_SENDER_NAME=
 BREVO_TEST_RECIPIENT=
 FIREBASE_PROJECT_ID=
+NEXTGEN_MISSION_MAP_DATA=
 ```
 
 `FIREBASE_PROJECT_ID` is a public Firebase project identifier, not a private
@@ -33,6 +34,13 @@ case-insensitive allowlist pattern.
 - `GET /api/v1/auth/pastor-access` requires the allowlisted Pastor email.
 
 Both endpoints require `Authorization: Bearer <Firebase ID token>`.
+
+## NextGen mission map
+
+`GET /api/v1/nextgen/mission-map` requires a Firebase password login for
+`nextgen@montreal.ca`. The private map payload must be configured as the
+Cloudflare secret `NEXTGEN_MISSION_MAP_DATA`; do not commit home addresses to
+the frontend or Wrangler configuration.
 
 ## Deployment
 

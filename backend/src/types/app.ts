@@ -2,6 +2,7 @@ import type { BrevoBindings } from '../services/brevo.service'
 
 export type FirebaseBindings = {
   FIREBASE_PROJECT_ID: string
+  NEXTGEN_MISSION_MAP_DATA?: string
 }
 
 export type AppBindings = BrevoBindings &
