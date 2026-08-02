@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth';
 export type MissionMapLocationType =
   | 'church'
   | 'evangelism'
+  | 'servant'
   | 'home'
   | 'transit'
   | 'mall'

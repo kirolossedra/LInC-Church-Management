@@ -1,31 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  CircleMarker,
   MapContainer,
+  Marker,
   Polyline,
   Popup,
   TileLayer,
 } from 'react-leaflet';
 import {
+  ArrowLeftRight,
   Car,
+  Church,
   Copy,
   ExternalLink,
+  Handshake,
   Languages,
   Loader2,
   LockKeyhole,
   LogOut,
+  MapPin,
   MapPinned,
   Navigation,
   Route,
   ShieldCheck,
+  Store,
+  TrainFront,
+  UserRound,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import {
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth';
-import type { LatLngExpression } from 'leaflet';
+import { divIcon, type LatLngExpression } from 'leaflet';
+import { renderToStaticMarkup } from 'react-dom/server';
 import 'leaflet/dist/leaflet.css';
 
 import { auth } from '../../firebase';
@@ -42,17 +51,49 @@ const DEFAULT_MAP_CENTER: LatLngExpression = [
   -73.7,
 ];
 
-const LOCATION_COLORS: Record<
+const LOCATION_VISUALS: Record<
   MissionMapLocationType,
-  string
+  { color: string; icon: LucideIcon; label: string }
 > = {
-  church: '#2563eb',
-  evangelism: '#16803c',
-  home: '#7c3aed',
-  transit: '#d97706',
-  mall: '#0f766e',
-  other: '#64748b',
+  church: {
+    color: '#2563eb',
+    icon: Church,
+    label: 'Church',
+  },
+  evangelism: {
+    color: '#16803c',
+    icon: Handshake,
+    label: 'Evangelism spot',
+  },
+  servant: {
+    color: '#7c3aed',
+    icon: UserRound,
+    label: 'Servant',
+  },
+  home: {
+    color: '#7c3aed',
+    icon: UserRound,
+    label: 'Servant',
+  },
+  transit: {
+    color: '#d97706',
+    icon: TrainFront,
+    label: 'Metro / transit',
+  },
+  mall: {
+    color: '#0f766e',
+    icon: Store,
+    label: 'Shopping location',
+  },
+  other: {
+    color: '#64748b',
+    icon: MapPin,
+    label: 'Other',
+  },
 };
+
+const AVERAGE_CITY_SPEED_KMH = 32;
+const ROAD_DISTANCE_FACTOR = 1.25;
 
 function googleMapsUrl(location: MissionMapLocation) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -67,9 +108,88 @@ function appleMapsUrl(location: MissionMapLocation) {
 }
 
 function locationTypeLabel(type: MissionMapLocationType) {
-  if (type === 'evangelism') return 'Evangelism spot';
-  if (type === 'transit') return 'Transit';
-  return type.charAt(0).toUpperCase() + type.slice(1);
+  return LOCATION_VISUALS[type].label;
+}
+
+function createLocationMarkerIcon(
+  location: MissionMapLocation,
+  selected: boolean,
+) {
+  const visual = LOCATION_VISUALS[location.type];
+  const Icon = visual.icon;
+  const size = selected ? 44 : 38;
+  const iconMarkup = renderToStaticMarkup(
+    <Icon color="white" size={selected ? 23 : 20} strokeWidth={2.5} />,
+  );
+
+  return divIcon({
+    className: '',
+    html: `<div style="display:grid;place-items:center;width:${size}px;height:${size}px;border-radius:9999px;background:${visual.color};border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,.3)">${iconMarkup}</div>`,
+    iconAnchor: [size / 2, size],
+    iconSize: [size, size],
+    popupAnchor: [0, -size + 4],
+  });
+}
+
+function LocationTypeBadge({
+  type,
+  size = 18,
+}: {
+  type: MissionMapLocationType;
+  size?: number;
+}) {
+  const visual = LOCATION_VISUALS[type];
+  const Icon = visual.icon;
+
+  return (
+    <span
+      className="grid shrink-0 place-items-center rounded-full text-white"
+      style={{
+        backgroundColor: visual.color,
+        height: size + 14,
+        width: size + 14,
+      }}
+    >
+      <Icon size={size} strokeWidth={2.5} />
+    </span>
+  );
+}
+
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function directDistanceKm(
+  from: MissionMapLocation,
+  to: MissionMapLocation,
+) {
+  const earthRadiusKm = 6371;
+  const latitudeDifference = toRadians(
+    to.latitude - from.latitude,
+  );
+  const longitudeDifference = toRadians(
+    to.longitude - from.longitude,
+  );
+  const fromLatitude = toRadians(from.latitude);
+  const toLatitude = toRadians(to.latitude);
+  const haversine =
+    Math.sin(latitudeDifference / 2) ** 2 +
+    Math.cos(fromLatitude) *
+      Math.cos(toLatitude) *
+      Math.sin(longitudeDifference / 2) ** 2;
+
+  return (
+    earthRadiusKm *
+    2 *
+    Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+  );
+}
+
+function googleDirectionsUrl(
+  from: MissionMapLocation,
+  to: MissionMapLocation,
+) {
+  return `https://www.google.com/maps/dir/?api=1&origin=${from.latitude},${from.longitude}&destination=${to.latitude},${to.longitude}&travelmode=driving`;
 }
 
 export default function MontrealMissionTripMap({
@@ -89,6 +209,8 @@ export default function MontrealMissionTripMap({
     useState<string | null>(null);
   const [copiedLocationId, setCopiedLocationId] =
     useState<string | null>(null);
+  const [routeFromId, setRouteFromId] = useState('');
+  const [routeToId, setRouteToId] = useState('');
 
   const normalizedUserEmail =
     firebaseUser?.email?.trim().toLowerCase() || '';
@@ -101,6 +223,8 @@ export default function MontrealMissionTripMap({
       setMapLoading(false);
       setMapError('');
       setSelectedLocationId(null);
+      setRouteFromId('');
+      setRouteToId('');
       return undefined;
     }
 
@@ -117,6 +241,10 @@ export default function MontrealMissionTripMap({
         setSelectedLocationId(
           currentId =>
             currentId || data.locations[0]?.id || null,
+        );
+        setRouteFromId(
+          currentId =>
+            currentId || data.locations[0]?.id || '',
         );
       })
       .catch(error => {
@@ -153,6 +281,58 @@ export default function MontrealMissionTripMap({
   const selectedLocation = selectedLocationId
     ? locationsById.get(selectedLocationId) || null
     : null;
+
+  const legendTypes = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (mapData?.locations || []).map(
+            location => location.type,
+          ),
+        ),
+      ),
+    [mapData],
+  );
+
+  const plannedRoute = useMemo(() => {
+    if (!mapData || !routeFromId || !routeToId) {
+      return null;
+    }
+
+    const from = locationsById.get(routeFromId);
+    const to = locationsById.get(routeToId);
+
+    if (!from || !to || from.id === to.id) {
+      return null;
+    }
+
+    const directKm = directDistanceKm(from, to);
+    const roadDistanceKm = directKm * ROAD_DISTANCE_FACTOR;
+    const savedConnection = mapData.connections.find(
+      connection =>
+        (connection.from === from.id &&
+          connection.to === to.id) ||
+        (connection.from === to.id &&
+          connection.to === from.id),
+    );
+    const estimatedMinutes =
+      savedConnection?.minutes ||
+      Math.max(
+        5,
+        Math.round(
+          ((roadDistanceKm / AVERAGE_CITY_SPEED_KMH) * 60) /
+            5,
+        ) * 5,
+      );
+
+    return {
+      from,
+      to,
+      distanceKm: Math.round(roadDistanceKm * 10) / 10,
+      minutes: estimatedMinutes,
+      usesSavedTime: Boolean(savedConnection?.minutes),
+    };
+  }, [locationsById, mapData, routeFromId, routeToId]);
 
   const mapCenter = useMemo<LatLngExpression>(() => {
     if (!mapData?.locations.length) {
@@ -402,7 +582,7 @@ export default function MontrealMissionTripMap({
           </div>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="overflow-hidden rounded-[24px] border border-gray-200 bg-stone-100 shadow-inner">
+            <div className="relative overflow-hidden rounded-[24px] border border-gray-200 bg-stone-100 shadow-inner">
               <MapContainer
                 center={mapCenter}
                 zoom={11}
@@ -446,22 +626,46 @@ export default function MontrealMissionTripMap({
                   );
                 })}
 
+                {plannedRoute && (
+                  <Polyline
+                    positions={[
+                      [
+                        plannedRoute.from.latitude,
+                        plannedRoute.from.longitude,
+                      ],
+                      [
+                        plannedRoute.to.latitude,
+                        plannedRoute.to.longitude,
+                      ],
+                    ]}
+                    pathOptions={{
+                      color: '#2563eb',
+                      weight: 7,
+                      opacity: 0.88,
+                    }}
+                  >
+                    <Popup>
+                      <strong>
+                        {plannedRoute.distanceKm} km · about{' '}
+                        {plannedRoute.minutes} min
+                      </strong>
+                      <br />
+                      Planning estimate, not live traffic.
+                    </Popup>
+                  </Polyline>
+                )}
+
                 {mapData.locations.map(location => (
-                  <CircleMarker
+                  <Marker
                     key={location.id}
-                    center={[
+                    position={[
                       location.latitude,
                       location.longitude,
                     ]}
-                    radius={
-                      selectedLocationId === location.id ? 13 : 10
-                    }
-                    pathOptions={{
-                      color: '#ffffff',
-                      weight: 3,
-                      fillColor: LOCATION_COLORS[location.type],
-                      fillOpacity: 1,
-                    }}
+                    icon={createLocationMarkerIcon(
+                      location,
+                      selectedLocationId === location.id,
+                    )}
                     eventHandlers={{
                       click: () =>
                         setSelectedLocationId(location.id),
@@ -480,12 +684,137 @@ export default function MontrealMissionTripMap({
                         {renderLocationActions(location, true)}
                       </div>
                     </Popup>
-                  </CircleMarker>
+                  </Marker>
                 ))}
               </MapContainer>
+
+              <div className="pointer-events-none absolute right-3 top-3 z-[1000] max-w-[190px] rounded-2xl border border-white/70 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-gray-500">
+                  Map legend
+                </p>
+                <div className="space-y-2">
+                  {legendTypes.map(type => (
+                    <div
+                      key={type}
+                      className="flex items-center gap-2 text-xs font-bold text-gray-700"
+                    >
+                      <LocationTypeBadge type={type} size={14} />
+                      <span>{locationTypeLabel(type)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <aside className="space-y-4">
+              <div className="rounded-[24px] border border-blue-100 bg-blue-50 p-5">
+                <div className="mb-4 flex items-center gap-2 text-blue-900">
+                  <Route size={20} />
+                  <h3 className="font-bold">Join two locations</h3>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-blue-700/70">
+                      From
+                    </span>
+                    <select
+                      value={routeFromId}
+                      onChange={event =>
+                        setRouteFromId(event.target.value)
+                      }
+                      className="w-full rounded-xl border border-blue-100 bg-white px-3 py-2.5 text-sm font-bold text-gray-800 outline-none focus:border-blue-500"
+                    >
+                      {mapData.locations.map(location => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRouteFromId(routeToId);
+                      setRouteToId(routeFromId);
+                    }}
+                    disabled={!routeToId}
+                    aria-label="Swap route locations"
+                    className="mx-auto grid h-9 w-9 place-items-center rounded-full border border-blue-100 bg-white text-blue-800 shadow-sm hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ArrowLeftRight size={17} />
+                  </button>
+
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-blue-700/70">
+                      To
+                    </span>
+                    <select
+                      value={routeToId}
+                      onChange={event =>
+                        setRouteToId(event.target.value)
+                      }
+                      className="w-full rounded-xl border border-blue-100 bg-white px-3 py-2.5 text-sm font-bold text-gray-800 outline-none focus:border-blue-500"
+                    >
+                      <option value="">Choose a destination</option>
+                      {mapData.locations.map(location => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {routeFromId && routeToId && !plannedRoute && (
+                  <p className="mt-4 rounded-xl bg-white p-3 text-sm font-bold text-amber-800">
+                    Choose two different locations.
+                  </p>
+                )}
+
+                {plannedRoute && (
+                  <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
+                    <div className="grid grid-cols-2 gap-3 text-center">
+                      <div>
+                        <p className="text-xl font-bold text-blue-950">
+                          {plannedRoute.distanceKm} km
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Approx. road distance
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xl font-bold text-blue-950">
+                          {plannedRoute.minutes} min
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {plannedRoute.usesSavedTime
+                            ? 'Mission-plan estimate'
+                            : 'Estimated drive time'}
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href={googleDirectionsUrl(
+                        plannedRoute.from,
+                        plannedRoute.to,
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800"
+                    >
+                      <Navigation size={16} />
+                      Open live route in Google Maps
+                    </a>
+                    <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
+                      The blue line and values are planning estimates,
+                      not live road or traffic data.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="rounded-[24px] border border-gray-100 bg-stone-50 p-5">
                 <div className="mb-4 flex items-center gap-2 text-[#641414]">
                   <MapPinned size={20} />
@@ -503,12 +832,9 @@ export default function MontrealMissionTripMap({
                           : 'border-transparent bg-transparent hover:bg-white'
                       }`}
                     >
-                      <span
-                        className="mt-1 h-3 w-3 shrink-0 rounded-full ring-2 ring-white"
-                        style={{
-                          backgroundColor:
-                            LOCATION_COLORS[location.type],
-                        }}
+                      <LocationTypeBadge
+                        type={location.type}
+                        size={15}
                       />
                       <span>
                         <span className="block font-bold text-gray-900">
@@ -526,12 +852,9 @@ export default function MontrealMissionTripMap({
               {selectedLocation && (
                 <div className="rounded-[24px] border border-[rgba(139,30,30,0.12)] bg-white p-5 shadow-sm">
                   <div className="flex items-start gap-3">
-                    <span
-                      className="mt-1 h-4 w-4 shrink-0 rounded-full ring-4 ring-stone-100"
-                      style={{
-                        backgroundColor:
-                          LOCATION_COLORS[selectedLocation.type],
-                      }}
+                    <LocationTypeBadge
+                      type={selectedLocation.type}
+                      size={18}
                     />
                     <div>
                       <p className="text-xs font-bold uppercase tracking-widest text-gray-400">

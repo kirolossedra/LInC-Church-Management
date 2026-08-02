@@ -17,6 +17,7 @@ const locationSchema = z
     type: z.enum([
       'church',
       'evangelism',
+      'servant',
       'home',
       'transit',
       'mall',
