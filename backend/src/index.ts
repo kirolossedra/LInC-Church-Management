@@ -4,28 +4,33 @@ import { z } from 'zod'
 
 import meetingInvitationsRoutes from './routes/meetingInvitations.routes'
 import peopleDevelopmentNotificationsRoutes from './routes/peopleDevelopmentNotifications.routes'
+import {
+  createAuthRoutes,
+  type AuthRoutesDependencies,
+} from './routes/auth.routes'
+import type { AppEnv } from './types/app'
 
-type Bindings = {
-  BREVO_API_KEY: string
-  BREVO_SENDER_EMAIL: string
-  BREVO_SENDER_NAME: string
-  BREVO_TEST_RECIPIENT: string
+export type AppDependencies = {
+  auth?: AuthRoutesDependencies
 }
 
-const app = new Hono<{ Bindings: Bindings }>()
+export function createApp(
+  dependencies: AppDependencies = {},
+) {
+  const app = new Hono<AppEnv>()
 
-app.use(
-  '/api/*',
-  cors({
-    origin: [
-      'https://lincministry.com',
-      'http://localhost:5173',
-    ],
-    allowHeaders: ['Content-Type'],
-    allowMethods: ['GET', 'POST', 'OPTIONS'],
-    maxAge: 86400,
-  }),
-)
+  app.use(
+    '/api/*',
+    cors({
+      origin: [
+        'https://lincministry.com',
+        'http://localhost:5173',
+      ],
+      allowHeaders: ['Content-Type', 'Authorization'],
+      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      maxAge: 86400,
+    }),
+  )
 
 const requestSchema = z
   .object({
@@ -33,11 +38,11 @@ const requestSchema = z
   })
   .strict()
 
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
+  app.get('/', (c) => {
+    return c.text('Hello Hono!')
+  })
 
-app.post('/api/v1/email/test', async (c) => {
+  app.post('/api/v1/email/test', async (c) => {
   let requestBody: unknown = {}
 
   try {
@@ -140,16 +145,23 @@ app.post('/api/v1/email/test', async (c) => {
     },
     201,
   )
-})
+  })
 
-app.route(
-  '/api/v1/meeting-invitations',
-  meetingInvitationsRoutes,
-)
+  app.route('/api/v1/auth', createAuthRoutes(dependencies.auth))
 
-app.route(
-  '/api/v1/people-development/notifications',
-  peopleDevelopmentNotificationsRoutes,
-)
+  app.route(
+    '/api/v1/meeting-invitations',
+    meetingInvitationsRoutes,
+  )
+
+  app.route(
+    '/api/v1/people-development/notifications',
+    peopleDevelopmentNotificationsRoutes,
+  )
+
+  return app
+}
+
+const app = createApp()
 
 export default app
