@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import AssessmentForm from './components/AssessmentForm';
@@ -14,15 +14,12 @@ import AttendancePage from './pages/AttendancePage';
 import CongregationGroupNotes from './pages/CongregationGroupNotes';
 import AdministratorPanel from './components/admin/AdministratorPanel';
 import { auth, signInWithGoogle, signInWithEmail, signUpWithEmail } from './firebase';
-import { ref, onValue } from 'firebase/database';
-import { database } from './firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { LogIn, ShieldCheck, Mail, Lock, AlertCircle } from 'lucide-react';
 import { handleOAuthCallback, storeTokens } from './services/gmail';
 import { I18nProvider, useI18n } from './i18n';
 import { TutorialProvider } from './components/tutorial-builder';
-
-type Role = 'pastor';
+import { usePastorAccess } from './hooks/usePastorAccess';
 
 function ProtectedRoute({
   children,
@@ -235,8 +232,10 @@ function ProtectedRoute({
 function AppRoutes() {
   const [user, authLoading] = useAuthState(auth);
   const location = useLocation();
-  const [admins, setAdmins] = useState<Record<string, Role>>({});
-  const [adminsLoaded, setAdminsLoaded] = useState(false);
+  const {
+    isPastor,
+    loading: pastorAccessLoading,
+  } = usePastorAccess(user);
 
   React.useEffect(() => {
     const tokens = handleOAuthCallback();
@@ -251,34 +250,7 @@ function AppRoutes() {
     });
   }, []);
 
-  useEffect(() => {
-    const adminsRef = ref(database, 'admins/');
-
-    const unsubscribe = onValue(adminsRef, snapshot => {
-      const data = snapshot.val() || {};
-      const parsed: Record<string, Role> = {};
-
-      Object.keys(data).forEach(k => {
-        const role = String(data[k] || '').trim().toLowerCase();
-
-        if (role !== 'pastor') {
-          return;
-        }
-
-        const email = k.replace(/,/g, '.').toLowerCase().trim();
-        parsed[email] = 'pastor';
-      });
-
-      setAdmins(parsed);
-      setAdminsLoaded(true);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const appLoading = authLoading || !adminsLoaded;
-  const userEmail = user?.email?.toLowerCase().trim() || '';
-  const isPastor = admins[userEmail] === 'pastor';
+  const appLoading = authLoading || pastorAccessLoading;
 
   const getActiveTab = () => {
     const path = location.pathname;
@@ -312,7 +284,7 @@ function AppRoutes() {
         element={
           <Layout activeTab={getActiveTab()} isAdmin={!!isPastor}>
             <ProtectedRoute hasAccess={!!isPastor} loading={appLoading}>
-              <PeopleNotesPage />
+              <PeopleNotesPage hasPastorAccess={isPastor} />
             </ProtectedRoute>
           </Layout>
         }

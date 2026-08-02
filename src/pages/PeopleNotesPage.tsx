@@ -21,8 +21,6 @@ import PageTitle from '../components/PageTitle';
 import { useI18n } from '../i18n';
 
 type DevelopmentType = 'strength' | 'growth';
-type Role = 'pastor';
-
 interface DevelopmentComment {
   id: string;
   text: string;
@@ -142,40 +140,16 @@ function normalizePeopleSnapshot(data: any): PersonRecord[] {
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
-export default function PeopleNotesPage() {
+export default function PeopleNotesPage({
+  hasPastorAccess,
+}: {
+  hasPastorAccess: boolean;
+}) {
   const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
 
   const [firebaseUser] = useAuthState(auth);
   const currentUserEmail = firebaseUser?.email?.toLowerCase().trim() || '';
-
-  const [userRole, setUserRole] = useState<Role | undefined>(undefined);
-  const [roleLoaded, setRoleLoaded] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onValue(ref(database, 'admins/'), snapshot => {
-      const data = snapshot.val() || {};
-      const parsed: Record<string, Role> = {};
-
-      Object.keys(data).forEach(k => {
-        const role = String(data[k] || '').trim().toLowerCase();
-
-        if (role !== 'pastor') {
-          return;
-        }
-
-        const email = k.replace(/,/g, '.').toLowerCase().trim();
-        parsed[email] = 'pastor';
-      });
-
-      setUserRole(parsed[currentUserEmail]);
-      setRoleLoaded(true);
-    });
-
-    return () => unsubscribe();
-  }, [currentUserEmail]);
-
-  const hasPastorAccess = roleLoaded && userRole === 'pastor';
 
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
@@ -691,17 +665,13 @@ export default function PeopleNotesPage() {
     );
   };
 
-  const statusText = !roleLoaded
+  const statusText = hasPastorAccess
     ? isArabic
-      ? 'جار التحقق من الصلاحيات...'
-      : 'Checking permissions...'
-    : hasPastorAccess
-      ? isArabic
-        ? `مصرح لك بالتعديل كـ ${userRole}`
-        : `Authorized as ${userRole}`
-      : isArabic
-        ? 'غير مصرح لهذا الحساب بالتعديل'
-        : 'This account is not authorized to edit';
+      ? 'مصرح لك بالتعديل كراعٍ'
+      : 'Authorized as pastor'
+    : isArabic
+      ? 'غير مصرح لهذا الحساب بالتعديل'
+      : 'This account is not authorized to edit';
 
   return (
     <div className="space-y-8" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -736,7 +706,7 @@ export default function PeopleNotesPage() {
             </div>
           </div>
 
-          {!hasPastorAccess && roleLoaded && (
+          {!hasPastorAccess && (
             <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm font-bold text-amber-700">
               <XCircle size={16} />
               {isArabic ? 'الأزرار معطلة لهذا الحساب' : 'Actions are disabled for this account'}
