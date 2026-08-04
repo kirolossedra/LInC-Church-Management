@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useMemo,
   useState,
   type FormEvent,
@@ -14,12 +13,8 @@ import {
   SLOT_BLOCK_DURATION,
   buildAvailabilityDates,
   buildSlotBlockHours,
-  createAvailability,
   createInitialAvailabilityForm,
   createInitialUnavailabilityForm,
-  createUnavailability,
-  deleteAvailability,
-  deleteUnavailability,
   getAvailabilityBlocksForDate,
   getBlockingUnavailabilityForSlot,
   getDateString,
@@ -30,16 +25,18 @@ import {
   hourToTime,
   isPastorSlotBooked,
   isPastorSlotInsideAvailability,
-  subscribeToAvailability,
-  subscribeToUnavailability,
-  updateAvailability,
-  updateUnavailability,
   type Availability,
   type AvailabilityForm,
   type PastorSlotStatus,
   type Unavailability,
   type UnavailabilityForm,
 } from '../calendar';
+import {
+  createPastorCalendarBlock,
+  deletePastorCalendarBlock,
+  updatePastorCalendarBlock,
+  type PastorCalendarBlockInput,
+} from '../../../services/pastorCalendar';
 
 type TranslateFunction = (
   key: any,
@@ -49,23 +46,19 @@ export interface UseAvailabilityParams {
   meetings: Meeting[];
   meetingRequests: MeetingRequest[];
   translate: TranslateFunction;
+  availability: Availability[];
+  unavailability: Unavailability[];
+  refreshCalendar: () => Promise<void>;
 }
 
 export default function useAvailability({
   meetings,
   meetingRequests,
   translate,
+  availability,
+  unavailability,
+  refreshCalendar,
 }: UseAvailabilityParams) {
-  const [
-    availability,
-    setAvailability,
-  ] = useState<Availability[]>([]);
-
-  const [
-    unavailability,
-    setUnavailability,
-  ] = useState<Unavailability[]>([]);
-
   const [
     availabilityLoading,
     setAvailabilityLoading,
@@ -119,21 +112,22 @@ export default function useAvailability({
     setSlotBlockingLoading,
   ] = useState(false);
 
-  useEffect(
-    () =>
-      subscribeToAvailability(
-        setAvailability,
-      ),
-    [],
-  );
-
-  useEffect(
-    () =>
-      subscribeToUnavailability(
-        setUnavailability,
-      ),
-    [],
-  );
+  const createAvailability = (block: PastorCalendarBlockInput) =>
+    createPastorCalendarBlock('availability', block);
+  const updateAvailability = (
+    id: string,
+    block: PastorCalendarBlockInput,
+  ) => updatePastorCalendarBlock('availability', id, block);
+  const deleteAvailability = (id: string) =>
+    deletePastorCalendarBlock('availability', id);
+  const createUnavailability = (block: PastorCalendarBlockInput) =>
+    createPastorCalendarBlock('unavailability', block);
+  const updateUnavailability = (
+    id: string,
+    block: PastorCalendarBlockInput,
+  ) => updatePastorCalendarBlock('unavailability', id, block);
+  const deleteUnavailability = (id: string) =>
+    deletePastorCalendarBlock('unavailability', id);
 
   const slotBlockHours =
     useMemo(
@@ -275,8 +269,6 @@ export default function useAvailability({
           '',
         allDay:
           availabilityForm.allDay,
-        updatedAt:
-          Date.now(),
       };
 
       if (editingAvailability) {
@@ -314,6 +306,7 @@ export default function useAvailability({
         );
       }
 
+      await refreshCalendar();
       closeAvailabilityModal();
     } catch (error) {
       console.error(
@@ -348,6 +341,7 @@ export default function useAvailability({
       await deleteAvailability(
         availabilityId,
       );
+      await refreshCalendar();
     } catch (error) {
       console.error(
         'Failed to delete availability:',
@@ -385,8 +379,6 @@ export default function useAvailability({
           '',
         allDay:
           unavailabilityForm.allDay,
-        updatedAt:
-          Date.now(),
       };
 
       if (editingUnavailability) {
@@ -400,6 +392,7 @@ export default function useAvailability({
         );
       }
 
+      await refreshCalendar();
       closeUnavailabilityModal();
     } catch (error) {
       console.error(
@@ -424,6 +417,7 @@ export default function useAvailability({
       await deleteUnavailability(
         unavailabilityId,
       );
+      await refreshCalendar();
     } catch (error) {
       console.error(
         'Failed to delete unavailability:',
@@ -523,6 +517,7 @@ export default function useAvailability({
           allDay: false,
         });
 
+        await refreshCalendar();
         return;
       }
 
@@ -578,6 +573,7 @@ export default function useAvailability({
           allDay: false,
         });
       }
+      await refreshCalendar();
     } catch (error) {
       console.error(
         'Failed to toggle slot block:',

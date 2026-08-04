@@ -17,6 +17,10 @@ export type {
 } from './useCalendarMonth';
 
 export {
+  default as usePastorCalendarData,
+} from './usePastorCalendarData';
+
+export {
   default as useMeetingRequests,
 } from './useMeetingRequests';
 

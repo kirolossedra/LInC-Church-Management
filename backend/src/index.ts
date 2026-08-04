@@ -2,7 +2,10 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
 
-import meetingInvitationsRoutes from './routes/meetingInvitations.routes'
+import {
+  createMeetingInvitationRoutes,
+  type MeetingInvitationsDependencies,
+} from './routes/meetingInvitations.routes'
 import peopleDevelopmentNotificationsRoutes from './routes/peopleDevelopmentNotifications.routes'
 import {
   createNextGenMissionMapRoutes,
@@ -20,6 +23,10 @@ import {
   createBookingRoutes,
   type BookingDependencies,
 } from './routes/booking.routes'
+import {
+  createPastorCalendarRoutes,
+  type PastorCalendarDependencies,
+} from './routes/pastorCalendar.routes'
 import type { AppEnv } from './types/app'
 
 export type AppDependencies = {
@@ -27,6 +34,8 @@ export type AppDependencies = {
   nextGenMissionMap?: NextGenMissionMapDependencies
   peopleNotes?: PeopleNotesDependencies
   booking?: BookingDependencies
+  pastorCalendar?: PastorCalendarDependencies
+  meetingInvitations?: MeetingInvitationsDependencies
 }
 
 export function createApp(
@@ -181,6 +190,11 @@ const requestSchema = z
   )
 
   app.route(
+    '/api/v1/pastor-calendar',
+    createPastorCalendarRoutes(dependencies.pastorCalendar),
+  )
+
+  app.route(
     '/api/v1/nextgen/mission-map',
     createNextGenMissionMapRoutes(
       dependencies.nextGenMissionMap,
@@ -189,7 +203,7 @@ const requestSchema = z
 
   app.route(
     '/api/v1/meeting-invitations',
-    meetingInvitationsRoutes,
+    createMeetingInvitationRoutes(dependencies.meetingInvitations),
   )
 
   app.route(

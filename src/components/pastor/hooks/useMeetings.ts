@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { format } from 'date-fns';
 import type { Meeting } from '../../../types';
 import {
@@ -6,15 +6,14 @@ import {
 } from '../../../services/meetingInvitations';
 
 import {
-  createMeeting,
-  deleteMeeting,
-  getMeetingRequestEmail,
-  sendMeetingStatusEmailViaEmailJs,
-  subscribeToMeetings,
   timeToHour,
-  updateMeeting,
-  updateMeetingRequest,
 } from '../calendar';
+import {
+  createPastorMeeting,
+  deletePastorMeeting,
+  updatePastorMeeting,
+  type PastorMeetingInput,
+} from '../../../services/pastorCalendar';
 
 import {
   isUsableEmail,
@@ -28,6 +27,8 @@ export interface UseMeetingsParams {
   participants: PeopleDevelopmentParticipant[];
   locale: DisplayLocale;
   translate: TranslateFunction;
+  meetings: Meeting[];
+  refreshCalendar: () => Promise<void>;
 }
 
 export interface MeetingInvitationData {
@@ -56,8 +57,9 @@ export default function useMeetings({
   participants,
   locale,
   translate,
+  meetings,
+  refreshCalendar,
 }: UseMeetingsParams) {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [meetingLoading, setMeetingLoading] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
@@ -67,8 +69,6 @@ export default function useMeetings({
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [showParticipantDropdown, setShowParticipantDropdown] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-
-  useEffect(() => subscribeToMeetings(setMeetings), []);
 
   const resetMeetingForm = () => {
     setNewMeeting(createInitialMeeting());
@@ -198,8 +198,9 @@ export default function useMeetings({
         return;
       }
 
-      const meetingData: Record<string, any> = {
+      const meetingData: PastorMeetingInput = {
         title: newMeeting.title || '',
+        description: newMeeting.description || '',
         date: newMeeting.date || '',
         startTime: newMeeting.startTime || '',
         endTime: newMeeting.endTime || '',
@@ -207,93 +208,18 @@ export default function useMeetings({
         meetLink: newMeeting.meetLink || '',
         type: newMeeting.type || 'service',
         participantIds: selectedParticipants,
-        updatedAt: Date.now(),
       };
 
       if (editingMeeting) {
-        const requestFieldsToPreserve = [
-          'requestName',
-          'requestEmail',
-          'requestReason',
-          'sourceRequestId',
-          'requesterLocale',
-          'requesterLanguage',
-        ];
-
-        requestFieldsToPreserve.forEach(field => {
-          const value = (editingMeeting as any)[field];
-
-          if (value !== undefined && value !== null && value !== '') {
-            meetingData[field] = value;
-          }
-        });
-
-        const finalizedDetailsChanged =
-          (editingMeeting.date || '') !== meetingData.date ||
-          (editingMeeting.startTime || '') !== meetingData.startTime ||
-          (editingMeeting.endTime || '') !== meetingData.endTime ||
-          (editingMeeting.meetLink || '') !== meetingData.meetLink ||
-          (editingMeeting.location || '') !== meetingData.location;
-
-        if (finalizedDetailsChanged) {
-          meetingData.acknowledged = false;
-          meetingData.acknowledgedAt = null;
-          meetingData.acknowledgedEmail = null;
-        } else {
-          meetingData.acknowledged = Boolean(
-            (editingMeeting as any).acknowledged,
-          );
-
-          const acknowledgedAt =
-            (editingMeeting as any).acknowledgedAt;
-
-          if (
-            acknowledgedAt !== undefined &&
-            acknowledgedAt !== null &&
-            acknowledgedAt !== ''
-          ) {
-            meetingData.acknowledgedAt = acknowledgedAt;
-          }
-
-          const acknowledgedEmail =
-            (editingMeeting as any).acknowledgedEmail;
-
-          if (
-            acknowledgedEmail !== undefined &&
-            acknowledgedEmail !== null &&
-            acknowledgedEmail !== ''
-          ) {
-            meetingData.acknowledgedEmail = acknowledgedEmail;
-          }
-        }
-
         const editingMeetingId = editingMeeting.id;
 
         if (!editingMeetingId) {
           throw new Error('Cannot update a meeting without an ID.');
         }
 
-        await updateMeeting(editingMeetingId, meetingData);
-
-        const sourceRequestId =
-          (editingMeeting as any).sourceRequestId;
-
-        if (sourceRequestId) {
-          await updateMeetingRequest(
-            sourceRequestId,
-            {
-              date: meetingData.date,
-              startTime: meetingData.startTime,
-              endTime: meetingData.endTime,
-              updatedAt: Date.now(),
-            } as any,
-          );
-        }
+        await updatePastorMeeting(editingMeetingId, meetingData);
       } else {
-        await createMeeting({
-          ...meetingData,
-          acknowledged: false,
-        } as any);
+        await createPastorMeeting(meetingData);
       }
 
       const emailSuccess = await sendMeetingInvitations({
@@ -306,6 +232,7 @@ export default function useMeetings({
       });
 
       setEmailSent(emailSuccess);
+      await refreshCalendar();
       setIsAddOpen(false);
       setEditingMeeting(null);
       setSelectedParticipants([]);
@@ -327,29 +254,8 @@ export default function useMeetings({
     setMeetingLoading(true);
 
     try {
-      const meetingToCancel = meetings.find(
-        meeting => meeting.id === meetingId,
-      );
-
-      if (
-        meetingToCancel &&
-        getMeetingRequestEmail(meetingToCancel)
-      ) {
-        await sendMeetingStatusEmailViaEmailJs({
-          kind: 'cancellation',
-          recipientEmail: getMeetingRequestEmail(meetingToCancel),
-          name: (meetingToCancel as any).requestName || '',
-          date: meetingToCancel.date,
-          startTime: meetingToCancel.startTime,
-          endTime: meetingToCancel.endTime,
-          location: meetingToCancel.location || '',
-          requesterLocale:
-            (meetingToCancel as any).requesterLocale || 'en',
-          sourceId: meetingId,
-        });
-      }
-
-      await deleteMeeting(meetingId);
+      await deletePastorMeeting(meetingId);
+      await refreshCalendar();
     } catch (error) {
       console.error(error);
       window.alert(

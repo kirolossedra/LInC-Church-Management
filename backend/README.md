@@ -73,6 +73,27 @@ The booking API uses short-lived Google OAuth access tokens generated from
 Both values must be configured as Cloudflare secrets. Never commit a Firebase
 service-account JSON file or private key.
 
+## Pastor Calendar API
+
+All Pastor Calendar endpoints require a valid Firebase Bearer token and the
+exact allowlisted Pastor email:
+
+- `GET /api/v1/pastor-calendar`
+- `POST /api/v1/pastor-calendar/meetings`
+- `PATCH /api/v1/pastor-calendar/meetings/:meetingId`
+- `DELETE /api/v1/pastor-calendar/meetings/:meetingId`
+- `POST /api/v1/pastor-calendar/availability`
+- `PATCH /api/v1/pastor-calendar/availability/:blockId`
+- `DELETE /api/v1/pastor-calendar/availability/:blockId`
+- `POST /api/v1/pastor-calendar/unavailability`
+- `PATCH /api/v1/pastor-calendar/unavailability/:blockId`
+- `DELETE /api/v1/pastor-calendar/unavailability/:blockId`
+- `POST /api/v1/pastor-calendar/meeting-requests/:requestId/decision`
+
+Request decisions and meeting cancellation notifications use backend Brevo.
+The Pastor dashboard no longer accesses the calendar Firebase branches
+directly. `POST /api/v1/meeting-invitations` is also Pastor-authenticated.
+
 ## NextGen mission map
 
 `GET /api/v1/nextgen/mission-map` requires a Firebase password login for

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import app from '../src/index'
+import app, { createApp } from '../src/index'
 
 const mockBindings = {
   BREVO_API_KEY: 'test-brevo-api-key',
@@ -167,7 +167,15 @@ describe('LinC backend', () => {
     ])
   })
 
-  it('sends a meeting-invitation BCC request without an authorization header', async () => {
+  it('requires Pastor authentication before sending meeting invitations', async () => {
+    const unauthenticatedResponse = await app.request(
+      '/api/v1/meeting-invitations',
+      { method: 'POST' },
+      mockBindings,
+    )
+
+    expect(unauthenticatedResponse.status).toBe(401)
+
     const brevoFetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(
@@ -184,12 +192,26 @@ describe('LinC backend', () => {
         ),
       )
 
-    const response = await app.request(
+    const authenticatedApp = createApp({
+      meetingInvitations: {
+        verifyToken: vi.fn().mockResolvedValue({
+          uid: 'pastor-uid',
+          email: 'rev.ibrahim@lincministry.com',
+          emailVerified: false,
+          name: null,
+          picture: null,
+          signInProvider: 'password',
+        }),
+      },
+    })
+
+    const response = await authenticatedApp.request(
       '/api/v1/meeting-invitations',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: 'Bearer valid-token',
         },
         body: JSON.stringify({
           locale: 'en',

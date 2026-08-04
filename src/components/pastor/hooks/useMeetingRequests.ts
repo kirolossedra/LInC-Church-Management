@@ -1,106 +1,45 @@
-import {
-  useEffect,
-  useState,
-} from 'react';
+import { useState } from 'react';
 
-import type {
-  MeetingRequest,
-} from '../../../types';
-
-import {
-  subscribeToMeetingRequests,
-} from '../calendar';
-
-import {
-  findMeetingRequest,
-  processMeetingRequestDecision,
-  type MeetingRequestDecision,
-} from '../meeting-requests';
+import type { MeetingRequest } from '../../../types';
+import { decidePastorMeetingRequest } from '../../../services/pastorCalendar';
+import type { MeetingRequestDecision } from '../meeting-requests';
 
 export interface UseMeetingRequestsParams {
-  translate: (
-    key: string,
-  ) => string;
+  translate: (key: string) => string;
+  meetingRequests: MeetingRequest[];
+  refreshCalendar: () => Promise<void>;
 }
 
 export default function useMeetingRequests({
   translate,
+  meetingRequests,
+  refreshCalendar,
 }: UseMeetingRequestsParams) {
-  const [
-    meetingRequests,
-    setMeetingRequests,
-  ] = useState<MeetingRequest[]>([]);
-
-  const [
-    showRequests,
-    setShowRequests,
-  ] = useState(false);
-
-  const [
-    requestDecisionLoading,
-    setRequestDecisionLoading,
-  ] = useState(false);
-
-  useEffect(
-    () =>
-      subscribeToMeetingRequests(
-        setMeetingRequests,
-      ),
-    [],
-  );
+  const [showRequests, setShowRequests] = useState(false);
+  const [requestDecisionLoading, setRequestDecisionLoading] =
+    useState(false);
 
   const toggleRequests = () => {
-    setShowRequests(
-      previous => !previous,
-    );
+    setShowRequests(previous => !previous);
   };
 
   const handleRequestStatus = async (
     requestId: string,
     decision: MeetingRequestDecision,
   ) => {
-    if (requestDecisionLoading) {
-      return;
-    }
-
+    if (requestDecisionLoading) return;
     setRequestDecisionLoading(true);
 
     try {
-      const request =
-        findMeetingRequest(
-          meetingRequests,
-          requestId,
-        );
-
-      if (!request) {
-        window.alert(
-          translate(
-            'booking.statusFailed',
-          ),
-        );
-
-        return;
-      }
-
-      await processMeetingRequestDecision({
-        request,
+      await decidePastorMeetingRequest(
+        requestId,
         decision,
-        meetingTitle:
-          translate(
-            'calendar.meetingWithPastor',
-          ),
-      });
+        translate('calendar.meetingWithPastor'),
+      );
+      await refreshCalendar();
     } catch (error) {
-      console.error(
-        'Failed to process meeting request:',
-        error,
-      );
-
-      window.alert(
-        translate(
-          'booking.statusFailed',
-        ),
-      );
+      console.error('Failed to process meeting request:', error);
+      window.alert(translate('booking.statusFailed'));
     } finally {
       setRequestDecisionLoading(false);
     }
@@ -111,13 +50,11 @@ export default function useMeetingRequests({
     showRequests,
     setShowRequests,
     requestDecisionLoading,
-
     toggleRequests,
     handleRequestStatus,
   };
 }
 
-export type UseMeetingRequestsResult =
-  ReturnType<
-    typeof useMeetingRequests
-  >;
+export type UseMeetingRequestsResult = ReturnType<
+  typeof useMeetingRequests
+>;

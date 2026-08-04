@@ -41,20 +41,31 @@ const BACKEND_BASE_URL = (
 export async function sendMeetingInvitationsViaBackend(
   request: SendMeetingInvitationsRequest,
 ): Promise<boolean> {
-  let response: Response;
+  const user = auth.currentUser;
+  if (!user) {
+    console.error('Pastor login is required to send meeting invitations.');
+    return false;
+  }
 
-  try {
-    response = await fetch(
+  const send = async (forceRefresh: boolean) =>
+    fetch(
       `${BACKEND_BASE_URL}/api/v1/meeting-invitations`,
       {
         method: 'POST',
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${await user.getIdToken(forceRefresh)}`,
         },
         body: JSON.stringify(request),
       },
     );
+
+  let response: Response;
+
+  try {
+    response = await send(false);
+    if (response.status === 401) response = await send(true);
   } catch (error) {
     console.error(
       'Unable to reach the LinC backend:',
@@ -87,3 +98,4 @@ export async function sendMeetingInvitationsViaBackend(
 
   return true;
 }
+import { auth } from '../firebase';

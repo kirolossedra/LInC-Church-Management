@@ -76,6 +76,7 @@ import {
   useCalendarMonth,
   useMeetingRequests,
   useMeetings,
+  usePastorCalendarData,
   useNextGen,
   useParticipants,
   usePeopleDevelopment,
@@ -103,6 +104,15 @@ export default function PastorDashboard() {
   });
 
   const {
+    meetings: calendarMeetings,
+    meetingRequests: calendarMeetingRequests,
+    availability: calendarAvailability,
+    unavailability: calendarUnavailability,
+    calendarLoading,
+    refreshCalendar,
+  } = usePastorCalendarData();
+
+  const {
     meetingRequests,
     showRequests,
     setShowRequests,
@@ -110,6 +120,8 @@ export default function PastorDashboard() {
     handleRequestStatus,
   } = useMeetingRequests({
     translate: t,
+    meetingRequests: calendarMeetingRequests,
+    refreshCalendar,
   });
 
   const {
@@ -140,6 +152,8 @@ export default function PastorDashboard() {
     participants,
     locale: displayLocale,
     translate: t,
+    meetings: calendarMeetings,
+    refreshCalendar,
   });
 
   const {
@@ -178,6 +192,9 @@ export default function PastorDashboard() {
     meetings,
     meetingRequests,
     translate: t,
+    availability: calendarAvailability,
+    unavailability: calendarUnavailability,
+    refreshCalendar,
   });
 
   const {
@@ -299,6 +316,7 @@ export default function PastorDashboard() {
   });
 
   const loading =
+    calendarLoading ||
     meetingLoading ||
     requestDecisionLoading ||
     availabilityLoading;

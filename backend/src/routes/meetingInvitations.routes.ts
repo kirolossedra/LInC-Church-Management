@@ -14,10 +14,27 @@ import {
   type BrevoBindings,
   type BrevoRecipient,
 } from '../services/brevo.service'
+import {
+  createFirebaseAuthMiddleware,
+  type FirebaseTokenVerifier,
+} from '../security/firebaseAuth'
+import { requirePastorAccess } from '../security/pastorAuthorization'
+import type { AppEnv } from '../types/app'
 
-const meetingInvitationsRoutes = new Hono<{
-  Bindings: BrevoBindings
-}>()
+export type MeetingInvitationsDependencies = {
+  verifyToken?: FirebaseTokenVerifier
+}
+
+export function createMeetingInvitationRoutes(
+  dependencies: MeetingInvitationsDependencies = {},
+) {
+const meetingInvitationsRoutes = new Hono<AppEnv>()
+
+meetingInvitationsRoutes.use(
+  '*',
+  createFirebaseAuthMiddleware(dependencies.verifyToken),
+)
+meetingInvitationsRoutes.use('*', requirePastorAccess())
 
 meetingInvitationsRoutes.post('/', async context => {
   let requestBody: unknown
@@ -152,4 +169,5 @@ meetingInvitationsRoutes.post('/', async context => {
   }
 })
 
-export default meetingInvitationsRoutes
+return meetingInvitationsRoutes
+}
