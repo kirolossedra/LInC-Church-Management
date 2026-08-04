@@ -27,6 +27,14 @@ import {
   createPastorCalendarRoutes,
   type PastorCalendarDependencies,
 } from './routes/pastorCalendar.routes'
+import {
+  createAssessmentRoutes,
+  type AssessmentDependencies,
+} from './routes/assessment.routes'
+import {
+  createAdminRoutes,
+  type AdminDependencies,
+} from './routes/admin.routes'
 import type { AppEnv } from './types/app'
 
 export type AppDependencies = {
@@ -36,6 +44,8 @@ export type AppDependencies = {
   booking?: BookingDependencies
   pastorCalendar?: PastorCalendarDependencies
   meetingInvitations?: MeetingInvitationsDependencies
+  assessment?: AssessmentDependencies
+  admin?: AdminDependencies
 }
 
 export function createApp(
@@ -192,6 +202,16 @@ const requestSchema = z
   app.route(
     '/api/v1/pastor-calendar',
     createPastorCalendarRoutes(dependencies.pastorCalendar),
+  )
+
+  app.route(
+    '/api/v1/assessment',
+    createAssessmentRoutes(dependencies.assessment),
+  )
+
+  app.route(
+    '/api/v1/admin',
+    createAdminRoutes(dependencies.admin),
   )
 
   app.route(

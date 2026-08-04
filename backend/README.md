@@ -61,6 +61,43 @@ Pastor email:
 
 React no longer reads or writes the `peopleNotes` Firebase branch directly.
 
+## Administrator API
+
+Administrator identity comes from Firebase Authentication. Authorization is
+loaded server-side from `administration/adminHierarchy/users/:uid` so the
+browser does not need direct Realtime Database access:
+
+- `GET /api/v1/admin/session`
+- `PATCH /api/v1/admin/users/:uid/authority` (chief only)
+- `PATCH /api/v1/admin/users/:uid/suspend` (chief only)
+
+Chief administrators receive every allocation. Other administrators must be
+active and have the relevant stored authority.
+
+## Assessment API
+
+Public visitors do not need accounts:
+
+- `GET /api/v1/assessment/forms`
+- `POST /api/v1/assessment/submissions`
+- `POST /api/v1/assessment/direct-signups`
+
+Hono validates known fields and rating ranges, recomputes results, controls
+Firebase paths and timestamps, and sends fixed-recipient Brevo notifications.
+
+The following User Linkage and form-management endpoints require a Firebase
+Bearer token plus either chief access or an active administrator profile with
+`manageAssessmentForms: true`:
+
+- `GET /api/v1/assessment/admin/responses?formId=...`
+- `PATCH /api/v1/assessment/admin/responses/:responseId/linkage`
+- `DELETE /api/v1/assessment/admin/responses/:responseId`
+- `POST /api/v1/assessment/admin/responses/:responseId/identifier-email`
+- `PATCH /api/v1/assessment/admin/forms/:formId`
+
+The public Assessment page contains no User Linkage passcode or response
+management. User Linkage lives only in the Administrator panel.
+
 ## Public booking API
 
 - `GET /api/v1/booking/schedule?start=YYYY-MM-DD&end=YYYY-MM-DD`

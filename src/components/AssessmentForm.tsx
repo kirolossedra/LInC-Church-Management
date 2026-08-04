@@ -1,26 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
-import emailjs from '@emailjs/browser';
-import { database } from '../firebase';
-import { ref, push, get, update, remove, onValue } from 'firebase/database';
 import { motion } from 'motion/react';
 import PageTitle from './PageTitle';
 import { ClipboardList } from 'lucide-react';
 import { useI18n } from '../i18n';
 import fiveServicePathwaysYaml from './forms/five-service-pathways.yml?raw';
 import spiritualGiftsDiscoveryYaml from './forms/spiritual-gifts-discovery.yml?raw';
-
-const EMAILJS_SERVICE_ID = 'service_v47g6or';
-const EMAILJS_TEMPLATE_ID = 'template_a0iy1xy';
-const EMAILJS_PUBLIC_KEY = 'x_Xx3UHe3-yE1I13_';
-const USER_LINKAGE_PASSCODE = '9910';
-const SUPPORTED_LINKAGE_FORM_IDS = ['0', '1'];
-const IDENTIFIER_EMAIL_SUBJECT = 'LinC Mentorship Identifier';
-const DIRECT_SIGNUP_FORM_ID = 'directSignup';
-const ASSESSMENT_FORMS_CONTROL_PATH = 'assessmentPage/forms';
+import {
+  getAssessmentFormStates,
+  submitAssessment,
+  submitDirectAssessmentSignup,
+  type AssessmentFormId,
+} from '../services/assessment';
 
 type Lang = 'en' | 'ar';
-type InterfaceLang = 'English' | 'Arabic';
 type AnswerValue = string | number;
 type Answers = Record<string, AnswerValue>;
 type LocalText = { en?: string; ar?: string };
@@ -128,268 +121,13 @@ interface RuntimeResult {
   summary: string;
 }
 
-interface LinkageRow {
-  key: string;
-  formId: string;
-  path: string;
-  fullName: string;
-  email: string;
-  userIdentifier: string;
-  databaseFormId: string;
-  fillingLanguage: InterfaceLang;
-  identifierEmailSentAt?: number;
-  createdAt: number;
-  createdAtEasternTime: string;
-  raw: Record<string, unknown>;
-}
-
-
-function normalizeAssessmentFormAvailability(value: unknown): AssessmentFormAvailability {
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-
-    if (normalized === 'hidden') return 'hidden';
-    if (
-      normalized === 'disabled' ||
-      normalized === 'grayed' ||
-      normalized === 'greyed' ||
-      normalized === 'unavailable'
-    ) {
-      return 'disabled';
-    }
-
-    return 'active';
-  }
-
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return 'active';
-  }
-
-  const record = value as Record<string, unknown>;
-  const configuredState =
-    record.state ??
-    record.status ??
-    record.displayState ??
-    record.availability;
-
-  if (configuredState !== undefined) {
-    return normalizeAssessmentFormAvailability(configuredState);
-  }
-
-  if (record.visible === false) return 'hidden';
-  if (record.enabled === false || record.clickable === false) return 'disabled';
-
-  return 'active';
-}
-
-function normalizeAssessmentFormControls(
-  value: unknown,
-): Record<string, AssessmentFormAvailability> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([formId, control]) => [
-      formId,
-      normalizeAssessmentFormAvailability(control),
-    ]),
-  );
-}
-
 const FORMS = [fiveServicePathwaysYaml, spiritualGiftsDiscoveryYaml]
   .map(raw => YAML.parse(raw) as FormDef)
   .filter(form => form.status !== 'disabled');
 
-const DIRECT_SIGNUP_TARGET_FORM = FORMS[0];
-
-const DIRECT_SIGNUP_FORM: FormDef = {
-  id: DIRECT_SIGNUP_FORM_ID,
-  firebase: {
-    path: DIRECT_SIGNUP_TARGET_FORM?.firebase?.path || 'form',
-    tableNameEquivalent: DIRECT_SIGNUP_TARGET_FORM?.firebase?.tableNameEquivalent || DIRECT_SIGNUP_TARGET_FORM?.id || 'form',
-  },
-  defaults: DIRECT_SIGNUP_TARGET_FORM?.defaults,
-  card: {
-    title: { en: 'Direct Sign-Up', ar: 'التسجيل المباشر' },
-    description: {
-      en: 'People added through the direct sign-up shortcut are stored in the same backend path as normal form responses.',
-      ar: 'الأشخاص الذين تتم إضافتهم من التسجيل المباشر يتم حفظهم في نفس مسار قاعدة البيانات الخاص بردود النماذج العادية.',
-    },
-  },
-  page: {
-    title: { en: 'Direct Sign-Up', ar: 'التسجيل المباشر' },
-    subtitle: {
-      en: 'Sign up with name and email only. The row is saved in the main form-response path so other services can use it.',
-      ar: 'التسجيل بالاسم والبريد الإلكتروني فقط. يتم حفظ الصف في مسار ردود النماذج الأساسي حتى تستخدمه باقي الخدمات.',
-    },
-  },
-  sections: [],
-};
-
-const LINKAGE_SOURCES: FormDef[] = FORMS;
-
-function firebaseResponsePath(form: FormDef): string {
-  return form.firebase?.path || 'form';
-}
-
-function directSignupTargetForm(): FormDef {
-  return DIRECT_SIGNUP_TARGET_FORM || DIRECT_SIGNUP_FORM;
-}
-
-function directSignupTargetFormId(): string {
-  return DIRECT_SIGNUP_TARGET_FORM?.id || DIRECT_SIGNUP_FORM_ID;
-}
-
-function linkageDraftKey(formId: string, responseKey: string): string {
-  return `${formId}-${responseKey}`;
-}
-
-function normalizeLookupKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function unwrapStoredValue(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
-  if (typeof value !== 'object' || Array.isArray(value)) return '';
-
-  const record = value as Record<string, unknown>;
-  for (const key of ['value', 'answer', 'currentValue', 'userIdentifier', 'linkedUserIdentifier']) {
-    const nested = record[key];
-    if (typeof nested === 'string' || typeof nested === 'number') return String(nested).trim();
-  }
-
-  return '';
-}
-
-function extractResponseValue(value: unknown, candidateKeys: string[]): string {
-  const wantedKeys = new Set(candidateKeys.map(normalizeLookupKey));
-
-  const visit = (current: unknown, currentKey = ''): string => {
-    if (current === null || current === undefined) return '';
-
-    if (typeof current === 'string' || typeof current === 'number') {
-      return wantedKeys.has(normalizeLookupKey(currentKey)) ? String(current).trim() : '';
-    }
-
-    if (Array.isArray(current)) {
-      for (const item of current) {
-        const found = visit(item, currentKey);
-        if (found) return found;
-      }
-      return '';
-    }
-
-    if (typeof current !== 'object') return '';
-
-    const record = current as Record<string, unknown>;
-
-    for (const [key, nested] of Object.entries(record)) {
-      if (wantedKeys.has(normalizeLookupKey(key))) {
-        const directValue = unwrapStoredValue(nested);
-        if (directValue) return directValue;
-
-        const nestedValue = visit(nested, key);
-        if (nestedValue) return nestedValue;
-      }
-    }
-
-    for (const [key, nested] of Object.entries(record)) {
-      const found = visit(nested, key);
-      if (found) return found;
-    }
-
-    return '';
-  };
-
-  return visit(value);
-}
-
-
-function normalizeInterfaceLanguage(value: string): InterfaceLang {
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized === 'ar' || normalized.includes('arabic') || normalized.includes('عربي')) {
-    return 'Arabic';
-  }
-
-  return 'English';
-}
-
-function detectResponseLanguage(raw: Record<string, unknown>): InterfaceLang {
-  const languageValue = extractResponseValue(raw, [
-    'interfaceLanguageUsed',
-    'requesterLanguage',
-    'requesterLocale',
-    'languageUsed',
-    'locale',
-    'lang',
-  ]);
-
-  return normalizeInterfaceLanguage(languageValue || 'English');
-}
-
 function isUsableEmail(value: string): boolean {
   const trimmed = value.trim();
   return trimmed.length > 3 && trimmed !== 'N/A' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
-}
-
-function uniqueRowsWithCurrentIdentifier(rows: LinkageRow[]): LinkageRow[] {
-  const seenIdentifiers = new Set<string>();
-  const uniqueRows: LinkageRow[] = [];
-
-  for (const row of rows) {
-    const identifier = row.userIdentifier.trim();
-    const normalizedIdentifier = identifier.toLowerCase();
-
-    if (!identifier || !isUsableEmail(row.email) || seenIdentifiers.has(normalizedIdentifier)) continue;
-
-    seenIdentifiers.add(normalizedIdentifier);
-    uniqueRows.push(row);
-  }
-
-  return uniqueRows;
-}
-
-function buildLinkageRows(form: FormDef, snapshotValue: unknown): LinkageRow[] {
-  if (!snapshotValue || typeof snapshotValue !== 'object' || Array.isArray(snapshotValue)) return [];
-
-  return Object.entries(snapshotValue as Record<string, Record<string, unknown>>)
-    .map(([key, raw]) => {
-      const fullName = extractResponseValue(raw, ['fullName', 'full_name', 'name', 'firstName', 'lastName']);
-      const email = extractResponseValue(raw, ['email', 'emailAddress', 'userEmail']);
-      const userIdentifier = extractResponseValue(raw, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']);
-      const rawDatabaseFormId = extractResponseValue(raw, ['databaseFormId', 'linkedFormId', 'supportedFormId', 'formNumber', 'formNumericId', 'formId']);
-      const databaseFormId = SUPPORTED_LINKAGE_FORM_IDS.includes(rawDatabaseFormId) ? rawDatabaseFormId : '';
-      const fillingLanguage = detectResponseLanguage(raw);
-      const identifierEmailSentAt = Number(raw.identifierEmailSentAt || 0) || undefined;
-      const createdAt = Number(raw.createdAt || 0);
-      const createdAtEasternTime = String(raw.createdAtEasternTime || raw.createdAtISO || '');
-
-      return {
-        key,
-        formId: form.id,
-        path: firebaseResponsePath(form),
-        fullName: fullName || 'N/A',
-        email: email || 'N/A',
-        userIdentifier,
-        databaseFormId,
-        fillingLanguage,
-        identifierEmailSentAt,
-        createdAt,
-        createdAtEasternTime,
-        raw,
-      };
-    })
-    .sort((a, b) => b.createdAt - a.createdAt);
-}
-
-function escapeHtml(value: string): string {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 function localText(value: LocalText | undefined, lang: Lang, fallback = ''): string {
@@ -412,18 +150,6 @@ function translateOrText(t: (key: string) => string, key: string | undefined, te
 
 function template(text: string, values: Record<string, string>): string {
   return text.replace(/{{\s*([\w.-]+)\s*}}/g, (_, key) => values[key] || '');
-}
-
-function getEasternTime(form: FormDef): string {
-  return new Date().toLocaleString('en-CA', {
-    timeZone: form.defaults?.timezone || 'America/Toronto',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
 }
 
 function ratingRange(form: FormDef, section?: SectionDef): number[] {
@@ -627,73 +353,11 @@ function scoreMap(value: CalculationValue): Record<string, number> {
   return Object.fromEntries(Object.entries(value).map(([key, score]) => [key, Number(score) || 0]));
 }
 
-function buildFieldsPayload(form: FormDef, answers: Answers, t: (key: string) => string, lang: Lang) {
-  return Object.fromEntries(
-    form.sections.map(section => {
-      if (section.type === 'groupedRating') {
-        return [
-          section.id,
-          Object.fromEntries(
-            (section.groups || []).map(group => [
-              group.id,
-              {
-                sectionEnglish: groupTitle(t, group, lang),
-                sectionArabic: groupTitle(t, group, lang),
-                questions: Object.fromEntries(
-                  (group.fields || []).map(field => [
-                    field.id,
-                    {
-                      questionEnglish: fieldLabel(t, field, lang),
-                      questionArabic: fieldLabel(t, field, lang),
-                      score: numberValue(answers[field.id]),
-                    },
-                  ]),
-                ),
-              },
-            ]),
-          ),
-        ];
-      }
-
-      if (section.type === 'ratingList') {
-        return [
-          section.id,
-          Object.fromEntries(
-            (section.fields || []).map(field => [
-              field.id,
-              {
-                areaEnglish: fieldLabel(t, field, lang),
-                areaArabic: fieldLabel(t, field, lang),
-                score: numberValue(answers[field.id]),
-              },
-            ]),
-          ),
-        ];
-      }
-
-      return [
-        section.id,
-        Object.fromEntries(
-          (section.fields || []).map(field => [
-            field.id,
-            section.id === 'trainee'
-              ? {
-                  fieldEnglish: fieldLabel(t, field, lang),
-                  fieldArabic: fieldLabel(t, field, lang),
-                  value: answers[field.id] || '',
-                }
-              : {
-                  questionEnglish: fieldLabel(t, field, lang),
-                  questionArabic: fieldLabel(t, field, lang),
-                  answer: answers[field.id] || '',
-                },
-          ]),
-        ),
-      ];
-    }),
-  );
-}
-
+/*
+ * Browser-generated assessment and identifier email HTML was retired when
+ * delivery moved to the authenticated Hono/Brevo backend. The historical
+ * implementation remains inside this comment temporarily to keep this
+ * migration reviewable; it is not compiled or shipped.
 function buildFullReportHtml(params: {
   form: FormDef;
   answers: Answers;
@@ -975,11 +639,11 @@ async function sendEmailViaEmailJs(params: {
     EMAILJS_PUBLIC_KEY,
   );
 }
+*/
 
 export default function AssessmentForm() {
   const { t, dir } = useI18n();
   const langCode: Lang = dir === 'rtl' ? 'ar' : 'en';
-  const interfaceLanguage: InterfaceLang = dir === 'rtl' ? 'Arabic' : 'English';
   const isArabicUI = dir === 'rtl';
 
   const [selectedFormId, setSelectedFormId] = useState<string | null>(null);
@@ -996,21 +660,6 @@ export default function AssessmentForm() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activePage, setActivePage] = useState<'assessmentChoices' | 'userLinkage'>('assessmentChoices');
-  const [linkagePasscode, setLinkagePasscode] = useState('');
-  const [isLinkageUnlocked, setIsLinkageUnlocked] = useState(false);
-  const [selectedLinkageFormId, setSelectedLinkageFormId] = useState<string | null>(null);
-  const [linkageRowsByForm, setLinkageRowsByForm] = useState<Record<string, LinkageRow[]>>({});
-  const [identifierDrafts, setIdentifierDrafts] = useState<Record<string, string>>({});
-  const [formIdDrafts, setFormIdDrafts] = useState<Record<string, string>>({});
-  const [linkageLoading, setLinkageLoading] = useState(false);
-  const [linkageSavingKey, setLinkageSavingKey] = useState<string | null>(null);
-  const [linkageDeletingKey, setLinkageDeletingKey] = useState<string | null>(null);
-  const [linkageEmailSendingKey, setLinkageEmailSendingKey] = useState<string | null>(null);
-  const [linkageEmailSendingAll, setLinkageEmailSendingAll] = useState(false);
-  const [expandedPreviewKeys, setExpandedPreviewKeys] = useState<Record<string, boolean>>({});
-  const [linkageError, setLinkageError] = useState<string | null>(null);
-  const [linkageMessage, setLinkageMessage] = useState<string | null>(null);
   const [directSignupName, setDirectSignupName] = useState('');
   const [directSignupEmail, setDirectSignupEmail] = useState('');
   const [directSignupLoading, setDirectSignupLoading] = useState(false);
@@ -1018,28 +667,15 @@ export default function AssessmentForm() {
   const [directSignupMessage, setDirectSignupMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const controlsRef = ref(database, ASSESSMENT_FORMS_CONTROL_PATH);
-
-    const unsubscribe = onValue(
-      controlsRef,
-      snapshot => {
-        setFormAvailabilityById(
-          normalizeAssessmentFormControls(snapshot.val()),
-        );
-      },
-      listenerError => {
-        console.error(
-          'Unable to load assessment-form visibility controls:',
-          listenerError,
-        );
-
-        // A missing or unreadable configuration preserves the current behavior:
-        // every YAML-backed assessment form remains visible and clickable.
+    const controller = new AbortController();
+    void getAssessmentFormStates(controller.signal)
+      .then(({ forms }) => setFormAvailabilityById(forms))
+      .catch(listenerError => {
+        if (controller.signal.aborted) return;
+        console.error('Unable to load assessment-form visibility controls:', listenerError);
         setFormAvailabilityById({});
-      },
-    );
-
-    return unsubscribe;
+      });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -1076,7 +712,6 @@ export default function AssessmentForm() {
     const availability = formAvailabilityById[formId] || 'active';
     if (availability !== 'active') return;
 
-    setActivePage('assessmentChoices');
     setSelectedFormId(formId);
     setSubmitted(false);
     setError(null);
@@ -1091,20 +726,9 @@ export default function AssessmentForm() {
   };
 
   const handleBackToAssessmentChoices = () => {
-    setActivePage('assessmentChoices');
     setSelectedFormId(null);
     setSubmitted(false);
     setError(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const openUserLinkage = () => {
-    setActivePage('userLinkage');
-    setSelectedFormId(null);
-    setSubmitted(false);
-    setError(null);
-    setLinkageError(null);
-    setLinkageMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1130,79 +754,18 @@ export default function AssessmentForm() {
     setDirectSignupLoading(true);
 
     try {
-      const targetForm = directSignupTargetForm();
-      const targetFormId = directSignupTargetFormId();
-      const targetPath = firebaseResponsePath(targetForm);
-      const createdAt = Date.now();
-      const createdAtISO = new Date().toISOString();
-      const createdAtEasternTime = getEasternTime(targetForm);
-
-      await push(ref(database, `${targetPath}/`), {
-        tableNameEquivalent: targetForm.firebase?.tableNameEquivalent || targetFormId,
-        signupType: 'directWithoutAssessmentForm',
-        submissionMode: 'directSignupStoredAsFormResponse',
-        createdAt,
-        createdAtISO,
-        createdAtEasternTime,
-        interfaceLanguageUsed: interfaceLanguage,
-        formId: targetFormId,
-        sourceFormId: DIRECT_SIGNUP_FORM_ID,
+      await submitDirectAssessmentSignup({
         fullName,
         email,
-        fields: {
-          trainee: {
-            fullName: {
-              fieldEnglish: 'Full Name',
-              fieldArabic: 'الاسم الكامل',
-              value: fullName,
-            },
-            email: {
-              fieldEnglish: 'Email',
-              fieldArabic: 'البريد الإلكتروني',
-              value: email,
-            },
-            requestType: {
-              fieldEnglish: 'Request Type',
-              fieldArabic: 'نوع الطلب',
-              value: 'Direct sign-up without assessment form',
-            },
-          },
-          directSignup: {
-            fullName: {
-              fieldEnglish: 'Full Name',
-              fieldArabic: 'الاسم الكامل',
-              value: fullName,
-            },
-            email: {
-              fieldEnglish: 'Email',
-              fieldArabic: 'البريد الإلكتروني',
-              value: email,
-            },
-            requestType: {
-              fieldEnglish: 'Request Type',
-              fieldArabic: 'نوع الطلب',
-              value: 'Direct sign-up without assessment form',
-            },
-            storedBackendPath: {
-              fieldEnglish: 'Stored Backend Path',
-              fieldArabic: 'مسار الحفظ في قاعدة البيانات',
-              value: targetPath,
-            },
-          },
-        },
-        scores: {},
-        results: {
-          English: { summary: 'Direct sign-up saved as a form-response row. No assessment answers were submitted.' },
-          Arabic: { summary: 'تم حفظ التسجيل المباشر كصف ضمن ردود النماذج. لم يتم إرسال إجابات تقييم.' },
-        },
+        locale: langCode,
       });
 
       setDirectSignupName('');
       setDirectSignupEmail('');
       setDirectSignupMessage(
         isArabicUI
-          ? `تم إرسال التسجيل وحفظه في نفس مسار ردود النماذج: ${targetPath}`
-          : `Sign-up submitted and saved in the same form-response path: ${targetPath}`,
+          ? 'تم إرسال التسجيل بنجاح.'
+          : 'Sign-up submitted successfully.',
       );
     } catch (err) {
       console.error(err);
@@ -1212,11 +775,12 @@ export default function AssessmentForm() {
     }
   };
 
+  /* User Linkage moved to the Administrator panel and Hono APIs.
   const handleUserLinkagePasscode = (event: React.FormEvent) => {
     event.preventDefault();
     setLinkageMessage(null);
 
-    if (linkagePasscode.trim() !== USER_LINKAGE_PASSCODE) {
+    if (linkagePasscode.trim() !== '<retired-passcode>') {
       setIsLinkageUnlocked(false);
       setLinkageError(isArabicUI ? 'رمز المرور غير صحيح.' : 'Incorrect passcode.');
       return;
@@ -1509,6 +1073,8 @@ export default function AssessmentForm() {
   };
 
 
+  */
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedForm || !result) return;
@@ -1523,110 +1089,21 @@ export default function AssessmentForm() {
     setLoading(true);
 
     try {
-      const submittedAt = getEasternTime(selectedForm);
-      const englishResult = buildResult(selectedForm, answers, t, 'en');
-      const arabicResult = buildResult(selectedForm, answers, t, 'ar');
-      const fields = buildFieldsPayload(selectedForm, answers, t, langCode);
-
-      const record = {
-        tableNameEquivalent: selectedForm.firebase?.tableNameEquivalent || selectedForm.id,
-        createdAt: Date.now(),
-        createdAtISO: new Date().toISOString(),
-        createdAtEasternTime: submittedAt,
-        interfaceLanguageUsed: interfaceLanguage,
-        formId: selectedForm.id,
-        fields,
-        scores: Object.fromEntries(
-          (selectedForm.calculations || [])
-            .filter(rule => rule.type === 'sumGroups' || rule.type === 'fieldScores')
-            .map(rule => [rule.id, scoreMap(result.calculations[rule.id])]),
-        ),
-        results: {
-          English: {
-            ...englishResult.cardValues,
-            summary: englishResult.summary,
-          },
-          Arabic: {
-            ...arabicResult.cardValues,
-            summary: arabicResult.summary,
-          },
-        },
-      };
-
-      await push(ref(database, `${selectedForm.firebase?.path || 'form'}/`), record);
-
-      const emailField = String(answers.email || '').trim();
-      if (selectedForm.email?.enabled && emailField) {
-        const fullName = String(answers.fullName || answers.name || '');
-        const formName = cardTitle(selectedForm, t, langCode);
-        const emailSubject = formName;
-
-        const fullReportHtml = buildFullReportHtml({
-          form: selectedForm,
-          answers,
-          result,
-          lang: interfaceLanguage,
-          langCode,
-          submittedAt,
-          t,
-        });
-
-        const cards = (selectedForm.results?.display?.cards || []).map(card => ({
-          label: resultCardLabel(t, card, langCode),
-          value: result.cardValues[card.id] || '',
-        }));
-
-        const htmlBody = buildAssessmentEmailHtml({
-          form: selectedForm,
-          lang: interfaceLanguage,
-          fullName,
-          surveyDate: String(answers.surveyDate || ''),
-          interfaceLanguageUsed: interfaceLanguage,
-          submittedAt,
-          cards,
-          fullReportHtml,
-        });
-
-        const recipients = Array.from(
-          new Set([
-            ...(selectedForm.email.recipients || []),
-            ...(selectedForm.email.includeSubmitter ? [emailField] : []),
-          ].filter(Boolean)),
-        );
-
-        for (const recipientEmail of recipients) {
-          const emailJsResponse = await sendEmailViaEmailJs({
-            to: recipientEmail,
-            subject: emailSubject,
-            fullName,
-            htmlBody,
-            replyToEmail: emailField,
-          });
-
-          await push(ref(database, 'emailJsSendLogs/'), {
-            recipientEmail,
-            subject: emailSubject,
-            fullName,
-            sentUsing: 'EmailJS',
-            serviceId: EMAILJS_SERVICE_ID,
-            templateId: EMAILJS_TEMPLATE_ID,
-            formId: selectedForm.id,
-            sentAt: Date.now(),
-            sentAtISO: new Date().toISOString(),
-            sentAtEasternTime: getEasternTime(selectedForm),
-            emailJsResponse: {
-              status: emailJsResponse.status,
-              text: emailJsResponse.text,
-            },
-          });
-        }
-      }
+      await submitAssessment({
+        formId: selectedForm.id as AssessmentFormId,
+        locale: langCode,
+        answers,
+      });
 
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error(err);
-      setError('The form was saved, but EmailJS sending failed. Check the EmailJS service ID, template ID, public key, and browser console.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to submit the assessment form.',
+      );
     } finally {
       setLoading(false);
     }
@@ -1750,6 +1227,7 @@ export default function AssessmentForm() {
     );
   };
 
+  /* User Linkage UI moved to AdministratorPanel.
   if (!selectedForm && activePage === 'userLinkage') {
     const selectedLinkageForm = LINKAGE_SOURCES.find(item => item.id === selectedLinkageFormId) || null;
     const linkageRows = selectedLinkageFormId ? linkageRowsByForm[selectedLinkageFormId] || [] : [];
@@ -2025,6 +1503,8 @@ export default function AssessmentForm() {
     );
   }
 
+  */
+
   if (!selectedForm) {
     const firstForm = visibleForms[0] || FORMS[0];
 
@@ -2057,7 +1537,7 @@ export default function AssessmentForm() {
                 <p className="m-0 mt-2 text-[#666] text-sm leading-relaxed">
                   {isArabicUI
                     ? 'أرسل الاسم والبريد الإلكتروني فقط. سيتم حفظه في نفس مسار ردود النماذج حتى تستخدمه باقي الخدمات، وسيظهر أيضاً في صفحة ربط المستخدمين.'
-                    : 'Submit only name and email. This saves the row in the same form-response backend path used by the other services, and it will also appear in User Linkage.'}
+                    : 'Submit only name and email. An authorized administrator can link the response from the Administrator panel.'}
                 </p>
               </div>
               <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center shrink-0 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
@@ -2179,30 +1659,6 @@ export default function AssessmentForm() {
               );
             })}
 
-            <button
-              type="button"
-              onClick={openUserLinkage}
-              className="group relative text-start min-h-[190px] bg-[#fffafa] border-2 border-[rgba(139,30,30,0.16)] rounded-[22px] p-[22px] cursor-pointer shadow-[0_8px_18px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[2px] hover:border-[#8b1e1e] hover:shadow-[0_12px_28px_rgba(139,30,30,0.16)]"
-            >
-              <div
-                className="absolute top-4 w-9 h-9 rounded-full bg-[#8b1e1e] text-white grid place-items-center text-[1rem] font-bold shadow-[0_8px_18px_rgba(139,30,30,0.24)]"
-                style={dir === 'rtl' ? { right: '16px' } : { left: '16px' }}
-              >
-                {visibleForms.length + 1}
-              </div>
-
-              <div className="w-12 h-12 rounded-[16px] bg-[#8b1e1e] text-white grid place-items-center mb-5 shadow-[0_8px_18px_rgba(139,30,30,0.22)]" style={dir === 'rtl' ? { marginRight: 'auto' } : { marginLeft: 'auto' }}>
-                <ClipboardList size={22} />
-              </div>
-
-              <div className="text-[#8b1e1e] text-[1.28rem] font-bold mb-3">
-                {isArabicUI ? 'ربط المستخدمين' : 'User Linkage'}
-              </div>
-
-              <p className="m-0 text-[#666] text-sm leading-relaxed">
-                {isArabicUI ? 'قسم محمي لربط ردود النماذج بمعرّف مستخدم واحد.' : 'Protected member linking section for connecting form responses with one user identifier.'}
-              </p>
-            </button>
           </div>
         </motion.div>
       </div>

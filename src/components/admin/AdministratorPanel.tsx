@@ -6,6 +6,7 @@ import { useAdministratorAccess } from './hooks';
 import {
   AdminHierarchySection,
   AssessmentFormsSection,
+  AssessmentUserLinkageSection,
   AttendanceAdminSection,
   CarouselManagementSection,
   NoAuthorityCard,
@@ -17,7 +18,6 @@ import {
 } from './AdminAccessScreens';
 import {
   ASSESSMENT_FORM_DEFINITIONS,
-  ASSESSMENT_FORMS_CONTROL_PATH,
   CAROUSEL_PATH,
   MAX_CAROUSEL_PHOTOS,
   MAX_IMAGE_SIZE_BYTES,
@@ -32,9 +32,13 @@ import {
   createPhotoId,
   fileToDataUrl,
   humanizeIdentifier,
-  normalizeAssessmentFormState,
   parsePhotos,
 } from './admin.utils';
+import {
+  getAssessmentFormStates,
+  updateAssessmentFormState,
+  type AssessmentFormId,
+} from '../../services/assessment';
 
 export default function AdministratorPanel() {
   const [carouselEnabled, setCarouselEnabled] = useState(true);
@@ -155,45 +159,18 @@ export default function AdministratorPanel() {
 
     setLoadingAssessmentForms(true);
 
-    const controlsRef = ref(database, ASSESSMENT_FORMS_CONTROL_PATH);
-
-    const unsubscribe = onValue(
-      controlsRef,
-      (snapshot) => {
-        const storedControls = snapshot.val();
-
-        const nextStates = Object.fromEntries(
-          ASSESSMENT_FORM_DEFINITIONS.map((form) => {
-            const storedValue =
-              storedControls &&
-              typeof storedControls === 'object' &&
-              !Array.isArray(storedControls)
-                ? (storedControls as Record<string, unknown>)[form.id]
-                : undefined;
-
-            return [form.id, normalizeAssessmentFormState(storedValue)];
-          })
-        );
-
-        setAssessmentFormStates(nextStates);
-        setLoadingAssessmentForms(false);
-      },
-      (error) => {
+    void getAssessmentFormStates()
+      .then(({ forms }) => setAssessmentFormStates(forms))
+      .catch((error) => {
         console.error('Failed to load assessment-form controls:', error);
-
-        setAssessmentFormStates(
-          Object.fromEntries(
-            ASSESSMENT_FORM_DEFINITIONS.map((form) => [form.id, 'active'])
-          )
-        );
+        setAssessmentFormStates({});
         setErrorMessage(
-          'The assessment-form controls could not be loaded from Firebase.'
+          error instanceof Error
+            ? error.message
+            : 'The assessment-form controls could not be loaded.'
         );
-        setLoadingAssessmentForms(false);
-      }
-    );
-
-    return unsubscribe;
+      })
+      .finally(() => setLoadingAssessmentForms(false));
   }, [canManageAssessmentForms]);
 
   const clearMessages = () => {
@@ -216,12 +193,9 @@ export default function AdministratorPanel() {
     setSavingAssessmentFormId(formId);
 
     try {
-      await set(
-        ref(database, `${ASSESSMENT_FORMS_CONTROL_PATH}/${formId}`),
-        {
-          state: nextState,
-          updatedAt: Date.now(),
-        }
+      await updateAssessmentFormState(
+        formId as AssessmentFormId,
+        nextState
       );
 
       const form = ASSESSMENT_FORM_DEFINITIONS.find(
@@ -651,12 +625,15 @@ export default function AdministratorPanel() {
           !canManageAttendance && <NoAuthorityCard />}
 
         {canManageAssessmentForms && (
-          <AssessmentFormsSection
-            loadingAssessmentForms={loadingAssessmentForms}
-            assessmentFormStates={assessmentFormStates}
-            savingAssessmentFormId={savingAssessmentFormId}
-            handleAssessmentFormStateChange={handleAssessmentFormStateChange}
-          />
+          <>
+            <AssessmentFormsSection
+              loadingAssessmentForms={loadingAssessmentForms}
+              assessmentFormStates={assessmentFormStates}
+              savingAssessmentFormId={savingAssessmentFormId}
+              handleAssessmentFormStateChange={handleAssessmentFormStateChange}
+            />
+            <AssessmentUserLinkageSection />
+          </>
         )}
 
         {canManageCarousel && (
