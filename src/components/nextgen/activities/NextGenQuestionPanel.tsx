@@ -1,0 +1,19 @@
+import { motion } from 'motion/react';
+import { HelpCircle, Loader2, Save, X } from 'lucide-react';
+import { CATEGORY_OPTIONS } from './nextGenActivities.constants';
+import type { UseNextGenQuestionsResult } from './useNextGenQuestions';
+
+export default function NextGenQuestionPanel({ controller, isArabic, onClose }: { controller: UseNextGenQuestionsResult; isArabic: boolean; onClose: () => void }) {
+  const { form, setForm, isSavingDraft, resetForm, handleSaveDraft } = controller;
+  const saveAndClose = async () => { if (await handleSaveDraft()) onClose(); };
+  return (
+    <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mt-8 bg-white rounded-[30px] border border-[rgba(139,30,30,0.10)] shadow-[0_18px_48px_rgba(0,0,0,0.08)] overflow-hidden">
+      <div className="flex items-center justify-between gap-4 p-6 bg-[#8b1e1e] text-white"><div className="flex items-center gap-3"><HelpCircle size={24} /><div><h2 className="text-2xl font-bold">{isArabic ? 'إضافة سؤال للمراجعة' : 'Create Question'}</h2><p className="text-white/75 text-sm mt-1">{isArabic ? 'سيتم ربط السؤال بمعرّف NextGen الخاص بك.' : 'The question will be linked to your NextGen identifier.'}</p></div></div><button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={22} /></button></div>
+      <div className="p-6 md:p-8 space-y-7">
+        <div className="space-y-2"><label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{isArabic ? 'السؤال' : 'Question'}</label><textarea value={form.question} onChange={event => setForm(previous => ({ ...previous, question: event.target.value }))} rows={5} placeholder={isArabic ? 'اكتب السؤال هنا...' : 'Write the question here...'} className="w-full px-5 py-4 bg-stone-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-[#8b1e1e]/20 focus:border-[#8b1e1e]/30 outline-none resize-none text-[#242424]" /></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{isArabic ? 'التصنيف' : 'Category'}</label><select value={form.category} onChange={event => setForm(previous => ({ ...previous, category: event.target.value }))} className="w-full px-5 py-4 bg-stone-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-[#8b1e1e]/20 outline-none font-bold text-[#641414]">{CATEGORY_OPTIONS.map(category => <option key={category} value={category}>{category}</option>)}</select></div><div className="space-y-2"><label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{isArabic ? 'ملاحظات اختيارية' : 'Optional Notes'}</label><input type="text" value={form.notes} onChange={event => setForm(previous => ({ ...previous, notes: event.target.value }))} placeholder={isArabic ? 'ملاحظات اختيارية...' : 'Optional notes...'} className="w-full px-5 py-4 bg-stone-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-[#8b1e1e]/20 outline-none" /></div></div>
+        <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2"><button type="button" onClick={resetForm} className="px-6 py-3 bg-stone-100 text-[#641414] rounded-xl font-bold hover:bg-stone-200 transition-colors">{isArabic ? 'إعادة ضبط' : 'Reset'}</button><button type="button" onClick={saveAndClose} disabled={isSavingDraft} className="inline-flex items-center justify-center gap-2 px-7 py-3 bg-[#8b1e1e] text-white rounded-xl font-bold shadow-[0_8px_22px_rgba(139,30,30,0.22)] hover:bg-[#641414] active:bg-[#3f0f0f] disabled:opacity-60 disabled:cursor-not-allowed transition-colors">{isSavingDraft ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}{isSavingDraft ? (isArabic ? 'جار الحفظ...' : 'Saving...') : (isArabic ? 'حفظ للمراجعة' : 'Save for Pastor Review')}</button></div>
+      </div>
+    </motion.section>
+  );
+}
