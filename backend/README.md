@@ -20,6 +20,9 @@ BREVO_SENDER_NAME=
 BREVO_TEST_RECIPIENT=
 FIREBASE_PROJECT_ID=
 FIREBASE_DATABASE_URL=
+FIREBASE_SERVICE_ACCOUNT_EMAIL=
+FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY=
+BOOKING_NOTIFICATION_EMAIL=
 NEXTGEN_MISSION_MAP_DATA=
 ```
 
@@ -57,6 +60,18 @@ Pastor email:
 - `DELETE /api/v1/people-notes/:personId/items/:itemId/comments/:commentId`
 
 React no longer reads or writes the `peopleNotes` Firebase branch directly.
+
+## Public booking API
+
+- `GET /api/v1/booking/schedule?start=YYYY-MM-DD&end=YYYY-MM-DD`
+  returns privacy-safe availability and busy time ranges.
+- `POST /api/v1/booking/requests` validates and stores an anonymous visitor's
+  request, then notifies Pastor through Brevo.
+
+The booking API uses short-lived Google OAuth access tokens generated from
+`FIREBASE_SERVICE_ACCOUNT_EMAIL` and `FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY`.
+Both values must be configured as Cloudflare secrets. Never commit a Firebase
+service-account JSON file or private key.
 
 ## NextGen mission map
 

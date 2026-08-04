@@ -16,12 +16,17 @@ import {
   createPeopleNotesRoutes,
   type PeopleNotesDependencies,
 } from './routes/peopleNotes.routes'
+import {
+  createBookingRoutes,
+  type BookingDependencies,
+} from './routes/booking.routes'
 import type { AppEnv } from './types/app'
 
 export type AppDependencies = {
   auth?: AuthRoutesDependencies
   nextGenMissionMap?: NextGenMissionMapDependencies
   peopleNotes?: PeopleNotesDependencies
+  booking?: BookingDependencies
 }
 
 export function createApp(
@@ -168,6 +173,11 @@ const requestSchema = z
   app.route(
     '/api/v1/people-notes',
     createPeopleNotesRoutes(dependencies.peopleNotes),
+  )
+
+  app.route(
+    '/api/v1/booking',
+    createBookingRoutes(dependencies.booking),
   )
 
   app.route(

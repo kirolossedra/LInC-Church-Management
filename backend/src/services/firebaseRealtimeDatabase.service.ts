@@ -17,6 +17,8 @@ export type FirebaseRealtimeDatabaseClient = {
   delete(path: readonly string[]): Promise<void>
 }
 
+export type FirebaseGoogleAccessTokenProvider = () => Promise<string>
+
 export function createFirebaseRealtimeDatabaseClient({
   databaseUrl,
   idToken,
@@ -47,6 +49,75 @@ export function createFirebaseRealtimeDatabaseClient({
             Accept: 'application/json',
             'Content-Type': 'application/json',
           },
+      body: value === undefined
+        ? undefined
+        : JSON.stringify(value),
+    })
+
+    if (!response.ok) {
+      throw new FirebaseRealtimeDatabaseError(
+        response.status,
+        `Firebase Realtime Database returned HTTP ${response.status}.`,
+      )
+    }
+
+    if (response.status === 204) return null
+
+    try {
+      return (await response.json()) as T | null
+    } catch {
+      throw new FirebaseRealtimeDatabaseError(
+        502,
+        'Firebase Realtime Database returned invalid JSON.',
+      )
+    }
+  }
+
+  return {
+    get: path => request('GET', path),
+    post: async (path, value) => {
+      const result = await request('POST', path, value)
+      return result as never
+    },
+    patch: async (path, value) => {
+      const result = await request('PATCH', path, value)
+      return result as never
+    },
+    delete: async path => {
+      await request('DELETE', path)
+    },
+  }
+}
+
+export function createFirebaseAdminRealtimeDatabaseClient({
+  databaseUrl,
+  getAccessToken,
+  fetchImpl = fetch,
+}: {
+  databaseUrl: string
+  getAccessToken: FirebaseGoogleAccessTokenProvider
+  fetchImpl?: FirebaseDatabaseFetch
+}): FirebaseRealtimeDatabaseClient {
+  const normalizedDatabaseUrl = normalizeDatabaseUrl(databaseUrl)
+
+  async function request<T>(
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    path: readonly string[],
+    value?: unknown,
+  ): Promise<T | null> {
+    const accessToken = await getAccessToken()
+    const encodedPath = path.map(encodeURIComponent).join('/')
+    const url = `${normalizedDatabaseUrl}/${encodedPath}.json`
+
+    const response = await fetchImpl(url, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        ...(value === undefined
+          ? {}
+          : { 'Content-Type': 'application/json' }),
+      },
       body: value === undefined
         ? undefined
         : JSON.stringify(value),

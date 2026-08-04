@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { database } from '../firebase';
-import { ref, onValue, push } from 'firebase/database';
 import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '../i18n';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, startOfDay, isBefore } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, X } from 'lucide-react';
-import { sendEmailViaEmailJS } from '../services/gmail';
+import {
+  BookingApiError,
+  createPublicBooking,
+  getPublicBookingSchedule,
+} from '../services/booking';
 
 const BUSINESS_START = 9;
 const BUSINESS_END = 20; // don't change this
@@ -53,6 +55,7 @@ export default function BookingCalendar() {
   const [showDayPopup, setShowDayPopup] = useState(false);
   const [showBookingFormPopup, setShowBookingFormPopup] = useState(false);
   const [scheduleBlocks, setScheduleBlocks] = useState<ScheduleBlock[]>([]);
+  const [scheduleRefresh, setScheduleRefresh] = useState(0);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -60,95 +63,38 @@ export default function BookingCalendar() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isPastDay, setIsPastDay] = useState(false);
-  const [pastors, setPastors] = useState<string[]>([]);
-
   useEffect(() => {
-    const availabilityRef = ref(database, 'availability/');
+    const controller = new AbortController();
+    const start = format(startOfMonth(currentDate), 'yyyy-MM-dd');
+    const end = format(endOfMonth(currentDate), 'yyyy-MM-dd');
 
-    const unsubscribeAvailability = onValue(availabilityRef, (availabilitySnapshot) => {
-      const availabilityData = availabilitySnapshot.val();
-      const blocks: ScheduleBlock[] = [];
-
-      if (availabilityData) {
-        Object.values(availabilityData).forEach((val: any) => {
-          if (val.date) {
-            const startTime = val.startTime || '09:00';
-            const endTime = val.endTime || '20:00';
-
-            blocks.push({
-              date: val.date,
-              startHour: timeToHour(startTime),
-              endHour: timeToHour(endTime),
-              title: val.reason || t('booking.slotAvailable'),
-              type: 'available',
-            });
-          }
-        });
-      }
-
-      const meetingsRef = ref(database, 'meetings/');
-      onValue(meetingsRef, (meetingsSnapshot) => {
-        const meetingsData = meetingsSnapshot.val();
-        const blocksWithMeetings = [...blocks];
-
-        if (meetingsData) {
-          Object.values(meetingsData).forEach((val: any) => {
-            if (val.date && val.startTime && val.endTime) {
-              blocksWithMeetings.push({
-                date: val.date,
-                startHour: timeToHour(val.startTime),
-                endHour: timeToHour(val.endTime),
-                title: t('booking.booked'),
-                type: 'meeting',
-              });
-            }
-          });
+    void getPublicBookingSchedule(start, end, controller.signal)
+      .then(schedule => {
+        setScheduleBlocks([
+          ...schedule.availability.map(block => ({
+            date: block.date,
+            startHour: timeToHour(block.startTime),
+            endHour: timeToHour(block.endTime),
+            title: t('booking.slotAvailable'),
+            type: 'available' as const,
+          })),
+          ...schedule.busy.map(block => ({
+            date: block.date,
+            startHour: timeToHour(block.startTime),
+            endHour: timeToHour(block.endTime),
+            title: t('booking.booked'),
+            type: 'meeting' as const,
+          })),
+        ]);
+      })
+      .catch(error => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          console.error('Failed to load booking schedule:', error);
         }
-
-        const unavailabilityRef = ref(database, 'unavailability/');
-        onValue(unavailabilityRef, (unavailabilitySnapshot) => {
-          const unavailabilityData = unavailabilitySnapshot.val();
-          const finalBlocks = [...blocksWithMeetings];
-
-          if (unavailabilityData) {
-            Object.values(unavailabilityData).forEach((val: any) => {
-              if (val.date) {
-                const startTime = val.startTime || '00:00';
-                const endTime = val.endTime || '23:59';
-
-                finalBlocks.push({
-                  date: val.date,
-                  startHour: timeToHour(startTime),
-                  endHour: timeToHour(endTime),
-                  title: t('booking.booked'),
-                  type: 'unavailable',
-                });
-              }
-            });
-          }
-
-          setScheduleBlocks(finalBlocks);
-        });
       });
-    });
 
-    return () => unsubscribeAvailability();
-  }, [t]);
-
-  useEffect(() => {
-    const adminsRef = ref(database, 'admins/');
-    const unsubscribe = onValue(adminsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const emails: string[] = [];
-        Object.keys(data).forEach(k => {
-          emails.push(k.replace(/,/g, '.').toLowerCase().trim());
-        });
-        setPastors(emails);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    return () => controller.abort();
+  }, [currentDate, scheduleRefresh, t]);
 
   useEffect(() => {
     if (selectedDay && isBefore(startOfDay(selectedDay), startOfDay(new Date()))) {
@@ -260,7 +206,7 @@ export default function BookingCalendar() {
 
     try {
       const dateStr = format(selectedDay, 'yyyy-MM-dd');
-      const request = {
+      await createPublicBooking({
         name,
         email,
         date: dateStr,
@@ -268,23 +214,7 @@ export default function BookingCalendar() {
         endTime: hourToTime(selectedSlot + SLOT_DURATION),
         reason,
         requesterLocale: displayLocale,
-        requesterLanguage: displayLocale === 'ar' ? 'Arabic' : 'English',
-        status: 'pending',
-        createdAt: Date.now(),
-      };
-
-      await push(ref(database, 'meetingRequests/'), request);
-
-      for (const pastorEmail of pastors) {
-        try {
-          await sendEmailViaEmailJS(pastorEmail, {
-            subject: `${t('booking.newMeetingRequestSubject')} ${name}`,
-            fullReport: `${t('booking.newMeetingRequestBody')}\n\n${t('booking.name')}: ${name}\n${t('booking.emailLabel')}: ${email}\n${t('booking.date')}: ${dateStr}\n${t('booking.timeLabel')}: ${hourToLabel(selectedSlot, displayLocale)} - ${hourToLabel(selectedSlot + SLOT_DURATION, displayLocale)}\n${t('booking.reason')}: ${reason}\n\n${t('booking.adminInstructions')}`,
-          });
-        } catch (err) {
-          console.error(`Failed to notify pastor ${pastorEmail}:`, err);
-        }
-      }
+      });
 
       setSuccess(true);
       setName('');
@@ -293,9 +223,14 @@ export default function BookingCalendar() {
       setSelectedSlot(null);
       setShowDayPopup(false);
       setShowBookingFormPopup(true);
-    } catch (err) {
-      console.error(err);
-      alert(t('booking.failed'));
+      setScheduleRefresh(value => value + 1);
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof BookingApiError && error.status === 409
+          ? t('booking.timeConflict')
+          : t('booking.failed'),
+      );
     } finally {
       setLoading(false);
     }

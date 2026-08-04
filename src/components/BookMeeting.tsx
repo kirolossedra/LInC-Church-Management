@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { database } from '../firebase';
-import { ref, onValue, push } from 'firebase/database';
 import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '../i18n';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, startOfDay, isBefore } from 'date-fns';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, AlertCircle, User, Mail, MessageSquare, Ban, X } from 'lucide-react';
-import { sendEmailViaEmailJS } from '../services/gmail';
+import {
+  BookingApiError,
+  createPublicBooking,
+  getPublicBookingSchedule,
+} from '../services/booking';
 
 const BUSINESS_START = 9;
 const BUSINESS_END = 20;
@@ -61,10 +63,9 @@ export default function BookMeeting({ isOpen, onClose, preSelectedDate }: BookMe
   const displayLocale = locale as 'en' | 'ar';
   const [currentDate, setCurrentDate] = useState(preSelectedDate ? new Date(preSelectedDate) : new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [meetingBlocks, setMeetingBlocks] = useState<BusyBlock[]>([]);
-  const [pendingBlocks, setPendingBlocks] = useState<BusyBlock[]>([]);
-  const [unavailableBlocks, setUnavailableBlocks] = useState<BusyBlock[]>([]);
+  const [busyBlocks, setBusyBlocks] = useState<BusyBlock[]>([]);
   const [availabilityBlocks, setAvailabilityBlocks] = useState<AvailabilityBlock[]>([]);
+  const [scheduleRefresh, setScheduleRefresh] = useState(0);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -72,131 +73,35 @@ export default function BookMeeting({ isOpen, onClose, preSelectedDate }: BookMe
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isPastDay, setIsPastDay] = useState(false);
-  const [pastors, setPastors] = useState<string[]>([]);
-
-  const busyBlocks = [...meetingBlocks, ...pendingBlocks, ...unavailableBlocks];
-
   useEffect(() => {
-    const meetingsRef = ref(database, 'meetings/');
-    const unsubscribe = onValue(meetingsRef, (snapshot) => {
-      const data = snapshot.val();
-      const blocks: BusyBlock[] = [];
+    const controller = new AbortController();
+    const start = format(startOfMonth(currentDate), 'yyyy-MM-dd');
+    const end = format(endOfMonth(currentDate), 'yyyy-MM-dd');
 
-      if (data) {
-        Object.values(data).forEach((val: any) => {
-          if (val.date && val.startTime && val.endTime) {
-            blocks.push({
-              date: val.date,
-              startHour: timeToHour(val.startTime),
-              endHour: timeToHour(val.endTime),
-              title: val.requestName ? `${t('calendar.meetingWith')} ${val.requestName}` : (val.title || t('booking.meeting')),
-              type: 'meeting',
-            });
-          }
-        });
-      }
+    void getPublicBookingSchedule(start, end, controller.signal)
+      .then(schedule => {
+        setAvailabilityBlocks(schedule.availability.map(block => ({
+          date: block.date,
+          startHour: timeToHour(block.startTime),
+          endHour: timeToHour(block.endTime),
+          title: t('calendar.available'),
+        })));
+        setBusyBlocks(schedule.busy.map(block => ({
+          date: block.date,
+          startHour: timeToHour(block.startTime),
+          endHour: timeToHour(block.endTime),
+          title: t('booking.booked'),
+          type: 'meeting',
+        })));
+      })
+      .catch(error => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          console.error('Failed to load booking schedule:', error);
+        }
+      });
 
-      setMeetingBlocks(blocks);
-    });
-
-    return () => unsubscribe();
-  }, [t]);
-
-  useEffect(() => {
-    const requestsRef = ref(database, 'meetingRequests/');
-    const unsubscribe = onValue(requestsRef, (snapshot) => {
-      const data = snapshot.val();
-      const blocks: BusyBlock[] = [];
-
-      if (data) {
-        Object.values(data).forEach((val: any) => {
-          if (val.date && val.startTime && val.endTime && val.status === 'pending') {
-            blocks.push({
-              date: val.date,
-              startHour: timeToHour(val.startTime),
-              endHour: timeToHour(val.endTime),
-              title: `${t('booking.requestPrefix')}: ${val.name || t('booking.unknown')}`,
-              type: 'pending',
-            });
-          }
-        });
-      }
-
-      setPendingBlocks(blocks);
-    });
-
-    return () => unsubscribe();
-  }, [t]);
-
-  useEffect(() => {
-    const unavailabilityRef = ref(database, 'unavailability/');
-    const unsubscribe = onValue(unavailabilityRef, (snapshot) => {
-      const data = snapshot.val();
-      const blocks: BusyBlock[] = [];
-
-      if (data) {
-        Object.values(data).forEach((val: any) => {
-          if (val.date) {
-            const startTime = val.startTime || '00:00';
-            const endTime = val.endTime || '23:59';
-            blocks.push({
-              date: val.date,
-              startHour: timeToHour(startTime),
-              endHour: timeToHour(endTime),
-              title: val.reason || t('booking.unavailable'),
-              type: 'unavailable',
-            });
-          }
-        });
-      }
-
-      setUnavailableBlocks(blocks);
-    });
-
-    return () => unsubscribe();
-  }, [t]);
-
-  useEffect(() => {
-    const availabilityRef = ref(database, 'availability/');
-    const unsubscribe = onValue(availabilityRef, (snapshot) => {
-      const data = snapshot.val();
-      const blocks: AvailabilityBlock[] = [];
-
-      if (data) {
-        Object.values(data).forEach((val: any) => {
-          if (val.date) {
-            const startTime = val.startTime || '09:00';
-            const endTime = val.endTime || '20:00';
-            blocks.push({
-              date: val.date,
-              startHour: timeToHour(startTime),
-              endHour: timeToHour(endTime),
-              title: val.reason || t('calendar.available'),
-            });
-          }
-        });
-      }
-
-      setAvailabilityBlocks(blocks);
-    });
-
-    return () => unsubscribe();
-  }, [t]);
-
-  useEffect(() => {
-    const adminsRef = ref(database, 'admins/');
-    const unsubscribe = onValue(adminsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const emails: string[] = [];
-        Object.keys(data).forEach(k => {
-          emails.push(k.replace(/,/g, '.').toLowerCase().trim());
-        });
-        setPastors(emails);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    return () => controller.abort();
+  }, [currentDate, scheduleRefresh, t]);
 
   useEffect(() => {
     if (preSelectedDate) {
@@ -241,21 +146,14 @@ export default function BookMeeting({ isOpen, onClose, preSelectedDate }: BookMe
     const slotStart = hour;
     const slotEnd = hour + SLOT_DURATION;
 
-    return [...meetingBlocks, ...pendingBlocks].some(block =>
+    return busyBlocks.some(block =>
       block.date === dayStr &&
       slotOverlaps(slotStart, slotEnd, block.startHour, block.endHour)
     );
   };
 
-  const isSlotUnavailable = (day: Date, hour: number): boolean => {
-    const dayStr = format(day, 'yyyy-MM-dd');
-    const slotStart = hour;
-    const slotEnd = hour + SLOT_DURATION;
-
-    return unavailableBlocks.some(block =>
-      block.date === dayStr &&
-      slotOverlaps(slotStart, slotEnd, block.startHour, block.endHour)
-    );
+  const isSlotUnavailable = (_day: Date, _hour: number): boolean => {
+    return false;
   };
 
   const isSlotInfeasible = (day: Date, hour: number): boolean => {
@@ -302,36 +200,28 @@ export default function BookMeeting({ isOpen, onClose, preSelectedDate }: BookMe
       }
 
       const dateStr = format(selectedDay, 'yyyy-MM-dd');
-      const request = {
+      await createPublicBooking({
         name,
         email,
         date: dateStr,
         startTime: hourToTime(selectedSlot),
         endTime: hourToTime(selectedSlot + SLOT_DURATION),
         reason,
-        status: 'pending',
-        createdAt: Date.now(),
-      };
-      await push(ref(database, 'meetingRequests/'), request);
-
-      for (const pastorEmail of pastors) {
-        try {
-          await sendEmailViaEmailJS(pastorEmail, {
-            subject: `${t('booking.newMeetingRequestSubject')} ${name}`,
-            fullReport: `${t('booking.newMeetingRequestBody')}\n\n${t('booking.name')}: ${name}\n${t('booking.emailLabel')}: ${email}\n${t('booking.date')}: ${dateStr}\n${t('booking.timeLabel')}: ${hourToLabel(selectedSlot, displayLocale)} - ${hourToLabel(selectedSlot + SLOT_DURATION, displayLocale)}\n${t('booking.reason')}: ${reason}\n\n${t('booking.adminInstructions')}`,
-          });
-        } catch {
-          // silently continue
-        }
-      }
+        requesterLocale: displayLocale,
+      });
 
       setSuccess(true);
       setName('');
       setEmail('');
       setReason('');
       setSelectedSlot(null);
-    } catch {
-      alert(t('booking.failed'));
+      setScheduleRefresh(value => value + 1);
+    } catch (error) {
+      alert(
+        error instanceof BookingApiError && error.status === 409
+          ? t('booking.timeConflict')
+          : t('booking.failed'),
+      );
     } finally {
       setLoading(false);
     }
