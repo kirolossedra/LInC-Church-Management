@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   MapContainer,
   Marker,
-  Polyline,
   Popup,
   TileLayer,
 } from 'react-leaflet';
@@ -44,8 +43,11 @@ import {
   type MissionMapLocation,
   type MissionMapLocationType,
 } from '../../services/nextGenMissionMap';
+import GoogleMissionRouteMap from './GoogleMissionRouteMap';
 
 const NEXTGEN_MAP_EMAIL = 'nextgen@montreal.ca';
+const GOOGLE_MAPS_API_KEY =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() || '';
 const DEFAULT_MAP_CENTER: LatLngExpression = [
   45.53,
   -73.7,
@@ -91,9 +93,6 @@ const LOCATION_VISUALS: Record<
     label: 'Other',
   },
 };
-
-const AVERAGE_CITY_SPEED_KMH = 32;
-const ROAD_DISTANCE_FACTOR = 1.25;
 
 function googleMapsUrl(location: MissionMapLocation) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -152,36 +151,6 @@ function LocationTypeBadge({
     >
       <Icon size={size} strokeWidth={2.5} />
     </span>
-  );
-}
-
-function toRadians(value: number) {
-  return (value * Math.PI) / 180;
-}
-
-function directDistanceKm(
-  from: MissionMapLocation,
-  to: MissionMapLocation,
-) {
-  const earthRadiusKm = 6371;
-  const latitudeDifference = toRadians(
-    to.latitude - from.latitude,
-  );
-  const longitudeDifference = toRadians(
-    to.longitude - from.longitude,
-  );
-  const fromLatitude = toRadians(from.latitude);
-  const toLatitude = toRadians(to.latitude);
-  const haversine =
-    Math.sin(latitudeDifference / 2) ** 2 +
-    Math.cos(fromLatitude) *
-      Math.cos(toLatitude) *
-      Math.sin(longitudeDifference / 2) ** 2;
-
-  return (
-    earthRadiusKm *
-    2 *
-    Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
   );
 }
 
@@ -295,7 +264,7 @@ export default function MontrealMissionTripMap({
   );
 
   const plannedRoute = useMemo(() => {
-    if (!mapData || !routeFromId || !routeToId) {
+    if (!routeFromId || !routeToId) {
       return null;
     }
 
@@ -306,33 +275,8 @@ export default function MontrealMissionTripMap({
       return null;
     }
 
-    const directKm = directDistanceKm(from, to);
-    const roadDistanceKm = directKm * ROAD_DISTANCE_FACTOR;
-    const savedConnection = mapData.connections.find(
-      connection =>
-        (connection.from === from.id &&
-          connection.to === to.id) ||
-        (connection.from === to.id &&
-          connection.to === from.id),
-    );
-    const estimatedMinutes =
-      savedConnection?.minutes ||
-      Math.max(
-        5,
-        Math.round(
-          ((roadDistanceKm / AVERAGE_CITY_SPEED_KMH) * 60) /
-            5,
-        ) * 5,
-      );
-
-    return {
-      from,
-      to,
-      distanceKm: Math.round(roadDistanceKm * 10) / 10,
-      minutes: estimatedMinutes,
-      usesSavedTime: Boolean(savedConnection?.minutes),
-    };
-  }, [locationsById, mapData, routeFromId, routeToId]);
+    return { from, to };
+  }, [locationsById, routeFromId, routeToId]);
 
   const mapCenter = useMemo<LatLngExpression>(() => {
     if (!mapData?.locations.length) {
@@ -583,127 +527,78 @@ export default function MontrealMissionTripMap({
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="relative overflow-hidden rounded-[24px] border border-gray-200 bg-stone-100 shadow-inner">
-              <MapContainer
-                center={mapCenter}
-                zoom={11}
-                minZoom={9}
-                maxZoom={17}
-                scrollWheelZoom
-                className="h-[560px] w-full"
-              >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              {plannedRoute && GOOGLE_MAPS_API_KEY ? (
+                <GoogleMissionRouteMap
+                  apiKey={GOOGLE_MAPS_API_KEY}
+                  from={plannedRoute.from}
+                  to={plannedRoute.to}
                 />
+              ) : (
+                <>
+                  <MapContainer
+                    center={mapCenter}
+                    zoom={11}
+                    minZoom={9}
+                    maxZoom={17}
+                    scrollWheelZoom
+                    className="h-[560px] w-full"
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
 
-                {mapData.connections.map(connection => {
-                  const from = locationsById.get(connection.from);
-                  const to = locationsById.get(connection.to);
-
-                  if (!from || !to) return null;
-
-                  return (
-                    <Polyline
-                      key={`${connection.from}-${connection.to}`}
-                      positions={[
-                        [from.latitude, from.longitude],
-                        [to.latitude, to.longitude],
-                      ]}
-                      pathOptions={{
-                        color: '#8b1e1e',
-                        weight: 4,
-                        opacity: 0.62,
-                        dashArray: '9 8',
-                      }}
-                    >
-                      {connection.minutes && (
-                        <Popup>
-                          <strong>{connection.minutes} min</strong>{' '}
-                          estimated route
+                    {mapData.locations.map(location => (
+                      <Marker
+                        key={location.id}
+                        position={[
+                          location.latitude,
+                          location.longitude,
+                        ]}
+                        icon={createLocationMarkerIcon(
+                          location,
+                          selectedLocationId === location.id,
+                        )}
+                        eventHandlers={{
+                          click: () =>
+                            setSelectedLocationId(location.id),
+                        }}
+                      >
+                        <Popup minWidth={230}>
+                          <div className="space-y-3">
+                            <div>
+                              <strong className="text-base">
+                                {location.name}
+                              </strong>
+                              <p className="mt-1 text-sm text-gray-600">
+                                {location.address}
+                              </p>
+                            </div>
+                            {renderLocationActions(location, true)}
+                          </div>
                         </Popup>
-                      )}
-                    </Polyline>
-                  );
-                })}
+                      </Marker>
+                    ))}
+                  </MapContainer>
 
-                {plannedRoute && (
-                  <Polyline
-                    positions={[
-                      [
-                        plannedRoute.from.latitude,
-                        plannedRoute.from.longitude,
-                      ],
-                      [
-                        plannedRoute.to.latitude,
-                        plannedRoute.to.longitude,
-                      ],
-                    ]}
-                    pathOptions={{
-                      color: '#2563eb',
-                      weight: 7,
-                      opacity: 0.88,
-                    }}
-                  >
-                    <Popup>
-                      <strong>
-                        {plannedRoute.distanceKm} km · about{' '}
-                        {plannedRoute.minutes} min
-                      </strong>
-                      <br />
-                      Planning estimate, not live traffic.
-                    </Popup>
-                  </Polyline>
-                )}
-
-                {mapData.locations.map(location => (
-                  <Marker
-                    key={location.id}
-                    position={[
-                      location.latitude,
-                      location.longitude,
-                    ]}
-                    icon={createLocationMarkerIcon(
-                      location,
-                      selectedLocationId === location.id,
-                    )}
-                    eventHandlers={{
-                      click: () =>
-                        setSelectedLocationId(location.id),
-                    }}
-                  >
-                    <Popup minWidth={230}>
-                      <div className="space-y-3">
-                        <div>
-                          <strong className="text-base">
-                            {location.name}
-                          </strong>
-                          <p className="mt-1 text-sm text-gray-600">
-                            {location.address}
-                          </p>
+                  <div className="pointer-events-none absolute right-3 top-3 z-[1000] max-w-[190px] rounded-2xl border border-white/70 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
+                    <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-gray-500">
+                      Map legend
+                    </p>
+                    <div className="space-y-2">
+                      {legendTypes.map(type => (
+                        <div
+                          key={type}
+                          className="flex items-center gap-2 text-xs font-bold text-gray-700"
+                        >
+                          <LocationTypeBadge type={type} size={14} />
+                          <span>{locationTypeLabel(type)}</span>
                         </div>
-                        {renderLocationActions(location, true)}
-                      </div>
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
-
-              <div className="pointer-events-none absolute right-3 top-3 z-[1000] max-w-[190px] rounded-2xl border border-white/70 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
-                <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-gray-500">
-                  Map legend
-                </p>
-                <div className="space-y-2">
-                  {legendTypes.map(type => (
-                    <div
-                      key={type}
-                      className="flex items-center gap-2 text-xs font-bold text-gray-700"
-                    >
-                      <LocationTypeBadge type={type} size={14} />
-                      <span>{locationTypeLabel(type)}</span>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <aside className="space-y-4">
@@ -773,28 +668,21 @@ export default function MontrealMissionTripMap({
                   </p>
                 )}
 
-                {plannedRoute && (
+                {plannedRoute && !GOOGLE_MAPS_API_KEY && (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+                    Google routing is ready in the app, but the deployment
+                    still needs the website-restricted{' '}
+                    <code>VITE_GOOGLE_MAPS_API_KEY</code> environment
+                    variable.
+                  </div>
+                )}
+
+                {plannedRoute && GOOGLE_MAPS_API_KEY && (
                   <div className="mt-4 rounded-2xl bg-white p-4 shadow-sm">
-                    <div className="grid grid-cols-2 gap-3 text-center">
-                      <div>
-                        <p className="text-xl font-bold text-blue-950">
-                          {plannedRoute.distanceKm} km
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Approx. road distance
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xl font-bold text-blue-950">
-                          {plannedRoute.minutes} min
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {plannedRoute.usesSavedTime
-                            ? 'Mission-plan estimate'
-                            : 'Estimated drive time'}
-                        </p>
-                      </div>
-                    </div>
+                    <p className="text-sm font-bold text-blue-950">
+                      The map now shows Google’s road path, distance,
+                      and current traffic-aware ETA.
+                    </p>
                     <a
                       href={googleDirectionsUrl(
                         plannedRoute.from,
@@ -807,10 +695,13 @@ export default function MontrealMissionTripMap({
                       <Navigation size={16} />
                       Open live route in Google Maps
                     </a>
-                    <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
-                      The blue line and values are planning estimates,
-                      not live road or traffic data.
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setRouteToId('')}
+                      className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-blue-100 bg-white px-4 py-2.5 text-sm font-bold text-blue-800 hover:bg-blue-50"
+                    >
+                      Return to all locations
+                    </button>
                   </div>
                 )}
               </div>
@@ -900,7 +791,8 @@ export default function MontrealMissionTripMap({
 
               <div className="flex items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
                 <Route size={18} className="shrink-0" />
-                Dashed lines show simplified mission connections, not live traffic directions.
+                Google traffic changes continuously, so displayed routes
+                and ETAs can update between requests.
               </div>
             </aside>
           </div>

@@ -19,6 +19,7 @@ BREVO_SENDER_EMAIL=
 BREVO_SENDER_NAME=
 BREVO_TEST_RECIPIENT=
 FIREBASE_PROJECT_ID=
+FIREBASE_DATABASE_URL=
 NEXTGEN_MISSION_MAP_DATA=
 ```
 
@@ -28,12 +29,34 @@ the existing frontend login. Pastor authorization is restricted to the exact
 verified token email `rev.ibrahim@lincministry.com` using an anchored,
 case-insensitive allowlist pattern.
 
+`FIREBASE_DATABASE_URL` is also a public Firebase project URL. People Notes
+requests reuse the verified caller's short-lived Firebase ID token when
+calling the Realtime Database REST API, so existing Firebase Security Rules
+continue to apply. No Firebase service-account key is required for this
+migration phase.
+
 ## Authentication API
 
 - `GET /api/v1/auth/session` verifies the caller and reports Pastor access.
 - `GET /api/v1/auth/pastor-access` requires the allowlisted Pastor email.
 
 Both endpoints require `Authorization: Bearer <Firebase ID token>`.
+
+## People Development Notes API
+
+Every endpoint requires a valid Firebase Bearer token and the allowlisted
+Pastor email:
+
+- `GET /api/v1/people-notes`
+- `POST /api/v1/people-notes`
+- `POST /api/v1/people-notes/:personId/items`
+- `POST /api/v1/people-notes/:personId/items/:itemId/comments`
+- `PATCH /api/v1/people-notes/:personId/items/:itemId/follow-up`
+- `DELETE /api/v1/people-notes/:personId`
+- `DELETE /api/v1/people-notes/:personId/items/:itemId`
+- `DELETE /api/v1/people-notes/:personId/items/:itemId/comments/:commentId`
+
+React no longer reads or writes the `peopleNotes` Firebase branch directly.
 
 ## NextGen mission map
 

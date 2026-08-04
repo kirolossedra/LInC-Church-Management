@@ -12,11 +12,16 @@ import {
   createAuthRoutes,
   type AuthRoutesDependencies,
 } from './routes/auth.routes'
+import {
+  createPeopleNotesRoutes,
+  type PeopleNotesDependencies,
+} from './routes/peopleNotes.routes'
 import type { AppEnv } from './types/app'
 
 export type AppDependencies = {
   auth?: AuthRoutesDependencies
   nextGenMissionMap?: NextGenMissionMapDependencies
+  peopleNotes?: PeopleNotesDependencies
 }
 
 export function createApp(
@@ -32,7 +37,13 @@ export function createApp(
         'http://localhost:5173',
       ],
       allowHeaders: ['Content-Type', 'Authorization'],
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      allowMethods: [
+        'GET',
+        'POST',
+        'PATCH',
+        'DELETE',
+        'OPTIONS',
+      ],
       maxAge: 86400,
     }),
   )
@@ -153,6 +164,11 @@ const requestSchema = z
   })
 
   app.route('/api/v1/auth', createAuthRoutes(dependencies.auth))
+
+  app.route(
+    '/api/v1/people-notes',
+    createPeopleNotesRoutes(dependencies.peopleNotes),
+  )
 
   app.route(
     '/api/v1/nextgen/mission-map',

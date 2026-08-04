@@ -2,6 +2,7 @@ import type { BrevoBindings } from '../services/brevo.service'
 
 export type FirebaseBindings = {
   FIREBASE_PROJECT_ID: string
+  FIREBASE_DATABASE_URL: string
   NEXTGEN_MISSION_MAP_DATA?: string
 }
 
@@ -21,6 +22,7 @@ export type AuthenticatedFirebaseUser = {
 
 export type AppVariables = {
   firebaseUser: AuthenticatedFirebaseUser
+  firebaseIdToken: string
 }
 
 export type AppEnv = {

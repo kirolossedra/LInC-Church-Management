@@ -4,20 +4,14 @@ import {
   createFirebaseAuthMiddleware,
   type FirebaseTokenVerifier,
 } from '../security/firebaseAuth'
+import {
+  AUTHORIZATION_SOURCE,
+  isPastorUser,
+} from '../security/pastorAuthorization'
 import type { AppEnv } from '../types/app'
-
-const AUTHORIZATION_SOURCE =
-  'firebase-auth:email-allowlist'
-const PASTOR_EMAIL_PATTERN =
-  /^rev\.ibrahim@lincministry\.com$/i
 
 export type AuthRoutesDependencies = {
   verifyToken?: FirebaseTokenVerifier
-}
-
-function isPastorEmail(email: string | null): boolean {
-  return email !== null &&
-    PASTOR_EMAIL_PATTERN.test(email.trim())
 }
 
 export function createAuthRoutes(
@@ -34,7 +28,7 @@ export function createAuthRoutes(
 
   routes.get('/session', context => {
     const user = context.get('firebaseUser')
-    const authorized = isPastorEmail(user.email)
+    const authorized = isPastorUser(user)
 
     return context.json({
       success: true,
@@ -56,7 +50,7 @@ export function createAuthRoutes(
   routes.get('/pastor-access', context => {
     const user = context.get('firebaseUser')
 
-    if (!isPastorEmail(user.email)) {
+    if (!isPastorUser(user)) {
       return context.json(
         {
           success: false,

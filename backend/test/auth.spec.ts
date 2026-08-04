@@ -9,6 +9,7 @@ const mockBindings = {
   BREVO_SENDER_NAME: 'LinC Test Sender',
   BREVO_TEST_RECIPIENT: 'recipient@example.com',
   FIREBASE_PROJECT_ID: 'test-project',
+  FIREBASE_DATABASE_URL: 'https://test-project.firebaseio.com',
 }
 
 const verifiedUser: AuthenticatedFirebaseUser = {

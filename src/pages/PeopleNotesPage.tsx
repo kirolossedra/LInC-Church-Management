@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import {
   AlertTriangle,
@@ -15,41 +20,23 @@ import {
   UsersRound,
   XCircle,
 } from 'lucide-react';
-import { ref, onValue, push, update, remove } from 'firebase/database';
-import { auth, database } from '../firebase';
+import { auth } from '../firebase';
 import PageTitle from '../components/PageTitle';
 import { useI18n } from '../i18n';
-
-type DevelopmentType = 'strength' | 'growth';
-interface DevelopmentComment {
-  id: string;
-  text: string;
-  createdAt: number;
-  createdBy: string;
-}
-
-interface DevelopmentItem {
-  id: string;
-  type: DevelopmentType;
-  title: string;
-  description: string;
-  dateAdded: string;
-  latestFollowUpDate: string;
-  createdAt: number;
-  updatedAt: number;
-  createdBy: string;
-  comments: DevelopmentComment[];
-}
-
-interface PersonRecord {
-  id: string;
-  fullName: string;
-  contact: string;
-  createdAt: number;
-  updatedAt: number;
-  createdBy: string;
-  items: DevelopmentItem[];
-}
+import {
+  createDevelopmentComment,
+  createDevelopmentItem,
+  createPerson,
+  deleteDevelopmentComment,
+  deleteDevelopmentItem,
+  deletePerson,
+  getPeopleNotes,
+  updateDevelopmentFollowUpDate,
+  type DevelopmentComment,
+  type DevelopmentItem,
+  type DevelopmentType,
+  type PersonRecord,
+} from '../services/peopleNotes';
 
 function todayDateString(): string {
   return new Date().toISOString().slice(0, 10);
@@ -90,56 +77,6 @@ function formatDateTimeLabel(timestamp: number, isArabic: boolean): string {
   }
 }
 
-function normalizePeopleSnapshot(data: any): PersonRecord[] {
-  if (!data) return [];
-
-  return Object.entries(data)
-    .map(([personId, personValue]: [string, any]) => {
-      const rawItems = personValue.items || {};
-
-      const items: DevelopmentItem[] = Object.entries(rawItems)
-        .map(([itemId, itemValue]: [string, any]) => {
-          const rawComments = itemValue.comments || {};
-
-          const comments: DevelopmentComment[] = Object.entries(rawComments)
-            .map(([commentId, commentValue]: [string, any]) => ({
-              id: commentId,
-              text: commentValue.text || '',
-              createdAt: commentValue.createdAt || 0,
-              createdBy: commentValue.createdBy || '',
-            }))
-            .sort((a, b) => b.createdAt - a.createdAt);
-
-          const itemType: DevelopmentType = itemValue.type === 'growth' ? 'growth' : 'strength';
-
-          return {
-            id: itemId,
-            type: itemType,
-            title: itemValue.title || '',
-            description: itemValue.description || '',
-            dateAdded: itemValue.dateAdded || '',
-            latestFollowUpDate: itemValue.latestFollowUpDate || '',
-            createdAt: itemValue.createdAt || 0,
-            updatedAt: itemValue.updatedAt || 0,
-            createdBy: itemValue.createdBy || '',
-            comments,
-          };
-        })
-        .sort((a, b) => b.updatedAt - a.updatedAt);
-
-      return {
-        id: personId,
-        fullName: personValue.fullName || '',
-        contact: personValue.contact || '',
-        createdAt: personValue.createdAt || 0,
-        updatedAt: personValue.updatedAt || 0,
-        createdBy: personValue.createdBy || '',
-        items,
-      };
-    })
-    .sort((a, b) => a.fullName.localeCompare(b.fullName));
-}
-
 export default function PeopleNotesPage({
   hasPastorAccess,
 }: {
@@ -149,7 +86,8 @@ export default function PeopleNotesPage({
   const isArabic = locale === 'ar';
 
   const [firebaseUser] = useAuthState(auth);
-  const currentUserEmail = firebaseUser?.email?.toLowerCase().trim() || '';
+  const currentUserEmail =
+    firebaseUser?.email?.toLowerCase().trim() || '';
 
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState('');
@@ -187,36 +125,71 @@ export default function PeopleNotesPage({
     setPageSuccess('');
   };
 
-  useEffect(() => {
-    const unsubscribe = onValue(
-      ref(database, 'peopleNotes/'),
-      snapshot => {
-        const parsed = normalizePeopleSnapshot(snapshot.val());
+  const loadPeople = useCallback(
+    async (
+      signal?: AbortSignal,
+      showLoading = false,
+    ) => {
+      if (!firebaseUser || !hasPastorAccess) {
+        setPeople([]);
+        setSelectedPersonId('');
+        setLoadingPeople(false);
+        return;
+      }
 
-        setPeople(parsed);
+      if (showLoading) setLoadingPeople(true);
 
-        setSelectedPersonId(prev => {
-          if (!prev && parsed.length > 0) return parsed[0].id;
-          if (prev && parsed.length > 0 && !parsed.some(p => p.id === prev)) return parsed[0].id;
-          if (parsed.length === 0) return '';
-          return prev;
+      try {
+        const loadedPeople = await getPeopleNotes(
+          firebaseUser,
+          signal,
+        );
+
+        setPeople(loadedPeople);
+        setSelectedPersonId(previousId => {
+          if (loadedPeople.length === 0) return '';
+          if (
+            previousId &&
+            loadedPeople.some(person => person.id === previousId)
+          ) {
+            return previousId;
+          }
+          return loadedPeople[0].id;
         });
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === 'AbortError'
+        ) {
+          return;
+        }
 
-        setLoadingPeople(false);
-      },
-      error => {
         console.error(error);
-        setLoadingPeople(false);
         showError(
           isArabic
             ? `فشل تحميل السجلات: ${getErrorMessage(error)}`
-            : `Failed to load records: ${getErrorMessage(error)}`
+            : `Failed to load records: ${getErrorMessage(error)}`,
         );
+      } finally {
+        setLoadingPeople(false);
       }
-    );
+    },
+    [firebaseUser, hasPastorAccess, isArabic],
+  );
 
-    return () => unsubscribe();
-  }, [isArabic]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadPeople(controller.signal, true);
+
+    const refreshTimer = window.setInterval(() => {
+      void loadPeople();
+    }, 30_000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(refreshTimer);
+    };
+  }, [loadPeople]);
 
   const filteredPeople = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -256,17 +229,17 @@ export default function PeopleNotesPage({
     setSaving(true);
 
     try {
-      const now = Date.now();
+      if (!firebaseUser) {
+        throw new Error('Firebase login is required.');
+      }
 
-      const newRef = await push(ref(database, 'peopleNotes/'), {
+      const newPersonId = await createPerson(firebaseUser, {
         fullName,
         contact: personForm.contact.trim(),
-        createdAt: now,
-        updatedAt: now,
-        createdBy: currentUserEmail,
       });
 
-      setSelectedPersonId(newRef.key || '');
+      await loadPeople();
+      setSelectedPersonId(newPersonId);
       setPersonForm({ fullName: '', contact: '' });
       showSuccess(isArabic ? 'تمت إضافة الشخص بنجاح.' : 'Person added successfully.');
     } catch (error) {
@@ -300,20 +273,23 @@ export default function PeopleNotesPage({
     setSaving(true);
 
     try {
-      const now = Date.now();
+      if (!firebaseUser) {
+        throw new Error('Firebase login is required.');
+      }
 
-      await push(ref(database, `peopleNotes/${selectedPerson.id}/items/`), {
+      await createDevelopmentItem(
+        firebaseUser,
+        selectedPerson.id,
+        {
         type: itemForm.type,
         title,
         description: itemForm.description.trim(),
         dateAdded: itemForm.dateAdded || todayDateString(),
         latestFollowUpDate: itemForm.latestFollowUpDate || '',
-        createdAt: now,
-        updatedAt: now,
-        createdBy: currentUserEmail,
-      });
+        },
+      );
 
-      await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+      await loadPeople();
 
       setItemForm({
         type: itemForm.type,
@@ -359,19 +335,18 @@ export default function PeopleNotesPage({
     setSaving(true);
 
     try {
-      const now = Date.now();
+      if (!firebaseUser) {
+        throw new Error('Firebase login is required.');
+      }
 
-      await push(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}/comments/`), {
+      await createDevelopmentComment(
+        firebaseUser,
+        selectedPerson.id,
+        item.id,
         text,
-        createdAt: now,
-        createdBy: currentUserEmail,
-      });
+      );
 
-      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
-        updatedAt: now,
-      });
-
-      await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+      await loadPeople();
 
       setCommentInputs(prev => ({ ...prev, [item.id]: '' }));
       showSuccess(isArabic ? 'تمت إضافة الملاحظة بنجاح.' : 'Note added successfully.');
@@ -402,14 +377,18 @@ export default function PeopleNotesPage({
     setSaving(true);
 
     try {
-      const now = Date.now();
+      if (!firebaseUser) {
+        throw new Error('Firebase login is required.');
+      }
 
-      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
-        latestFollowUpDate: followUpDate,
-        updatedAt: now,
-      });
+      await updateDevelopmentFollowUpDate(
+        firebaseUser,
+        selectedPerson.id,
+        item.id,
+        followUpDate,
+      );
 
-      await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+      await loadPeople();
 
       setFollowUpInputs(prev => ({ ...prev, [item.id]: followUpDate }));
       showSuccess(isArabic ? 'تم تحديث تاريخ المتابعة بنجاح.' : 'Follow-up date updated successfully.');
@@ -441,7 +420,12 @@ export default function PeopleNotesPage({
     setSaving(true);
 
     try {
-      await remove(ref(database, `peopleNotes/${person.id}`));
+      if (!firebaseUser) {
+        throw new Error('Firebase login is required.');
+      }
+
+      await deletePerson(firebaseUser, person.id);
+      await loadPeople();
       showSuccess(isArabic ? 'تم حذف السجل بنجاح.' : 'Record deleted successfully.');
     } catch (error) {
       console.error(error);
@@ -471,10 +455,16 @@ export default function PeopleNotesPage({
     setSaving(true);
 
     try {
-      const now = Date.now();
+      if (!firebaseUser) {
+        throw new Error('Firebase login is required.');
+      }
 
-      await remove(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`));
-      await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+      await deleteDevelopmentItem(
+        firebaseUser,
+        selectedPerson.id,
+        item.id,
+      );
+      await loadPeople();
 
       showSuccess(isArabic ? 'تم حذف العنصر بنجاح.' : 'Item deleted successfully.');
     } catch (error) {
@@ -499,17 +489,17 @@ export default function PeopleNotesPage({
     setSaving(true);
 
     try {
-      const now = Date.now();
+      if (!firebaseUser) {
+        throw new Error('Firebase login is required.');
+      }
 
-      await remove(
-        ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}/comments/${comment.id}`)
+      await deleteDevelopmentComment(
+        firebaseUser,
+        selectedPerson.id,
+        item.id,
+        comment.id,
       );
-
-      await update(ref(database, `peopleNotes/${selectedPerson.id}/items/${item.id}`), {
-        updatedAt: now,
-      });
-
-      await update(ref(database, `peopleNotes/${selectedPerson.id}`), { updatedAt: now });
+      await loadPeople();
 
       showSuccess(isArabic ? 'تم حذف الملاحظة بنجاح.' : 'Note deleted successfully.');
     } catch (error) {

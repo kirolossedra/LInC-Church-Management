@@ -128,6 +128,7 @@ export function createFirebaseAuthMiddleware(
     try {
       const user = await verifyToken(idToken, projectId)
       context.set('firebaseUser', user)
+      context.set('firebaseIdToken', idToken)
     } catch (error) {
       console.warn(
         'Firebase token verification failed:',

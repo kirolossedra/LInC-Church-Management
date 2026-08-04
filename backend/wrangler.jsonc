@@ -4,7 +4,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-24",
   "vars": {
-    "FIREBASE_PROJECT_ID": "churchmeeting"
+    "FIREBASE_PROJECT_ID": "churchmeeting",
+    "FIREBASE_DATABASE_URL": "https://churchmeeting-default-rtdb.firebaseio.com"
   },
   // "compatibility_flags": [
   //   "nodejs_compat"
