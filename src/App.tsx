@@ -10,7 +10,6 @@ import GuidePage from './pages/GuidePage';
 import BookingCalendar from './pages/BookingCalendar';
 import NextGenActivities from './pages/NextGenActivities';
 import PeopleNotesPage from './pages/PeopleNotesPage';
-import AttendancePage from './pages/AttendancePage';
 import CongregationGroupNotes from './pages/CongregationGroupNotes';
 import AdministratorPanel from './components/admin/AdministratorPanel';
 import { auth, signInWithGoogle, signInWithEmail, signUpWithEmail } from './firebase';
@@ -324,15 +323,6 @@ function AppRoutes() {
         element={
           <Layout activeTab="nextgen-activities" isAdmin={false}>
             <NextGenActivities />
-          </Layout>
-        }
-      />
-
-      <Route
-        path="/attendance"
-        element={
-          <Layout activeTab="attendance" isAdmin={false}>
-            <AttendancePage />
           </Layout>
         }
       />

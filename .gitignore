@@ -87,6 +87,3 @@ pnpm-debug.log*
 # Build Artifact backups
 *.bak
 *.tmp
-
-# Java / Spring Boot build output
-/backend-spring/target/

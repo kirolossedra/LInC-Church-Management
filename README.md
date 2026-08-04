@@ -99,7 +99,6 @@ LInC-Church-Management/
 │   │   └── translations.ts
 │   ├── pages/
 │   │   ├── AdminDashboard.tsx
-│   │   ├── AttendancePage.tsx
 │   │   ├── BookingCalendar.tsx
 │   │   ├── CongregationGroupNotes.tsx
 │   │   ├── GuidePage.tsx
@@ -1366,20 +1365,6 @@ Some older Google Calendar/Meet integration code remains in the project service 
 - Booking-request instructions
 
 The guide should be reviewed periodically because the application structure and active email workflows have changed.
-
----
-
-## Attendance
-
-The project also contains an attendance page with:
-
-- Protected attendance interface
-- Participant management
-- Sunday-based attendance recording
-- Individual attendance analysis
-- Calendar and chart views
-
-This feature is outside the current Pastor Dashboard refactor.
 
 ---
 
