@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import AssessmentForm from './components/AssessmentForm';
 import PastorDashboard from './components/pastor/PastorDashboard';
 import LandingPage from './pages/LandingPage';
+import AboutUs from './pages/AboutUs';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
 import GuidePage from './pages/GuidePage';
@@ -51,8 +52,10 @@ function ProtectedRoute({
       } else {
         await signInWithEmail(email, password);
       }
-    } catch (err: any) {
-      const code = err.code;
+    } catch (err: unknown) {
+      const code = err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: unknown }).code || '')
+        : '';
 
       if (code === 'auth/email-already-in-use') {
         setAuthError(t('auth.emailInUse'));
@@ -256,9 +259,11 @@ function AppRoutes() {
 
     if (path === '/calendar') return 'calendar';
     if (path === '/pastor/people-notes') return 'people-notes';
-    if (path === '/assessment') return 'assessment';
+    if (path === '/assessment') return 'spiritual-program';
     if (path === '/guide') return 'guide';
-    if (path === '/group-notes') return 'group-notes';
+    if (path === '/group-notes') return 'spiritual-program';
+    if (path === '/booking') return 'spiritual-program';
+    if (path === '/nextgen-activities') return 'nextgen-activities';
 
     return 'home';
   };
@@ -266,6 +271,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/about" element={<AboutUs />} />
 
       <Route
         path="/calendar"
@@ -312,7 +318,7 @@ function AppRoutes() {
       <Route
         path="/booking"
         element={
-          <Layout activeTab="booking" isAdmin={false}>
+          <Layout activeTab="spiritual-program" isAdmin={false}>
             <BookingCalendar />
           </Layout>
         }

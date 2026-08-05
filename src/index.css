@@ -5,6 +5,11 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    position: relative;
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply antialiased selection:bg-[#8B1E1E]/10 selection:text-[#8B1E1E];
     background-color: #F5F2ED;
@@ -34,4 +39,55 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.linc-grid {
+  background-image:
+    linear-gradient(rgba(112, 25, 25, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(112, 25, 25, 0.055) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at center, black 18%, transparent 78%);
+}
+
+.linc-feature-card::before {
+  content: '';
+  position: absolute;
+  inset: -70% -35%;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 42%, rgba(255, 255, 255, 0.2) 50%, transparent 58%);
+  transform: translateX(-45%) rotate(8deg);
+  transition: transform 800ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.linc-feature-card:hover::before {
+  transform: translateX(45%) rotate(8deg);
+}
+
+.linc-marquee-track {
+  animation: linc-marquee 24s linear infinite;
+}
+
+.linc-marquee-reverse {
+  animation-direction: reverse;
+}
+
+@keyframes linc-marquee {
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .linc-marquee-track {
+    animation: none;
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .linc-feature-card::before {
+    display: none;
+  }
 }

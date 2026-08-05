@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { Church, ClipboardList, Calendar as CalendarIcon, LogOut, Home, Globe, BookOpen, CalendarDays } from 'lucide-react';
+import { Church, Calendar as CalendarIcon, LogOut, Home, Globe, BookOpen, Sparkles, UsersRound, Info } from 'lucide-react';
 import { auth } from '../firebase';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { Link } from 'react-router-dom';
@@ -25,7 +25,7 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
             <div className="w-8 h-8 bg-[#8B1E1E] rounded-md flex items-center justify-center text-white font-bold">
               <Church size={20} />
             </div>
-            <span className="font-bold hidden sm:block text-[#8b1e1e]">LINC</span>
+            <span className="font-bold hidden sm:block text-[#8b1e1e]">LINC One</span>
           </Link>
         </div>
 
@@ -39,20 +39,28 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
             <span className="text-[10px] md:text-sm uppercase tracking-wider">{t('nav.home')}</span>
           </Link>
           <Link
-            to="/assessment"
-            data-tutorial-id="nav-assessment"
-            className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'assessment' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
+            to="/#spiritual-gifts-program"
+            data-tutorial-id="nav-spiritual-program"
+            className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'spiritual-program' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
           >
-            <ClipboardList size={20} />
-            <span className="text-[10px] md:text-sm uppercase tracking-wider">{t('nav.assessment')}</span>
+            <Sparkles size={20} />
+            <span className="text-[10px] md:text-sm uppercase tracking-wider">{locale === 'ar' ? 'المواهب' : 'Spiritual'}</span>
           </Link>
           <Link
-            to="/booking"
-            data-tutorial-id="nav-booking"
-            className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'booking' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
+            to="/nextgen-activities"
+            data-tutorial-id="nav-nextgen"
+            className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium transition-colors ${activeTab === 'nextgen-activities' ? 'text-[#8B1E1E]' : 'text-gray-500 hover:text-[#8B1E1E]'}`}
           >
-            <CalendarDays size={20} />
-            <span className="text-[10px] md:text-sm uppercase tracking-wider">{t('nav.book')}</span>
+            <UsersRound size={20} />
+            <span className="text-[10px] md:text-sm uppercase tracking-wider">NextGen</span>
+          </Link>
+          <Link
+            to="/about"
+            data-tutorial-id="nav-about"
+            className="flex flex-col md:flex-row items-center gap-1 md:gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-[#8B1E1E]"
+          >
+            <Info size={20} />
+            <span className="text-[10px] md:text-sm uppercase tracking-wider">{locale === 'ar' ? 'من نحن' : 'About'}</span>
           </Link>
 
           {isAdmin && (
@@ -115,7 +123,7 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
       </main>
 
       <footer className="py-8 border-t border-gray-200 bg-white text-center">
-        <p className="italic text-sm text-gray-500">{t('footer.tagline')}</p>
+        <p className="italic text-sm text-gray-500">{locale === 'ar' ? 'LINC One — تواصل. انمُ. اخدم.' : 'LINC One — Connect. Grow. Serve.'}</p>
         <div className="flex justify-center gap-6 mt-3">
           <Link to="/privacy" className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-[#8B1E1E] transition-colors">
             {t('footer.privacy')}
