@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import CommunityCarousel from '../components/landing/CommunityCarousel';
+import FloatingLandingNav from '../components/landing/FloatingLandingNav';
 import LincOneHero from '../components/landing/LincOneHero';
 import SpiritualProgramFeature from '../components/landing/SpiritualProgramFeature';
 import { useI18n } from '../i18n';
@@ -9,14 +10,38 @@ import { useI18n } from '../i18n';
 export default function LandingPage() {
   const { dir, locale, setLocale } = useI18n();
   const isAr = locale === 'ar';
+  const heroActionsRef = useRef<HTMLDivElement>(null);
+  const [showFloatingNav, setShowFloatingNav] = useState(false);
 
   useEffect(() => {
     document.title = isAr ? 'LINC One | مكان واحد للتواصل والنمو' : 'LINC One | Connect, Grow, Serve';
   }, [isAr]);
 
+  useEffect(() => {
+    const heroActions = heroActionsRef.current;
+    if (!heroActions) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const actionsAreAboveViewport = !entry.isIntersecting && entry.boundingClientRect.bottom <= 0;
+        setShowFloatingNav(actionsAreAboveViewport);
+      },
+      { threshold: 0 },
+    );
+
+    observer.observe(heroActions);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f5f1e9] text-[#251817]" dir={dir}>
-      <LincOneHero isAr={isAr} dir={dir} onToggleLocale={() => setLocale(isAr ? 'en' : 'ar')} />
+      <FloatingLandingNav isAr={isAr} visible={showFloatingNav} />
+      <LincOneHero
+        isAr={isAr}
+        dir={dir}
+        onToggleLocale={() => setLocale(isAr ? 'en' : 'ar')}
+        actionsRef={heroActionsRef}
+      />
       <SpiritualProgramFeature isAr={isAr} dir={dir} />
       <CommunityCarousel isAr={isAr} dir={dir} />
 

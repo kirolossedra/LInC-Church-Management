@@ -10,14 +10,16 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import type { RefObject } from 'react';
 
 interface LincOneHeroProps {
   isAr: boolean;
   dir: 'ltr' | 'rtl';
   onToggleLocale: () => void;
+  actionsRef?: RefObject<HTMLDivElement | null>;
 }
 
-export default function LincOneHero({ isAr, dir, onToggleLocale }: LincOneHeroProps) {
+export default function LincOneHero({ isAr, dir, onToggleLocale, actionsRef }: LincOneHeroProps) {
   const prefersReducedMotion = useReducedMotion();
 
   const categoryLinks = [
@@ -100,6 +102,7 @@ export default function LincOneHero({ isAr, dir, onToggleLocale }: LincOneHeroPr
         </motion.div>
 
         <motion.div
+          ref={actionsRef}
           initial="hidden"
           animate="visible"
           variants={{ hidden: {}, visible: { transition: { staggerChildren: prefersReducedMotion ? 0 : 0.1, delayChildren: 0.2 } } }}
