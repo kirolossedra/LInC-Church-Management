@@ -12,11 +12,7 @@ export default function PeopleNotesPage({
   const controller = usePeopleNotes(hasPastorAccess);
 
   return (
-    <div
-      className="space-y-8"
-      dir={controller.dir}
-      style={{ fontFamily: 'Arial, sans-serif' }}
-    >
+    <div className="people-notes-ui space-y-8 py-2 md:py-6" dir={controller.dir}>
       <PeopleNotesHeader
         controller={controller}
         hasPastorAccess={hasPastorAccess}

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Gavel, ScrollText, AlertCircle, CheckCircle, Heart } from 'lucide-react';
 import { useI18n } from '../i18n';
+import LincPageHero from '../components/linc/LincPageHero';
 
 export default function TermsOfService() {
   const { t, dir } = useI18n();
@@ -11,19 +12,17 @@ export default function TermsOfService() {
   }, [t]);
 
   return (
-    <div className="min-h-screen bg-[#f5f4f0]" style={{ fontFamily: 'Arial, sans-serif' }} dir={dir}>
-      <div className="max-w-3xl mx-auto px-4 py-12">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <div className="w-[52px] h-[52px] grid place-items-center mx-auto mb-4 rounded-full bg-[#8b1e1e] text-white shadow-[0_8px_18px_rgba(139,30,30,0.25)]">
-            <Gavel size={24} />
-          </div>
-          <h1 className="text-[clamp(1.8rem,5vw,2.6rem)] font-bold text-[#8b1e1e] mb-3">{t('tos.title')}</h1>
-          <p className="text-gray-500 text-sm">{t('tos.updated')}: May 2026</p>
-        </div>
+    <div className="legal-page min-h-screen" dir={dir}>
+      <div className="mx-auto max-w-4xl space-y-8 py-2 md:py-6">
+        <LincPageHero
+          title={t('tos.title')}
+          description={`${t('tos.updated')}: May 2026`}
+          eyebrow="Community Covenant"
+          icon={<Gavel size={22} />}
+        />
 
         {/* Content */}
-        <div className="bg-white rounded-[22px] border border-[rgba(139,30,30,0.1)] shadow-[0_8px_28px_rgba(0,0,0,0.06)] p-[clamp(24px,4vw,40px)] space-y-10">
+        <div className="space-y-10 rounded-[2rem] border border-[rgba(139,30,30,0.1)] bg-[#fffdf9]/92 p-[clamp(24px,5vw,52px)] shadow-[0_24px_70px_rgba(80,24,24,0.09)] backdrop-blur-xl">
           <section>
             <h2 className="text-xl font-bold text-[#8b1e1e] mb-4 flex items-center gap-2">
               <ScrollText size={20} />
@@ -88,7 +87,7 @@ export default function TermsOfService() {
 
         {/* Back Link */}
         <div className="text-center mt-8">
-          <Link to="/" className="text-sm text-[#8B1E1E] hover:underline font-bold">
+          <Link to="/" className="inline-flex rounded-2xl border border-[#681919]/15 bg-[#fffdf9] px-5 py-3 text-sm font-bold text-[#681919] shadow-sm transition-transform hover:-translate-y-0.5">
             &larr; {t('privacy.back')}
           </Link>
         </div>

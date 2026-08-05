@@ -9,13 +9,13 @@ export default function AssessmentSelector({ controller }: { controller: Assessm
 const firstForm = visibleForms[0] || FORMS[0];
 
     return (
-      <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
+      <div className="assessment-ui mx-auto max-w-[1120px] py-2 md:py-6" dir={dir}>
         <PageTitle title={firstForm ? pageTitle(firstForm, t, langCode) : t('assessment.title')} subtitle={firstForm ? pageSubtitle(firstForm, t, langCode) : t('assessment.program')} icon={<ClipboardList size={22} />} />
 
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white border border-[rgba(139,30,30,0.12)] rounded-[24px] p-[clamp(20px,4vw,34px)] shadow-[0_8px_28px_rgba(0,0,0,0.08)]"
+          className="rounded-[2rem] border border-[rgba(139,30,30,0.1)] bg-[#fffdf9]/90 p-[clamp(20px,4vw,38px)] shadow-[0_24px_70px_rgba(80,24,24,0.09)] backdrop-blur-xl"
         >
           <div className="text-center max-w-3xl mx-auto mb-8">
             <h2 className="m-0 text-[#8b1e1e] text-[clamp(1.35rem,4vw,1.9rem)] font-bold">
@@ -162,4 +162,3 @@ const firstForm = visibleForms[0] || FORMS[0];
       </div>
     );
 }
-

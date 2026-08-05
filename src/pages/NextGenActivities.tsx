@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import LincPageHero from '../components/linc/LincPageHero';
 import {
   NextGenAccessSection,
   NextGenActivityMenu,
@@ -42,36 +43,26 @@ export default function NextGenActivities() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f4f0]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
-      <section className="relative overflow-hidden px-6 py-10">
-        <div
-          className="absolute inset-0 opacity-[0.07]"
-          style={{ background: 'radial-gradient(circle at 50% 0%, #8b1e1e, transparent 58%)' }}
-        />
-
-        <div className="relative max-w-6xl mx-auto">
+    <div className="nextgen-ui min-h-screen" dir={dir}>
+      <section className="relative overflow-hidden py-2 md:py-6">
+        <div className="relative mx-auto max-w-6xl space-y-8">
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="inline-flex items-center gap-2 px-5 py-3 bg-white text-[#8b1e1e] rounded-full font-bold border border-[rgba(139,30,30,0.12)] shadow-sm hover:bg-[#f8eeee] transition-all"
+            className="inline-flex items-center gap-2 rounded-2xl border border-[#681919]/10 bg-[#fffdf9]/90 px-5 py-3 font-bold text-[#681919] shadow-sm transition-all hover:-translate-y-0.5 hover:bg-white"
           >
             <ArrowLeft size={18} className={isArabic ? 'rotate-180' : ''} />
             {isArabic ? 'العودة للرئيسية' : 'Back to Home'}
           </button>
 
-          <div className="text-center mt-14 mb-12">
-            <div className="w-16 h-16 mx-auto grid place-items-center rounded-full bg-[#8b1e1e] text-white shadow-[0_8px_28px_rgba(139,30,30,0.24)] mb-6">
-              <Sparkles size={28} />
-            </div>
-            <h1 className="text-[clamp(2rem,5vw,3.5rem)] font-bold text-[#8b1e1e] leading-tight mb-4">
-              {isArabic ? 'أنشطة NextGen' : 'NextGen Activities'}
-            </h1>
-            <p className="max-w-2xl mx-auto text-[#666] text-lg leading-relaxed">
-              {isArabic
-                ? 'ابدأ كمستخدم NextGen جديد أو شارك باستخدام معرّف تمت الموافقة عليه.'
-                : 'Get started as a new NextGen user or participate with an approved identifier.'}
-            </p>
-          </div>
+          <LincPageHero
+            title={isArabic ? 'أنشطة NextGen' : 'NextGen Activities'}
+            description={isArabic
+              ? 'ابدأ كمستخدم NextGen جديد أو شارك باستخدام معرّف تمت الموافقة عليه.'
+              : 'Get started as a new NextGen user or participate with an approved identifier.'}
+            eyebrow="LInC NextGen"
+            icon={<Sparkles size={22} />}
+          />
 
           {!identity.activeUser ? (
             <NextGenAccessSection controller={identity} isArabic={isArabic} />

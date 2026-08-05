@@ -324,28 +324,33 @@ export default function PastorDashboard() {
   return (
     <>
       <style>{`
-        .pastor-calendar-ui,
-        .pastor-calendar-ui * {
-          font-family: Arial, sans-serif !important;
-          font-weight: 700 !important;
+        .pastor-calendar-ui {
+          font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+          background: transparent;
+          color: #2b1717;
         }
 
-        .pastor-calendar-ui {
-          background: #fbf7f2;
-          color: #2b1717;
+        .pastor-calendar-ui h1,
+        .pastor-calendar-ui h2,
+        .pastor-calendar-ui h3,
+        .pastor-calendar-ui h4 {
+          font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
+          letter-spacing: -0.02em;
         }
 
         .pastor-calendar-ui button,
         .pastor-calendar-ui input,
         .pastor-calendar-ui select,
         .pastor-calendar-ui textarea {
+          font-family: "Inter", ui-sans-serif, system-ui, sans-serif !important;
+          font-weight: 600 !important;
           font-size: 16px !important;
           line-height: 1.35 !important;
         }
 
-        .pastor-calendar-ui .text-\[9px\],
-        .pastor-calendar-ui .text-\[10px\],
-        .pastor-calendar-ui .text-\[11px\],
+        .pastor-calendar-ui [class~="text-[9px]"],
+        .pastor-calendar-ui [class~="text-[10px]"],
+        .pastor-calendar-ui [class~="text-[11px]"],
         .pastor-calendar-ui .text-xs,
         .pastor-calendar-ui .text-sm {
           font-size: 16px !important;
@@ -373,20 +378,23 @@ export default function PastorDashboard() {
         }
 
         .pastor-calendar-ui .pastor-dashboard-card {
-          background: #fffdf9;
-          border-color: #ead9d0;
-          box-shadow: 0 16px 40px rgba(80, 24, 24, 0.06);
+          background: rgba(255, 253, 249, 0.88);
+          border-color: rgba(104, 25, 25, 0.12);
+          box-shadow: 0 22px 60px rgba(80, 24, 24, 0.09);
+          backdrop-filter: blur(18px);
         }
 
         .pastor-calendar-ui .pastor-main-button {
           min-height: 48px;
           border-radius: 18px;
+          box-shadow: 0 10px 26px rgba(80, 24, 24, 0.08);
         }
 
         .pastor-calendar-ui .pastor-calendar-shell {
-          background: #fffdf9;
-          border-color: #ead9d0;
-          box-shadow: 0 18px 48px rgba(80, 24, 24, 0.07);
+          background: rgba(255, 253, 249, 0.92);
+          border-color: rgba(104, 25, 25, 0.12);
+          box-shadow: 0 24px 70px rgba(80, 24, 24, 0.1);
+          backdrop-filter: blur(18px);
         }
 
         .pastor-calendar-ui .pastor-day-card {
@@ -477,7 +485,7 @@ export default function PastorDashboard() {
           }
         }
       `}</style>
-      <div data-tutorial-id="pastor-dashboard" className="pastor-calendar-ui min-h-screen space-y-8 px-4 py-6" style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }} dir={dir}>
+      <div data-tutorial-id="pastor-dashboard" className="pastor-calendar-ui min-h-screen space-y-8 py-2 md:py-6" dir={dir}>
       <PageTitle
         title={t('calendar.title')}
         subtitle={displayLocale === 'ar' ? 'إدارة الاجتماعات والإتاحة وطلبات الحجز وإشعارات المشاركين' : 'Manage meetings, availability, booking requests, and participant notifications'}
@@ -1358,7 +1366,7 @@ export default function PastorDashboard() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('calendar.typeField')}</label>
-                  <select className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.type} onChange={e => setNewMeeting(p => ({ ...p, type: e.target.value as any }))}>
+                  <select className="w-full px-4 py-3 bg-stone-50 border-none rounded-xl focus:ring-2 focus:ring-[#7a1717]/20 outline-none" value={newMeeting.type} onChange={e => setNewMeeting(p => ({ ...p, type: e.target.value as 'prayer' | 'counseling' | 'service' | 'other' }))}>
                     <option value="service">{t('calendar.service')}</option>
                     <option value="prayer">{t('calendar.prayer')}</option>
                     <option value="counseling">{t('calendar.counseling')}</option>

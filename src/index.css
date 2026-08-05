@@ -71,6 +71,70 @@
   animation-direction: reverse;
 }
 
+.people-notes-ui,
+.assessment-ui,
+.booking-ui,
+.nextgen-ui,
+.congregation-notes-ui,
+.legal-page {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+.people-notes-ui .bg-white,
+.nextgen-ui .bg-white,
+.congregation-notes-ui .bg-white {
+  background-color: rgba(255, 253, 249, 0.92) !important;
+  border-color: rgba(104, 25, 25, 0.1) !important;
+  box-shadow: 0 20px 58px rgba(80, 24, 24, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.people-notes-ui section,
+.nextgen-ui section[class*="rounded"],
+.congregation-notes-ui section {
+  border-color: rgba(104, 25, 25, 0.1);
+}
+
+.people-notes-ui input,
+.people-notes-ui textarea,
+.people-notes-ui select,
+.assessment-ui input,
+.assessment-ui textarea,
+.assessment-ui select,
+.nextgen-ui input,
+.nextgen-ui textarea,
+.congregation-notes-ui input,
+.congregation-notes-ui textarea,
+.booking-ui input,
+.booking-ui textarea {
+  border-color: rgba(104, 25, 25, 0.14) !important;
+  background-color: rgba(255, 253, 249, 0.94) !important;
+}
+
+.assessment-ui section {
+  border-color: rgba(104, 25, 25, 0.1) !important;
+  background-color: rgba(255, 253, 249, 0.92) !important;
+  box-shadow: 0 20px 58px rgba(80, 24, 24, 0.075);
+  backdrop-filter: blur(16px);
+}
+
+.legal-page section + section {
+  border-top: 1px solid rgba(104, 25, 25, 0.09);
+  padding-top: 2.25rem;
+}
+
+.legal-page section h2 {
+  font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
+  font-size: 1.55rem;
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .linc-page-hero {
+    border-radius: 1.55rem;
+  }
+}
+
 @keyframes linc-marquee {
   to { transform: translateX(-50%); }
 }

@@ -2,6 +2,7 @@ import { motion } from 'motion/react';
 import { BookOpen, Calendar as CalendarIcon, Users, Mail, Shield, Globe, AlertCircle, ChevronRight } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useEffect } from 'react';
+import LincPageHero from '../components/linc/LincPageHero';
 
 export default function GuidePage() {
   const { t, dir } = useI18n();
@@ -44,16 +45,15 @@ export default function GuidePage() {
   ];
 
   return (
-    <div data-tutorial-id="guide-page" className="max-w-4xl mx-auto py-12 px-6" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
-        <div className="w-16 h-16 bg-[#8b1e1e] rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg">
-          <BookOpen size={32} />
-        </div>
-        <h1 className="text-3xl font-bold text-[#8b1e1e] mb-2">{t('guide.title')}</h1>
-        <p className="text-gray-500 max-w-xl mx-auto">{t('guide.subtitle')}</p>
-      </motion.div>
+    <div data-tutorial-id="guide-page" className="mx-auto max-w-5xl space-y-8 py-2 md:py-6" dir={dir}>
+      <LincPageHero
+        title={t('guide.title')}
+        description={t('guide.subtitle')}
+        eyebrow="Pastor workspace"
+        icon={<BookOpen size={22} />}
+      />
 
-      <div className="space-y-8">
+      <div className="grid gap-5 md:grid-cols-2">
         {sections.map((section, i) => (
           <motion.div
             key={i}
@@ -62,19 +62,19 @@ export default function GuidePage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.1 }}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6"
+            className="group relative overflow-hidden rounded-[1.8rem] border border-[#681919]/10 bg-[#fffdf9]/90 p-7 shadow-[0_18px_50px_rgba(80,24,24,0.07)] backdrop-blur-xl transition-transform duration-500 hover:-translate-y-1"
           >
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-stone-50 rounded-xl flex items-center justify-center text-[#8b1e1e] flex-shrink-0">
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-[#681919] text-white shadow-[0_10px_24px_rgba(104,25,25,0.2)]">
                 {section.icon}
               </div>
               <div className="flex-1">
-                <h2 className="text-xl font-bold text-[#1A1A1A] mb-2">{section.title}</h2>
-                <p className="text-gray-600 mb-4">{section.desc}</p>
+                <h2 className="mb-2 font-serif text-2xl font-semibold text-[#2a1715]">{section.title}</h2>
+                <p className="mb-4 text-sm leading-relaxed text-stone-600">{section.desc}</p>
                 <ul className="space-y-2">
                   {section.details.map((detail, j) => (
-                    <li key={j} className="flex items-start gap-2 text-sm text-gray-500">
-                      <ChevronRight size={16} className="text-[#8b1e1e] mt-0.5 flex-shrink-0" />
+                    <li key={j} className="flex items-start gap-2 text-sm leading-relaxed text-stone-500">
+                      <ChevronRight size={16} className="mt-0.5 flex-shrink-0 text-[#8b1e1e]" />
                       {detail}
                     </li>
                   ))}
@@ -89,13 +89,13 @@ export default function GuidePage() {
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
         viewport={{ once: true }}
-        className="mt-12 bg-[#f8eeee] rounded-2xl p-6 border border-[#8b1e1e]/10"
+        className="rounded-[1.8rem] border border-[#8b1e1e]/15 bg-[#8b1e1e] p-7 text-white shadow-[0_20px_55px_rgba(104,25,25,0.18)]"
       >
         <div className="flex items-start gap-3">
-          <AlertCircle size={20} className="text-[#8b1e1e] flex-shrink-0 mt-1" />
+          <AlertCircle size={20} className="mt-1 flex-shrink-0 text-[#f2a900]" />
           <div>
-            <h3 className="font-bold text-[#8b1e1e] mb-1">{t('guide.supportTitle')}</h3>
-            <p className="text-sm text-gray-600">{t('guide.supportDesc')}</p>
+            <h3 className="mb-1 font-serif text-2xl font-semibold text-white">{t('guide.supportTitle')}</h3>
+            <p className="text-sm text-stone-200">{t('guide.supportDesc')}</p>
           </div>
         </div>
       </motion.div>

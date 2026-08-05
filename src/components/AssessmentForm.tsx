@@ -26,7 +26,7 @@ export default function AssessmentForm() {
   if (submitted && result) return <AssessmentResults controller={controller} />;
 
   return (
-    <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
+    <div className="assessment-ui mx-auto max-w-[1120px] py-2 md:py-6" dir={dir}>
       <PageTitle
         title={pageTitle(selectedForm, t, langCode)}
         subtitle={pageSubtitle(selectedForm, t, langCode)}
@@ -36,7 +36,7 @@ export default function AssessmentForm() {
       <button
         type="button"
         onClick={handleBackToAssessmentChoices}
-        className="mb-[18px] min-h-[46px] px-5 py-3 rounded-[16px] border border-[rgba(139,30,30,0.18)] bg-white text-[#8b1e1e] font-bold cursor-pointer shadow-[0_6px_16px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-[1px] hover:bg-[#fffafa]"
+        className="mb-[18px] min-h-[46px] cursor-pointer rounded-2xl border border-[rgba(139,30,30,0.16)] bg-[#fffdf9] px-5 py-3 font-bold text-[#8b1e1e] shadow-[0_10px_26px_rgba(80,24,24,0.07)] transition-all hover:-translate-y-[1px] hover:bg-white"
       >
         {isArabicUI ? 'الرجوع لاختيار التقييم' : 'Back to assessment choices'}
       </button>

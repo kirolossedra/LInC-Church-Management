@@ -71,27 +71,32 @@ function ProtectedRoute({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f5f4f0] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#8B1E1E]"></div>
+      <div className="flex min-h-[60vh] items-center justify-center rounded-[2rem] border border-[#681919]/10 bg-[#1b0d0d] shadow-[0_28px_80px_rgba(40,10,10,0.2)]">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-[#f2a900]" />
+          <p className="mt-5 text-xs font-bold uppercase tracking-[0.28em] text-stone-300">LInC One</p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="max-w-md mx-auto py-24 text-center px-6" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
-        <div className="w-20 h-20 bg-stone-100 rounded-3xl flex items-center justify-center mx-auto mb-8">
-          <ShieldCheck size={40} className="text-[#8B1E1E]" />
+      <div className="auth-gateway mx-auto max-w-2xl overflow-hidden rounded-[2rem] border border-[#681919]/10 bg-[#fffdf9]/90 shadow-[0_28px_80px_rgba(60,18,18,0.14)] backdrop-blur-xl" dir={dir}>
+        <div className="relative overflow-hidden bg-[#1b0d0d] px-7 pb-10 pt-12 text-center text-white md:px-12">
+          <div className="linc-grid pointer-events-none absolute inset-0 opacity-[0.12]" />
+          <div className="relative mx-auto mb-7 grid h-20 w-20 place-items-center rounded-[1.7rem] border border-white/15 bg-white/10">
+            <ShieldCheck size={36} className="text-[#f2a900]" />
+          </div>
+          <h2 className="relative font-serif text-[clamp(2.6rem,7vw,4.6rem)] font-semibold leading-[0.95] text-[#fff8ed]">{t('auth.loginTitle')}</h2>
+          <p className="relative mx-auto mt-5 max-w-md text-sm leading-relaxed text-stone-300">{t('auth.loginDesc')}</p>
         </div>
-
-        <h2 className="text-3xl font-bold mb-4 text-[#8b1e1e]">{t('auth.loginTitle')}</h2>
-        <p className="text-gray-500 mb-12">{t('auth.loginDesc')}</p>
-
+        <div className="p-7 md:p-10">
         {!showEmailLogin ? (
           <div className="space-y-4">
             <button
               onClick={() => signInWithGoogle()}
-              className="flex items-center justify-center gap-3 w-full py-4 px-8 bg-white border-2 border-[#8B1E1E] text-[#8B1E1E] rounded-full font-bold shadow-sm hover:bg-[#f8eeee] transition-all active:scale-95"
+              className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#681919]/20 bg-white px-8 py-4 font-bold text-[#681919] shadow-sm transition-all hover:-translate-y-0.5 hover:bg-[#fff8f4] active:scale-[0.98]"
             >
               <LogIn size={20} />
               {t('auth.signIn')}
@@ -102,21 +107,21 @@ function ProtectedRoute({
                 <div className="w-full border-t border-gray-200"></div>
               </div>
               <div className="relative flex justify-center">
-                <span className="bg-[#f5f4f0] px-4 text-sm text-gray-400">{t('auth.or')}</span>
+                <span className="bg-[#fffdf9] px-4 text-sm text-stone-400">{t('auth.or')}</span>
               </div>
             </div>
 
             <button
               onClick={() => setShowEmailLogin(true)}
-              className="flex items-center justify-center gap-3 w-full py-4 px-8 bg-[#8B1E1E] text-white rounded-full font-bold shadow-sm hover:bg-[#641414] transition-all active:scale-95"
+              className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[#681919] px-8 py-4 font-bold text-white shadow-[0_14px_32px_rgba(104,25,25,0.2)] transition-all hover:-translate-y-0.5 hover:bg-[#511212] active:scale-[0.98]"
             >
               <Mail size={20} />
               {t('auth.signInEmail')}
             </button>
           </div>
         ) : (
-          <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 text-left">
-            <h3 className="text-xl font-bold mb-6 text-center text-[#8B1E1E]">
+          <div className="rounded-[1.7rem] border border-[#681919]/10 bg-white p-7 text-left shadow-[0_18px_45px_rgba(60,18,18,0.08)] md:p-8">
+            <h3 className="mb-6 text-center font-serif text-3xl font-semibold text-[#681919]">
               {isSignUp ? t('auth.signUpTitle') : t('auth.signInBtn')}
             </h3>
 
@@ -130,7 +135,7 @@ function ProtectedRoute({
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none"
+                  className="w-full rounded-2xl border border-[#681919]/10 bg-[#f7f2ea] px-4 py-3 outline-none transition-shadow focus:ring-2 focus:ring-[#8B1E1E]/20"
                   placeholder="pastor@linc.church"
                 />
               </div>
@@ -144,7 +149,7 @@ function ProtectedRoute({
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-stone-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8B1E1E]/20 outline-none"
+                  className="w-full rounded-2xl border border-[#681919]/10 bg-[#f7f2ea] px-4 py-3 outline-none transition-shadow focus:ring-2 focus:ring-[#8B1E1E]/20"
                   placeholder="••••••••"
                 />
               </div>
@@ -159,7 +164,7 @@ function ProtectedRoute({
               <button
                 disabled={authLoading}
                 type="submit"
-                className="w-full py-4 bg-[#8B1E1E] text-white rounded-xl font-bold shadow hover:bg-[#641414] transition-all flex items-center justify-center gap-2"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#681919] py-4 font-bold text-white shadow-[0_14px_32px_rgba(104,25,25,0.2)] transition-all hover:bg-[#511212]"
               >
                 {authLoading ? (
                   <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
@@ -197,6 +202,7 @@ function ProtectedRoute({
             </button>
           </div>
         )}
+        </div>
       </div>
     );
   }
@@ -207,20 +213,20 @@ function ProtectedRoute({
     }
 
     return (
-      <div className="max-w-md mx-auto py-24 text-center px-6" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
-        <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center mx-auto mb-8">
-          <ShieldCheck size={40} className="text-[#8B1E1E]" />
+      <div className="mx-auto max-w-2xl overflow-hidden rounded-[2rem] border border-[#681919]/10 bg-[#fffdf9] px-7 py-12 text-center shadow-[0_28px_80px_rgba(60,18,18,0.14)] md:px-12" dir={dir}>
+        <div className="mx-auto mb-8 grid h-20 w-20 place-items-center rounded-[1.7rem] bg-[#681919] text-white shadow-[0_16px_36px_rgba(104,25,25,0.22)]">
+          <ShieldCheck size={36} className="text-[#f2a900]" />
         </div>
 
-        <h2 className="text-2xl font-bold mb-4 text-[#8b1e1e]">{t('auth.deniedTitle')}</h2>
-        <p className="text-gray-500 mb-6 italic">{t('auth.deniedQuote')}</p>
-        <p className="text-gray-600 mb-12">
+        <h2 className="mb-4 font-serif text-4xl font-semibold text-[#681919]">{t('auth.deniedTitle')}</h2>
+        <p className="mb-6 font-serif text-xl italic text-stone-500">{t('auth.deniedQuote')}</p>
+        <p className="mb-10 text-sm leading-relaxed text-stone-600">
           {t('auth.signedInAs')} <span className="font-bold">{user.email}</span>, {t('auth.deniedDesc')}
         </p>
 
         <button
           onClick={() => auth.signOut()}
-          className="px-8 py-3 bg-[#8B1E1E] text-white rounded-full font-bold hover:bg-[#641414] transition-colors"
+          className="rounded-2xl bg-[#681919] px-8 py-3 font-bold text-white shadow-[0_14px_32px_rgba(104,25,25,0.2)] transition-colors hover:bg-[#511212]"
         >
           {t('nav.signOut')}
         </button>
@@ -345,8 +351,22 @@ function AppRoutes() {
 
       <Route path="/administrator" element={<AdministratorPanel />} />
 
-      <Route path="/privacy" element={<PrivacyPolicy />} />
-      <Route path="/tos" element={<TermsOfService />} />
+      <Route
+        path="/privacy"
+        element={
+          <Layout activeTab="home" isAdmin={false}>
+            <PrivacyPolicy />
+          </Layout>
+        }
+      />
+      <Route
+        path="/tos"
+        element={
+          <Layout activeTab="home" isAdmin={false}>
+            <TermsOfService />
+          </Layout>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

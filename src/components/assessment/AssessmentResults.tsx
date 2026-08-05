@@ -16,11 +16,11 @@ export default function AssessmentResults({ controller }: { controller: Assessme
   if (!selectedForm || !result) return null;
 
   return (
-    <div className="max-w-[1120px] mx-auto px-[18px]" dir={dir} style={{ fontFamily: 'Arial, sans-serif' }}>
+    <div className="assessment-ui mx-auto max-w-[1120px] py-2 md:py-6" dir={dir}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white border-2 border-[#8b1e1e] rounded-[22px] p-[clamp(18px,4vw,28px)] shadow-[0_8px_28px_rgba(0,0,0,0.08)]"
+        className="rounded-[2rem] border border-[#8b1e1e]/20 bg-[#fffdf9]/95 p-[clamp(22px,4vw,38px)] shadow-[0_24px_70px_rgba(80,24,24,0.1)] backdrop-blur-xl"
       >
         <h2 className="text-[clamp(1.22rem,4vw,1.55rem)] text-[#8b1e1e] mb-5">
           {resultTitle(selectedForm, t, langCode)}

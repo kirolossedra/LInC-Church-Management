@@ -9,6 +9,7 @@ import {
   createPublicBooking,
   getPublicBookingSchedule,
 } from '../services/booking';
+import LincPageHero from '../components/linc/LincPageHero';
 
 const BUSINESS_START = 9;
 const BUSINESS_END = 20; // don't change this
@@ -62,7 +63,9 @@ export default function BookingCalendar() {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [isPastDay, setIsPastDay] = useState(false);
+  const isPastDay = selectedDay
+    ? isBefore(startOfDay(selectedDay), startOfDay(new Date()))
+    : false;
   useEffect(() => {
     const controller = new AbortController();
     const start = format(startOfMonth(currentDate), 'yyyy-MM-dd');
@@ -95,16 +98,6 @@ export default function BookingCalendar() {
 
     return () => controller.abort();
   }, [currentDate, scheduleRefresh, t]);
-
-  useEffect(() => {
-    if (selectedDay && isBefore(startOfDay(selectedDay), startOfDay(new Date()))) {
-      setIsPastDay(true);
-      setShowDayPopup(false);
-      setShowBookingFormPopup(false);
-    } else {
-      setIsPastDay(false);
-    }
-  }, [selectedDay]);
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentDate),
@@ -503,16 +496,13 @@ export default function BookingCalendar() {
 
   return (
     <>
-      <div className="min-h-screen w-full space-y-6 sm:space-y-8 max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 bg-[#fbf7f2] text-[#2b1717] font-bold" dir={dir} style={{ fontFamily: 'Arial, sans-serif', fontWeight: 700 }}>
-        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-[#7a1717] flex items-center gap-2 leading-tight">
-              <CalendarIcon size={22} />
-              {t('booking.pageTitle')}
-            </h1>
-            <p className="text-[#6b4b4b] text-base mt-2 font-bold">{t('booking.pageDesc')}</p>
-          </div>
-        </div>
+      <div className="booking-ui mx-auto min-h-screen w-full max-w-5xl space-y-6 py-2 text-[#2b1717] sm:space-y-8 md:py-6" dir={dir}>
+        <LincPageHero
+          title={t('booking.pageTitle')}
+          description={t('booking.pageDesc')}
+          eyebrow="Spiritual Gifts Program"
+          icon={<CalendarIcon size={22} />}
+        />
 
         <div className="flex flex-wrap justify-center gap-4 sm:gap-6 text-base font-bold text-[#3a2424]">
           <div className="flex items-center gap-2">
@@ -525,7 +515,7 @@ export default function BookingCalendar() {
           </div>
         </div>
 
-        <div className="bg-[#fffdf9] rounded-3xl shadow-md border border-[#ead9d0] p-3 sm:p-6 overflow-hidden">
+        <div className="overflow-hidden rounded-[2rem] border border-[#681919]/10 bg-[#fffdf9]/92 p-3 shadow-[0_24px_70px_rgba(80,24,24,0.1)] backdrop-blur-xl sm:p-7">
           <div className="flex items-center justify-between mb-6">
             <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-3 hover:bg-[#f4e8e2] rounded-full transition-colors text-[#7a1717]"><ChevronLeft size={20} /></button>
             <div className="text-center">
