@@ -1,0 +1,7 @@
+# Copy this file to .dev.vars for local Worker development.
+# Never commit real credentials from .dev.vars.
+B2_BUCKET_NAME=linc-ministry-archives
+B2_S3_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+B2_REGION=us-east-005
+B2_APPLICATION_KEY_ID=
+B2_APPLICATION_KEY=

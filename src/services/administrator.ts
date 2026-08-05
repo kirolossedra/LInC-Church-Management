@@ -1,6 +1,6 @@
 import { auth } from '../firebase';
 import type { AdminAccount, AdminAuthority } from '../components/admin/admin.types';
-import type { ArchiveFolder } from '../components/admin/archives/archives.types';
+import type { ArchiveFile, ArchiveFolder } from '../components/admin/archives/archives.types';
 
 const BACKEND_BASE_URL = (
   import.meta.env.VITE_BACKEND_BASE_URL ||
@@ -45,6 +45,66 @@ export async function createArchiveFolder(name: string, parentId: string | null)
 export async function deleteArchiveFolder(folderId: string) {
   return requestAdmin<{ deleted: true }>(
     `/archives/folders/${encodeURIComponent(folderId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function getArchiveFiles() {
+  return requestAdmin<{ files: ArchiveFile[] }>(
+    '/archives/files',
+    { method: 'GET' },
+  );
+}
+
+export async function uploadArchiveFile(file: File, folderId: string | null) {
+  const contentType = file.type || 'application/octet-stream';
+  const prepared = await requestAdmin<{
+    file: ArchiveFile;
+    uploadUrl: string;
+    expiresAt: number;
+  }>(
+    '/archives/files/upload-url',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: file.name,
+        folderId,
+        size: file.size,
+        contentType,
+      }),
+    },
+  );
+
+  try {
+    const uploadResponse = await fetch(prepared.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: file,
+    });
+    if (!uploadResponse.ok) {
+      throw new Error(`Backblaze rejected the upload (HTTP ${uploadResponse.status}).`);
+    }
+    const completed = await requestAdmin<{ file: ArchiveFile }>(
+      `/archives/files/${encodeURIComponent(prepared.file.id)}/complete`,
+      { method: 'POST' },
+    );
+    return completed.file;
+  } catch (error) {
+    try { await deleteArchiveFile(prepared.file.id); } catch { /* preserve the upload error */ }
+    throw error;
+  }
+}
+
+export async function getArchiveFileDownloadUrl(fileId: string) {
+  return requestAdmin<{ downloadUrl: string; expiresAt: number }>(
+    `/archives/files/${encodeURIComponent(fileId)}/download-url`,
+    { method: 'GET' },
+  );
+}
+
+export async function deleteArchiveFile(fileId: string) {
+  return requestAdmin<{ deleted: true }>(
+    `/archives/files/${encodeURIComponent(fileId)}`,
     { method: 'DELETE' },
   );
 }

@@ -8,11 +8,19 @@ export type FirebaseBindings = {
   NEXTGEN_MISSION_MAP_DATA?: string
 }
 
+export type BackblazeBindings = {
+  B2_BUCKET_NAME: string
+  B2_S3_ENDPOINT: string
+  B2_REGION: string
+  B2_APPLICATION_KEY_ID?: string
+  B2_APPLICATION_KEY?: string
+}
+
 export type AppBindings = BrevoBindings &
   FirebaseBindings & {
     BREVO_TEST_RECIPIENT: string
     BOOKING_NOTIFICATION_EMAIL?: string
-  }
+  } & BackblazeBindings
 
 export type AuthenticatedFirebaseUser = {
   uid: string

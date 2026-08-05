@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createApp } from '../src/index'
+import type { ArchiveStorage } from '../src/services/backblazeArchive.service'
 import type { AuthenticatedFirebaseUser } from '../src/types/app'
 
 const bindings = {
@@ -274,5 +275,243 @@ describe('Administrator routes', () => {
     expect(fetchMock.mock.calls.some(call =>
       (call[1] as RequestInit | undefined)?.method === 'DELETE'
     )).toBe(false)
+  })
+
+  it('lists persistent archive files for an allocated administrator', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageArchives: true },
+        }))
+      }
+      if (url.endsWith('/administration/archives/files.json')) {
+        return Promise.resolve(jsonResponse({
+          ready: {
+            folderId: null,
+            objectKey: 'archives/_root/ready/report.pdf',
+            name: 'report.pdf',
+            size: 120,
+            contentType: 'application/pdf',
+            status: 'ready',
+            createdAt: 20,
+            createdByUid: administrator.uid,
+            updatedAt: 21,
+          },
+          invalid: { name: 'missing-object-key.pdf' },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(fetchMock)
+    const response = await app.request(
+      authenticatedRequest('/api/v1/admin/archives/files'),
+      undefined,
+      bindings,
+    )
+    const body = await response.json() as {
+      data: { files: Array<{ id: string; name: string; objectKey?: string }> }
+    }
+
+    expect(response.status).toBe(200)
+    expect(body.data.files).toEqual([
+      expect.objectContaining({ id: 'ready', name: 'report.pdf' }),
+    ])
+    expect(body.data.files[0]).not.toHaveProperty('objectKey')
+  })
+
+  it('prepares and records a private archive upload', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageArchives: true },
+        }))
+      }
+      if (init?.method === 'PATCH' && url.endsWith('/administration/archives/files/file-1.json')) {
+        return Promise.resolve(jsonResponse({}))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const archiveStorage = {
+      createUploadUrl: vi.fn().mockResolvedValue({
+        url: 'https://signed.example/upload',
+        expiresAt: 1_777_778_077_000,
+      }),
+    } as unknown as ArchiveStorage
+    const app = createApp({
+      admin: {
+        verifyToken: vi.fn().mockResolvedValue(administrator),
+        getAccessToken: vi.fn().mockResolvedValue('server-token'),
+        databaseFetch: fetchMock as unknown as typeof fetch,
+        now: () => 1_777_777_777_000,
+        generateId: () => 'file-1',
+        archiveStorage,
+      },
+    })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/archives/files/upload-url',
+      'POST',
+      {
+        name: 'Board Minutes.pdf',
+        folderId: null,
+        size: 420,
+        contentType: 'application/pdf',
+      },
+    ), undefined, bindings)
+    const body = await response.json() as {
+      data: { file: { id: string; status: string }; uploadUrl: string }
+    }
+
+    expect(response.status).toBe(201)
+    expect(body.data).toMatchObject({
+      file: { id: 'file-1', status: 'pending' },
+      uploadUrl: 'https://signed.example/upload',
+    })
+    expect(archiveStorage.createUploadUrl).toHaveBeenCalledWith(
+      'archives/_root/file-1/Board Minutes.pdf',
+    )
+    const storedCall = fetchMock.mock.calls.find(call =>
+      (call[1] as RequestInit | undefined)?.method === 'PATCH' &&
+      String(call[0]).endsWith('/administration/archives/files/file-1.json')
+    )
+    expect(JSON.parse(String((storedCall?.[1] as RequestInit).body))).toMatchObject({
+      name: 'Board Minutes.pdf',
+      status: 'pending',
+      size: 420,
+    })
+  })
+
+  it('verifies an uploaded object before marking the archive file ready', async () => {
+    const pendingFile = {
+      folderId: null,
+      objectKey: 'archives/_root/file-1/report.pdf',
+      name: 'report.pdf',
+      size: 420,
+      contentType: 'application/pdf',
+      status: 'pending',
+      createdAt: 10,
+      createdByUid: administrator.uid,
+      updatedAt: 10,
+    }
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageArchives: true },
+        }))
+      }
+      if (url.endsWith('/administration/archives/files/file-1.json') && init?.method === 'GET') {
+        return Promise.resolve(jsonResponse(pendingFile))
+      }
+      if (init?.method === 'PATCH') return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse(null))
+    })
+    const archiveStorage = {
+      inspectObject: vi.fn().mockResolvedValue({ size: 420, contentType: 'application/pdf' }),
+    } as unknown as ArchiveStorage
+    const app = createApp({
+      admin: {
+        verifyToken: vi.fn().mockResolvedValue(administrator),
+        getAccessToken: vi.fn().mockResolvedValue('server-token'),
+        databaseFetch: fetchMock as unknown as typeof fetch,
+        now: () => 99,
+        archiveStorage,
+      },
+    })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/archives/files/file-1/complete',
+      'POST',
+    ), undefined, bindings)
+    const body = await response.json() as { data: { file: { status: string } } }
+
+    expect(response.status).toBe(200)
+    expect(body.data.file.status).toBe('ready')
+    expect(archiveStorage.inspectObject).toHaveBeenCalledWith(pendingFile.objectKey)
+    const completionCall = fetchMock.mock.calls.find(call =>
+      (call[1] as RequestInit | undefined)?.method === 'PATCH' &&
+      String(call[0]).endsWith('/administration/archives/files/file-1.json')
+    )
+    expect(JSON.parse(String((completionCall?.[1] as RequestInit).body))).toMatchObject({
+      status: 'ready',
+      size: 420,
+    })
+  })
+
+  it('signs downloads and deletes private objects through the archive service', async () => {
+    const readyFile = {
+      folderId: 'minutes',
+      objectKey: 'archives/minutes/file-1/report.pdf',
+      name: 'report.pdf',
+      size: 420,
+      contentType: 'application/pdf',
+      status: 'ready',
+      createdAt: 10,
+      createdByUid: administrator.uid,
+      updatedAt: 10,
+    }
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageArchives: true },
+        }))
+      }
+      if (url.endsWith('/administration/archives/files/file-1.json') && init?.method === 'GET') {
+        return Promise.resolve(jsonResponse(readyFile))
+      }
+      if (init?.method === 'DELETE') return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse(null))
+    })
+    const archiveStorage = {
+      createDownloadUrl: vi.fn().mockResolvedValue({
+        url: 'https://signed.example/download',
+        expiresAt: 400,
+      }),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ArchiveStorage
+    const app = createApp({
+      admin: {
+        verifyToken: vi.fn().mockResolvedValue(administrator),
+        getAccessToken: vi.fn().mockResolvedValue('server-token'),
+        databaseFetch: fetchMock as unknown as typeof fetch,
+        archiveStorage,
+      },
+    })
+
+    const downloadResponse = await app.request(authenticatedRequest(
+      '/api/v1/admin/archives/files/file-1/download-url',
+    ), undefined, bindings)
+    expect(downloadResponse.status).toBe(200)
+    expect(await downloadResponse.json()).toMatchObject({
+      data: { downloadUrl: 'https://signed.example/download' },
+    })
+
+    const deleteResponse = await app.request(authenticatedRequest(
+      '/api/v1/admin/archives/files/file-1',
+      'DELETE',
+    ), undefined, bindings)
+    expect(deleteResponse.status).toBe(200)
+    expect(archiveStorage.createDownloadUrl).toHaveBeenCalledWith(
+      readyFile.objectKey,
+      readyFile.name,
+    )
+    expect(archiveStorage.deleteObject).toHaveBeenCalledWith(readyFile.objectKey)
+    expect(fetchMock.mock.calls.some(call =>
+      (call[1] as RequestInit | undefined)?.method === 'DELETE' &&
+      String(call[0]).endsWith('/administration/archives/files/file-1.json')
+    )).toBe(true)
   })
 })

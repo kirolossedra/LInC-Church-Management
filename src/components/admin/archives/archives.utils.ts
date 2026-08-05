@@ -1,7 +1,7 @@
 import type {
   ArchiveFolder,
   ArchiveFolderNode,
-  TemporaryArchiveFile,
+  ArchiveFile,
 } from './archives.types';
 
 export function buildArchiveTree(folders: ArchiveFolder[]): ArchiveFolderNode[] {
@@ -51,12 +51,12 @@ export function foldersInArchiveLocation(
 }
 
 export function filesInArchiveLocation(
-  files: TemporaryArchiveFile[],
+  files: ArchiveFile[],
   folderId: string | null,
 ) {
   return files
     .filter(file => file.folderId === folderId)
-    .sort((left, right) => right.addedAt - left.addedAt);
+    .sort((left, right) => right.createdAt - left.createdAt);
 }
 
 export function formatArchiveBytes(bytes: number) {
@@ -64,13 +64,4 @@ export function formatArchiveBytes(bytes: number) {
   if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(1)} KB`;
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
-}
-
-export function createTemporaryArchiveFile(file: File, folderId: string | null) {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-    folderId,
-    file,
-    addedAt: Date.now(),
-  } satisfies TemporaryArchiveFile;
 }

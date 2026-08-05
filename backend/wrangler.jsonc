@@ -6,7 +6,10 @@
   "vars": {
     "FIREBASE_PROJECT_ID": "churchmeeting",
     "FIREBASE_DATABASE_URL": "https://churchmeeting-default-rtdb.firebaseio.com",
-    "BOOKING_NOTIFICATION_EMAIL": "rev.ibrahim@lincministry.com"
+    "BOOKING_NOTIFICATION_EMAIL": "rev.ibrahim@lincministry.com",
+    "B2_BUCKET_NAME": "linc-ministry-archives",
+    "B2_S3_ENDPOINT": "https://s3.us-east-005.backblazeb2.com",
+    "B2_REGION": "us-east-005"
   },
   // "compatibility_flags": [
   //   "nodejs_compat"

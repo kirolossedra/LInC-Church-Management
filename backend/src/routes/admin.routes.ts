@@ -11,9 +11,16 @@ import {
 } from '../admin/adminAuthorization'
 import {
   AdminArchiveError,
+  completeArchiveFile,
+  createPendingArchiveFile,
   createArchiveFolder,
+  deleteArchiveFileMetadata,
   deleteArchiveFolder,
+  getArchiveFile,
+  hasInvalidArchiveNameCharacter,
+  listArchiveFiles,
   listArchiveFolders,
+  type AdminArchiveFile,
 } from '../admin/adminArchives'
 import { requireAdminAuthority } from '../admin/adminAuthorization'
 import { createFirebaseAuthMiddleware, type FirebaseTokenVerifier } from '../security/firebaseAuth'
@@ -24,6 +31,11 @@ import {
   type FirebaseDatabaseFetch,
   type FirebaseRealtimeDatabaseClient,
 } from '../services/firebaseRealtimeDatabase.service'
+import {
+  ArchiveStorageError,
+  createBackblazeArchiveStorage,
+  type ArchiveStorage,
+} from '../services/backblazeArchive.service'
 import type { AppEnv, FirebaseBindings } from '../types/app'
 
 const authoritySchema = z.object({
@@ -43,6 +55,16 @@ const archiveFolderSchema = z.object({
   ),
   parentId: archiveFolderIdSchema.nullable().default(null),
 }).strict()
+const archiveFileIdSchema = archiveFolderIdSchema
+const archiveUploadSchema = z.object({
+  name: z.string().trim().min(1).max(255).refine(
+    value => value !== '.' && value !== '..' && !hasInvalidArchiveNameCharacter(value),
+    'File names cannot contain slashes or control characters.',
+  ),
+  folderId: archiveFolderIdSchema.nullable().default(null),
+  size: z.number().int().min(0).max(5_000_000_000),
+  contentType: z.string().trim().max(150).default('application/octet-stream'),
+}).strict()
 
 export type AdminDependencies = {
   verifyToken?: FirebaseTokenVerifier
@@ -50,6 +72,7 @@ export type AdminDependencies = {
   databaseFetch?: FirebaseDatabaseFetch
   now?: () => number
   generateId?: () => string
+  archiveStorage?: ArchiveStorage
 }
 
 export function createAdminRoutes(dependencies: AdminDependencies = {}) {
@@ -179,7 +202,165 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     })
   })
 
+  routes.get('/archives/files', context => withArchiveAuthority(
+    context,
+    dependencies,
+    async database => context.json({
+      success: true,
+      data: {
+        files: (await listArchiveFiles(database)).map(publicArchiveFile),
+      },
+    }),
+  ))
+
+  routes.post('/archives/files/upload-url', async context => {
+    const body = archiveUploadSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+
+    return withArchiveAuthority(context, dependencies, async database => {
+      let file: AdminArchiveFile | null = null
+      try {
+        file = await createPendingArchiveFile({
+          database,
+          fileId: generateId(),
+          folderId: body.data.folderId,
+          name: body.data.name,
+          contentType: body.data.contentType,
+          declaredSize: body.data.size,
+          userUid: context.get('firebaseUser').uid,
+          timestamp: now(),
+        })
+        const signed = await archiveStorage(context, dependencies, now)
+          .createUploadUrl(file.objectKey)
+        return context.json({
+          success: true,
+          data: {
+            file: publicArchiveFile(file),
+            uploadUrl: signed.url,
+            expiresAt: signed.expiresAt,
+          },
+        }, 201)
+      } catch (error) {
+        if (file) {
+          try { await deleteArchiveFileMetadata(database, file.id) } catch { /* database handler reports failures */ }
+        }
+        return archiveOperationError(context, error)
+      }
+    })
+  })
+
+  routes.post('/archives/files/:fileId/complete', context => {
+    const fileId = archiveFileIdSchema.safeParse(context.req.param('fileId'))
+    if (!fileId.success) return validationError(context)
+
+    return withArchiveAuthority(context, dependencies, async database => {
+      try {
+        const file = await getArchiveFile(database, fileId.data)
+        if (!file) throw archiveFileNotFound()
+        if (file.status === 'ready') {
+          return context.json({ success: true, data: { file: publicArchiveFile(file) } })
+        }
+        const stored = await archiveStorage(context, dependencies, now)
+          .inspectObject(file.objectKey)
+        if (stored.size !== file.size) {
+          throw new AdminArchiveError(
+            'ARCHIVE_UPLOAD_SIZE_MISMATCH',
+            'The uploaded file size does not match the selected file.',
+            409,
+          )
+        }
+        const completed = await completeArchiveFile({
+          database,
+          file,
+          size: stored.size,
+          contentType: stored.contentType || file.contentType,
+          timestamp: now(),
+        })
+        return context.json({
+          success: true,
+          data: { file: publicArchiveFile(completed) },
+        })
+      } catch (error) {
+        return archiveOperationError(context, error)
+      }
+    })
+  })
+
+  routes.get('/archives/files/:fileId/download-url', context => {
+    const fileId = archiveFileIdSchema.safeParse(context.req.param('fileId'))
+    if (!fileId.success) return validationError(context)
+
+    return withArchiveAuthority(context, dependencies, async database => {
+      try {
+        const file = await getArchiveFile(database, fileId.data)
+        if (!file) throw archiveFileNotFound()
+        if (file.status !== 'ready') {
+          throw new AdminArchiveError(
+            'ARCHIVE_FILE_NOT_READY',
+            'This archive file has not finished uploading.',
+            409,
+          )
+        }
+        const signed = await archiveStorage(context, dependencies, now)
+          .createDownloadUrl(file.objectKey, file.name)
+        return context.json({
+          success: true,
+          data: { downloadUrl: signed.url, expiresAt: signed.expiresAt },
+        })
+      } catch (error) {
+        return archiveOperationError(context, error)
+      }
+    })
+  })
+
+  routes.delete('/archives/files/:fileId', context => {
+    const fileId = archiveFileIdSchema.safeParse(context.req.param('fileId'))
+    if (!fileId.success) return validationError(context)
+
+    return withArchiveAuthority(context, dependencies, async database => {
+      try {
+        const file = await getArchiveFile(database, fileId.data)
+        if (!file) throw archiveFileNotFound()
+        await archiveStorage(context, dependencies, now).deleteObject(file.objectKey)
+        await deleteArchiveFileMetadata(database, file.id)
+        return context.json({ success: true, data: { deleted: true } })
+      } catch (error) {
+        return archiveOperationError(context, error)
+      }
+    })
+  })
+
   return routes
+}
+
+function archiveStorage(
+  context: Context<AppEnv>,
+  dependencies: AdminDependencies,
+  now: () => number,
+) {
+  return dependencies.archiveStorage ?? createBackblazeArchiveStorage(context.env, now)
+}
+
+function publicArchiveFile(file: AdminArchiveFile) {
+  return {
+    id: file.id,
+    folderId: file.folderId,
+    name: file.name,
+    size: file.size,
+    contentType: file.contentType,
+    status: file.status,
+    createdAt: file.createdAt,
+    createdByUid: file.createdByUid,
+    updatedAt: file.updatedAt,
+  }
+}
+
+function archiveFileNotFound() {
+  return new AdminArchiveError(
+    'ARCHIVE_FILE_NOT_FOUND',
+    'The archive file no longer exists.',
+    404,
+  )
 }
 
 async function withArchiveAuthority(
@@ -265,6 +446,24 @@ function archiveError(context: Context<AppEnv>, error: unknown) {
       success: false,
       error: { code: error.code, message: error.message },
     }, error.status)
+  }
+  throw error
+}
+
+function archiveOperationError(context: Context<AppEnv>, error: unknown) {
+  if (error instanceof AdminArchiveError) return archiveError(context, error)
+  if (error instanceof ArchiveStorageError) {
+    console.error('Archive storage operation failed:', error.code)
+    const configurationFailure = error.code.startsWith('ARCHIVE_STORAGE_CONFIGURATION')
+    return context.json({
+      success: false,
+      error: {
+        code: error.code,
+        message: configurationFailure
+          ? 'Archive storage is not configured.'
+          : 'Archive storage is temporarily unavailable.',
+      },
+    }, configurationFailure ? 503 : 502)
   }
   throw error
 }

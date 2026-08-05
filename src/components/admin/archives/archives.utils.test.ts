@@ -7,7 +7,7 @@ import {
   foldersInArchiveLocation,
   formatArchiveBytes,
 } from './archives.utils';
-import type { ArchiveFolder, TemporaryArchiveFile } from './archives.types';
+import type { ArchiveFile, ArchiveFolder } from './archives.types';
 
 const folders: ArchiveFolder[] = [
   { id: 'minutes', name: 'Minutes', parentId: 'leadership', createdAt: 3, createdByUid: 'admin', updatedAt: 3 },
@@ -31,17 +31,16 @@ describe('LInC Archives hierarchy utilities', () => {
     expect(archiveBreadcrumbs(folders, null)).toEqual([]);
   });
 
-  it('filters folders and temporary files to the current location', () => {
+  it('filters folders and stored files to the current location', () => {
     expect(foldersInArchiveLocation(folders, 'leadership').map(folder => folder.id)).toEqual([
       'board',
       'minutes',
     ]);
-    const file = new File(['minutes'], 'minutes.pdf', { type: 'application/pdf' });
-    const temporaryFiles: TemporaryArchiveFile[] = [
-      { id: 'one', folderId: 'minutes', file, addedAt: 1 },
-      { id: 'two', folderId: null, file, addedAt: 2 },
+    const storedFiles: ArchiveFile[] = [
+      { id: 'one', folderId: 'minutes', name: 'minutes.pdf', size: 7, contentType: 'application/pdf', status: 'ready', createdAt: 1, createdByUid: 'admin', updatedAt: 1 },
+      { id: 'two', folderId: null, name: 'root.pdf', size: 4, contentType: 'application/pdf', status: 'ready', createdAt: 2, createdByUid: 'admin', updatedAt: 2 },
     ];
-    expect(filesInArchiveLocation(temporaryFiles, 'minutes').map(item => item.id)).toEqual(['one']);
+    expect(filesInArchiveLocation(storedFiles, 'minutes').map(item => item.id)).toEqual(['one']);
   });
 
   it('formats file sizes for archive rows', () => {

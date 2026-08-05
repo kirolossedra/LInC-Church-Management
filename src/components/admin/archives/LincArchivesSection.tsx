@@ -19,7 +19,7 @@ import { useMemo, useRef, useState, type DragEvent } from 'react';
 
 import ArchiveFolderTree from './ArchiveFolderTree';
 import { buildArchiveTree, formatArchiveBytes } from './archives.utils';
-import type { TemporaryArchiveFile } from './archives.types';
+import type { ArchiveFile } from './archives.types';
 import { useLincArchives } from './useLincArchives';
 
 export default function LincArchivesSection() {
@@ -48,7 +48,7 @@ export default function LincArchivesSection() {
   };
 
   const acceptFiles = (files: FileList | null) => {
-    archive.addTemporaryFiles(Array.from(files ?? []));
+    void archive.addFiles(Array.from(files ?? []));
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -84,7 +84,7 @@ export default function LincArchivesSection() {
           </div>
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <ArchiveMetric value={archive.folders.length} label="Folders" />
-            <ArchiveMetric value={archive.temporaryFiles.length} label="Session files" />
+            <ArchiveMetric value={archive.files.length} label="Stored files" />
             <ArchiveMetric value={archive.breadcrumbs.length} label="Depth" />
           </div>
         </div>
@@ -96,7 +96,7 @@ export default function LincArchivesSection() {
             <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-white/35">Folder map</p>
             <button
               type="button"
-              onClick={() => void archive.refreshFolders()}
+              onClick={() => void archive.refreshArchive()}
               disabled={archive.loading}
               className="grid h-9 w-9 place-items-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
               aria-label="Refresh archive folders"
@@ -191,7 +191,7 @@ export default function LincArchivesSection() {
             <div className={archive.visibleFolders.length > 0 ? 'mt-7' : ''}>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-stone-400">Files in this location</p>
-                <span className="rounded-full bg-[#e9dfd0] px-3 py-1 text-[10px] font-extrabold uppercase tracking-wide text-[#761b1b]">Temporary session</span>
+                <span className="rounded-full bg-[#e9dfd0] px-3 py-1 text-[10px] font-extrabold uppercase tracking-wide text-[#761b1b]">Private Backblaze storage</span>
               </div>
 
               <div
@@ -208,11 +208,11 @@ export default function LincArchivesSection() {
                 }`}
               >
                 {archive.visibleFiles.length === 0 ? (
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className="grid min-h-52 w-full place-items-center rounded-[1.3rem] text-center transition hover:bg-white/65">
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={archive.uploading} className="grid min-h-52 w-full place-items-center rounded-[1.3rem] text-center transition hover:bg-white/65 disabled:cursor-wait disabled:opacity-60">
                     <span>
-                      <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#761b1b] text-white shadow-[0_14px_30px_rgba(118,27,27,0.2)]"><UploadCloud size={27} /></span>
-                      <span className="mt-5 block font-serif text-2xl font-semibold text-[#5f1919]">Bring files into this folder</span>
-                      <span className="mt-2 block text-sm text-stone-500">Choose files or place them anywhere in this workspace.</span>
+                      <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#761b1b] text-white shadow-[0_14px_30px_rgba(118,27,27,0.2)]">{archive.uploading ? <Loader2 size={27} className="animate-spin" /> : <UploadCloud size={27} />}</span>
+                      <span className="mt-5 block font-serif text-2xl font-semibold text-[#5f1919]">{archive.uploading ? 'Uploading securely' : 'Bring files into this folder'}</span>
+                      <span className="mt-2 block text-sm text-stone-500">{archive.uploading ? 'The file is being verified before it appears.' : 'Choose files or place them anywhere in this workspace.'}</span>
                     </span>
                   </button>
                 ) : (
@@ -220,13 +220,17 @@ export default function LincArchivesSection() {
                     {archive.visibleFiles.map(file => (
                       <ArchiveFileRow
                         key={file.id}
-                        temporaryFile={file}
-                        onDownload={() => archive.downloadTemporaryFile(file)}
-                        onRemove={() => archive.removeTemporaryFile(file.id)}
+                        archiveFile={file}
+                        onDownload={() => void archive.downloadFile(file)}
+                        onRemove={() => {
+                          if (window.confirm(`Remove “${file.name}” from LInC archives?`)) {
+                            void archive.removeFile(file.id);
+                          }
+                        }}
                       />
                     ))}
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-[#761b1b]/15 bg-white text-xs font-extrabold text-[#761b1b] transition hover:bg-[#f8eeee]">
-                      <HardDriveUpload size={16} /> Add more files
+                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={archive.uploading} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-[#761b1b]/15 bg-white text-xs font-extrabold text-[#761b1b] transition hover:bg-[#f8eeee] disabled:cursor-wait disabled:opacity-60">
+                      {archive.uploading ? <Loader2 size={16} className="animate-spin" /> : <HardDriveUpload size={16} />} {archive.uploading ? 'Uploading securely' : 'Add more files'}
                     </button>
                   </div>
                 )}
@@ -234,6 +238,7 @@ export default function LincArchivesSection() {
                   ref={fileInputRef}
                   type="file"
                   multiple
+                  disabled={archive.uploading}
                   onChange={event => { acceptFiles(event.target.files); event.target.value = ''; }}
                   className="hidden"
                 />
@@ -300,15 +305,15 @@ function ArchiveMetric({ value, label }: { value: number; label: string }) {
 }
 
 function ArchiveFileRow({
-  temporaryFile,
+  archiveFile,
   onDownload,
   onRemove,
 }: {
-  temporaryFile: TemporaryArchiveFile;
+  archiveFile: ArchiveFile;
   onDownload: () => void;
   onRemove: () => void;
 }) {
-  const type = temporaryFile.file.type;
+  const type = archiveFile.contentType;
   const FileIcon = type.startsWith('image/')
     ? FileImage
     : type.includes('pdf') || type.startsWith('text/')
@@ -319,11 +324,11 @@ function ArchiveFileRow({
     <article className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-3 shadow-sm sm:px-4">
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#f8eeee] text-[#8b1e1e]"><FileIcon size={20} /></span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-extrabold text-stone-800">{temporaryFile.file.name}</span>
-        <span className="mt-1 block text-[11px] font-semibold text-stone-400">{formatArchiveBytes(temporaryFile.file.size)} · available this session</span>
+        <span className="block truncate text-sm font-extrabold text-stone-800">{archiveFile.name}</span>
+        <span className="mt-1 block text-[11px] font-semibold text-stone-400">{formatArchiveBytes(archiveFile.size)} · {archiveFile.status === 'ready' ? 'stored privately' : 'upload incomplete'}</span>
       </span>
-      <button type="button" onClick={onDownload} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-500 transition hover:bg-[#f8eeee] hover:text-[#8b1e1e]" aria-label={`Download ${temporaryFile.file.name}`}><Download size={17} /></button>
-      <button type="button" onClick={onRemove} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-700" aria-label={`Remove ${temporaryFile.file.name}`}><Trash2 size={16} /></button>
+      <button type="button" onClick={onDownload} disabled={archiveFile.status !== 'ready'} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-500 transition hover:bg-[#f8eeee] hover:text-[#8b1e1e] disabled:cursor-not-allowed disabled:opacity-30" aria-label={`Download ${archiveFile.name}`}><Download size={17} /></button>
+      <button type="button" onClick={onRemove} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-700" aria-label={`Remove ${archiveFile.name}`}><Trash2 size={16} /></button>
     </article>
   );
 }

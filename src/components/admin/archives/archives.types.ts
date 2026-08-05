@@ -11,9 +11,14 @@ export interface ArchiveFolderNode extends ArchiveFolder {
   children: ArchiveFolderNode[];
 }
 
-export interface TemporaryArchiveFile {
+export interface ArchiveFile {
   id: string;
   folderId: string | null;
-  file: File;
-  addedAt: number;
+  name: string;
+  size: number;
+  contentType: string;
+  status: 'pending' | 'ready';
+  createdAt: number;
+  createdByUid: string;
+  updatedAt: number;
 }

@@ -1,2 +1,2 @@
 export { default as LincArchivesSection } from './LincArchivesSection';
-export type { ArchiveFolder, TemporaryArchiveFile } from './archives.types';
+export type { ArchiveFile, ArchiveFolder } from './archives.types';
