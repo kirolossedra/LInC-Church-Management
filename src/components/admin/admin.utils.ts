@@ -29,6 +29,7 @@ export function normalizeAdminAuthority(value: unknown): AdminAuthority {
     manageAssessmentForms: record.manageAssessmentForms === true,
     manageCarousel: record.manageCarousel === true,
     manageAttendance: record.manageAttendance === true,
+    manageArchives: record.manageArchives === true,
   };
 }
 

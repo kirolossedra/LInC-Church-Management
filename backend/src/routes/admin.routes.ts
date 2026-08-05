@@ -9,6 +9,13 @@ import {
   normalizeAdminAccount,
   type AdminAccount,
 } from '../admin/adminAuthorization'
+import {
+  AdminArchiveError,
+  createArchiveFolder,
+  deleteArchiveFolder,
+  listArchiveFolders,
+} from '../admin/adminArchives'
+import { requireAdminAuthority } from '../admin/adminAuthorization'
 import { createFirebaseAuthMiddleware, type FirebaseTokenVerifier } from '../security/firebaseAuth'
 import { getFirebaseServiceAccountAccessToken } from '../security/firebaseServiceAccount'
 import { isPastorUser } from '../security/pastorAuthorization'
@@ -23,21 +30,32 @@ const authoritySchema = z.object({
   manageAssessmentForms: z.boolean(),
   manageCarousel: z.boolean(),
   manageAttendance: z.boolean(),
+  manageArchives: z.boolean(),
 }).strict().refine(value => Object.values(value).some(Boolean), {
   message: 'At least one administrator authority is required.',
 })
 const uidSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,128}$/)
+const archiveFolderIdSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,128}$/)
+const archiveFolderSchema = z.object({
+  name: z.string().trim().min(1).max(80).refine(
+    value => value !== '.' && value !== '..' && !/[\\/]/.test(value),
+    'Folder names cannot contain slashes.',
+  ),
+  parentId: archiveFolderIdSchema.nullable().default(null),
+}).strict()
 
 export type AdminDependencies = {
   verifyToken?: FirebaseTokenVerifier
   getAccessToken?: (bindings: FirebaseBindings) => Promise<string>
   databaseFetch?: FirebaseDatabaseFetch
   now?: () => number
+  generateId?: () => string
 }
 
 export function createAdminRoutes(dependencies: AdminDependencies = {}) {
   const routes = new Hono<AppEnv>()
   const now = dependencies.now ?? Date.now
+  const generateId = dependencies.generateId ?? (() => crypto.randomUUID())
   routes.use('*', createFirebaseAuthMiddleware(dependencies.verifyToken))
 
   routes.get('/session', context => withDatabase(context, dependencies, async database => {
@@ -117,7 +135,76 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     })
   })
 
+  routes.get('/archives/folders', context => withArchiveAuthority(
+    context,
+    dependencies,
+    async database => context.json({
+      success: true,
+      data: { folders: await listArchiveFolders(database) },
+    }),
+  ))
+
+  routes.post('/archives/folders', async context => {
+    const body = archiveFolderSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+
+    return withArchiveAuthority(context, dependencies, async database => {
+      try {
+        const folder = await createArchiveFolder({
+          database,
+          id: generateId(),
+          name: body.data.name,
+          parentId: body.data.parentId,
+          userUid: context.get('firebaseUser').uid,
+          timestamp: now(),
+        })
+        return context.json({ success: true, data: { folder } }, 201)
+      } catch (error) {
+        return archiveError(context, error)
+      }
+    })
+  })
+
+  routes.delete('/archives/folders/:folderId', context => {
+    const folderId = archiveFolderIdSchema.safeParse(context.req.param('folderId'))
+    if (!folderId.success) return validationError(context)
+
+    return withArchiveAuthority(context, dependencies, async database => {
+      try {
+        await deleteArchiveFolder(database, folderId.data)
+        return context.json({ success: true, data: { deleted: true } })
+      } catch (error) {
+        return archiveError(context, error)
+      }
+    })
+  })
+
   return routes
+}
+
+async function withArchiveAuthority(
+  context: Context<AppEnv>,
+  dependencies: AdminDependencies,
+  operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>,
+) {
+  return withDatabase(context, dependencies, async database => {
+    context.header('Cache-Control', 'private, no-store, max-age=0')
+    const { allowed } = await requireAdminAuthority(
+      database,
+      context.get('firebaseUser'),
+      'manageArchives',
+    )
+    if (!allowed) {
+      return context.json({
+        success: false,
+        error: {
+          code: 'ADMIN_ARCHIVES_ACCESS_REQUIRED',
+          message: 'LInC Archives administrator authority is required.',
+        },
+      }, 403)
+    }
+    return operation(database)
+  })
 }
 
 async function withChief(
@@ -172,3 +259,12 @@ function notFound(context: Context<AppEnv>) {
   return context.json({ success: false, error: { code: 'ADMIN_NOT_FOUND', message: 'The administrator account was not found.' } }, 404)
 }
 
+function archiveError(context: Context<AppEnv>, error: unknown) {
+  if (error instanceof AdminArchiveError) {
+    return context.json({
+      success: false,
+      error: { code: error.code, message: error.message },
+    }, error.status)
+  }
+  throw error
+}

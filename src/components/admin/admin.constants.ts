@@ -15,12 +15,14 @@ export const EMPTY_ADMIN_AUTHORITY: AdminAuthority = {
   manageAssessmentForms: false,
   manageCarousel: false,
   manageAttendance: false,
+  manageArchives: false,
 };
 
 export const FULL_ADMIN_AUTHORITY: AdminAuthority = {
   manageAssessmentForms: true,
   manageCarousel: true,
   manageAttendance: true,
+  manageArchives: true,
 };
 
 export const ASSESSMENT_FORM_DEFINITIONS = [

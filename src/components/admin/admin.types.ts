@@ -53,6 +53,7 @@ export interface AdminAuthority {
   manageAssessmentForms: boolean;
   manageCarousel: boolean;
   manageAttendance: boolean;
+  manageArchives: boolean;
 }
 
 export interface AdminAccount {

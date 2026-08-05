@@ -3,3 +3,10 @@ export { AssessmentFormsSection } from './AssessmentFormsSection';
 export { AssessmentUserLinkageSection } from './AssessmentUserLinkageSection';
 export { CarouselManagementSection } from './CarouselManagementSection';
 export { AttendanceAdminSection, NoAuthorityCard } from './AdminUtilitySections';
+export {
+  AdminAreaNavigation,
+  AdminCommandHeader,
+  AdminOverview,
+  type AdminArea,
+  type AdminSectionId,
+} from './AdminCommandCenter';

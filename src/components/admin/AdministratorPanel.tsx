@@ -1,16 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LogOut, X } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  Archive,
+  BarChart3,
+  ClipboardCheck,
+  GalleryHorizontalEnd,
+  LayoutDashboard,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import { get, onValue, ref, set, update } from 'firebase/database';
 import { database } from '../../firebase';
 import { useAdministratorAccess } from './hooks';
 import {
   AdminHierarchySection,
+  AdminAreaNavigation,
+  AdminCommandHeader,
+  AdminOverview,
   AssessmentFormsSection,
   AssessmentUserLinkageSection,
   AttendanceAdminSection,
   CarouselManagementSection,
-  NoAuthorityCard,
+  type AdminArea,
+  type AdminSectionId,
 } from './components';
+import { LincArchivesSection } from './archives';
 import {
   AdminApprovalScreen,
   AdminLoadingScreen,
@@ -41,6 +55,8 @@ import {
 } from '../../services/assessment';
 
 export default function AdministratorPanel() {
+  const prefersReducedMotion = useReducedMotion();
+  const [activeSection, setActiveSection] = useState<AdminSectionId>('overview');
   const [carouselEnabled, setCarouselEnabled] = useState(true);
   const [photos, setPhotos] = useState<CarouselPhoto[]>([]);
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
@@ -83,6 +99,7 @@ export default function AdministratorPanel() {
     canManageAssessmentForms,
     canManageCarousel,
     canManageAttendance,
+    canManageArchives,
     sortedAdminAccounts,
     handleLogin,
     handleLogout,
@@ -97,6 +114,7 @@ export default function AdministratorPanel() {
       setPendingUploads([]);
       setAssessmentFormStates({});
       setSavingAssessmentFormId(null);
+      setActiveSection('overview');
     },
   });
 
@@ -113,16 +131,63 @@ export default function AdministratorPanel() {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   }, [totalStoredSize]);
 
-  useEffect(() => {
-    if (!canManageCarousel) {
-      setLoadingSettings(false);
-      setPhotos([]);
-      setPendingUploads([]);
-      return;
-    }
+  const adminAreas = useMemo<AdminArea[]>(() => [
+    {
+      id: 'overview',
+      label: 'Overview',
+      eyebrow: 'Command center',
+      description: 'See every administration area available to this account.',
+      icon: LayoutDashboard,
+      accent: 'bg-[#e8d9c7] text-[#5f1919]',
+    },
+    ...(isChief ? [{
+      id: 'hierarchy' as const,
+      label: 'Administrators',
+      eyebrow: 'Chief controls',
+      description: 'Allocate authority and manage the administrator hierarchy.',
+      icon: UsersRound,
+      accent: 'bg-[#f2a900] text-[#2b1805]',
+    }] : []),
+    ...(canManageAssessmentForms ? [{
+      id: 'assessment' as const,
+      label: 'Spiritual Program',
+      eyebrow: 'Assessment operations',
+      description: 'Control forms and connect assessment responses to people.',
+      icon: ClipboardCheck,
+      accent: 'bg-[#761b1b] text-white',
+    }] : []),
+    ...(canManageCarousel ? [{
+      id: 'carousel' as const,
+      label: 'Landing Media',
+      eyebrow: 'Public experience',
+      description: 'Curate the visual story presented on the LINC One landing page.',
+      icon: GalleryHorizontalEnd,
+      accent: 'bg-[#d9c5aa] text-[#5f1919]',
+    }] : []),
+    ...(canManageAttendance ? [{
+      id: 'attendance' as const,
+      label: 'Attendance',
+      eyebrow: 'People operations',
+      description: 'Record participation and understand ministry attendance patterns.',
+      icon: BarChart3,
+      accent: 'bg-[#265a52] text-white',
+    }] : []),
+    ...(canManageArchives ? [{
+      id: 'archives' as const,
+      label: 'LInC Archives',
+      eyebrow: 'Institutional memory',
+      description: 'Build a navigable home for ministry records, files, and resources.',
+      icon: Archive,
+      accent: 'bg-[#1b1010] text-white',
+    }] : []),
+  ], [canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, isChief]);
 
-    setLoadingSettings(true);
-    setErrorMessage('');
+  const visibleActiveSection = adminAreas.some(area => area.id === activeSection)
+    ? activeSection
+    : 'overview';
+
+  useEffect(() => {
+    if (!canManageCarousel) return;
 
     const carouselRef = ref(database, CAROUSEL_PATH);
 
@@ -151,13 +216,7 @@ export default function AdministratorPanel() {
   }, [canManageCarousel]);
 
   useEffect(() => {
-    if (!canManageAssessmentForms) {
-      setLoadingAssessmentForms(false);
-      setAssessmentFormStates({});
-      return;
-    }
-
-    setLoadingAssessmentForms(true);
+    if (!canManageAssessmentForms) return;
 
     void getAssessmentFormStates()
       .then(({ forms }) => setAssessmentFormStates(forms))
@@ -538,55 +597,23 @@ export default function AdministratorPanel() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f4f0] text-stone-900">
-      <header className="border-b border-[#8b1e1e]/10 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div>
-            <p className="mb-1 text-xs font-extrabold uppercase tracking-[0.22em] text-[#8b1e1e]/55">
-              LINC Administration
-            </p>
-            <h1 className="text-3xl font-extrabold text-[#641414]">
-              Administrator Panel
-            </h1>
-            <p className="mt-1 text-sm text-stone-500">
-              Manage landing-page content, assessment forms, and attendance operations.
-            </p>
-          </div>
+    <div className="min-h-screen overflow-x-hidden bg-[#f2ede4] text-stone-900">
+      <AdminCommandHeader
+        isChief={isChief}
+        email={adminAccount?.email || authUser.email || 'Unknown email'}
+        areaCount={Math.max(0, adminAreas.length - 1)}
+        onLogout={handleLogout}
+      />
+      <AdminAreaNavigation
+        areas={adminAreas}
+        activeSection={visibleActiveSection}
+        onSelect={setActiveSection}
+      />
 
-          <div className="flex flex-col gap-3 sm:items-end">
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-2.5 sm:text-right">
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-extrabold ${
-                    isChief
-                      ? 'bg-amber-100 text-amber-900'
-                      : 'bg-[#f8eeee] text-[#8b1e1e]'
-                  }`}
-                >
-                  {isChief ? 'Chief' : 'Administrator'}
-                </span>
-                <span className="break-all text-sm font-bold text-stone-700">
-                  {adminAccount?.email || authUser.email}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border-2 border-[#8b1e1e]/20 bg-white px-5 text-sm font-bold text-[#8b1e1e] transition hover:bg-[#f8eeee]"
-            >
-              <LogOut size={17} />
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl space-y-6 px-5 py-7 sm:px-6 sm:py-10">
+      <main className="mx-auto max-w-7xl px-5 pb-16 pt-12 sm:px-8 sm:pb-24 sm:pt-16">
         {(statusMessage || errorMessage) && (
           <div
-            className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 ${
+            className={`mb-7 flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 shadow-sm ${
               errorMessage
                 ? 'border-red-200 bg-red-50 text-red-800'
                 : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -606,61 +633,69 @@ export default function AdministratorPanel() {
             </button>
           </div>
         )}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={visibleActiveSection}
+            initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -10 }}
+            transition={{ duration: prefersReducedMotion ? 0.12 : 0.36, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {visibleActiveSection === 'overview' && (
+              <AdminOverview areas={adminAreas} onSelect={setActiveSection} />
+            )}
 
-        {isChief && (
-          <AdminHierarchySection
-            chiefEmail={adminAccount?.email || authUser.email || 'Unknown email'}
-            sortedAdminAccounts={sortedAdminAccounts}
-            authorityDrafts={authorityDrafts}
-            savingAdminUid={savingAdminUid}
-            updateAuthorityDraft={updateAuthorityDraft}
-            handleSaveAdminAuthority={handleSaveAdminAuthority}
-            handleSuspendAdmin={handleSuspendAdmin}
-          />
-        )}
+            {visibleActiveSection === 'hierarchy' && isChief && (
+              <AdminHierarchySection
+                chiefEmail={adminAccount?.email || authUser.email || 'Unknown email'}
+                sortedAdminAccounts={sortedAdminAccounts}
+                authorityDrafts={authorityDrafts}
+                savingAdminUid={savingAdminUid}
+                updateAuthorityDraft={updateAuthorityDraft}
+                handleSaveAdminAuthority={handleSaveAdminAuthority}
+                handleSuspendAdmin={handleSuspendAdmin}
+              />
+            )}
 
-        {!isChief &&
-          !canManageAssessmentForms &&
-          !canManageCarousel &&
-          !canManageAttendance && <NoAuthorityCard />}
+            {visibleActiveSection === 'assessment' && canManageAssessmentForms && (
+              <div className="space-y-6">
+                <AssessmentFormsSection
+                  loadingAssessmentForms={loadingAssessmentForms}
+                  assessmentFormStates={assessmentFormStates}
+                  savingAssessmentFormId={savingAssessmentFormId}
+                  handleAssessmentFormStateChange={handleAssessmentFormStateChange}
+                />
+                <AssessmentUserLinkageSection />
+              </div>
+            )}
 
-        {canManageAssessmentForms && (
-          <>
-            <AssessmentFormsSection
-              loadingAssessmentForms={loadingAssessmentForms}
-              assessmentFormStates={assessmentFormStates}
-              savingAssessmentFormId={savingAssessmentFormId}
-              handleAssessmentFormStateChange={handleAssessmentFormStateChange}
-            />
-            <AssessmentUserLinkageSection />
-          </>
-        )}
+            {visibleActiveSection === 'carousel' && canManageCarousel && (
+              <CarouselManagementSection
+                carouselEnabled={carouselEnabled}
+                loadingSettings={loadingSettings}
+                savingVisibility={savingVisibility}
+                handleVisibilityChange={handleVisibilityChange}
+                pendingUploads={pendingUploads}
+                photos={photos}
+                formattedStoredSize={formattedStoredSize}
+                fileInputRef={fileInputRef}
+                handleFilesSelected={handleFilesSelected}
+                removePendingUpload={removePendingUpload}
+                updatePendingUpload={updatePendingUpload}
+                uploadPendingPhotos={uploadPendingPhotos}
+                savingPhotos={savingPhotos}
+                updateStoredPhotoText={updateStoredPhotoText}
+                saveStoredPhotoText={saveStoredPhotoText}
+                movePhoto={movePhoto}
+                deletePhoto={deletePhoto}
+                deletingPhotoId={deletingPhotoId}
+              />
+            )}
 
-        {canManageCarousel && (
-          <CarouselManagementSection
-            carouselEnabled={carouselEnabled}
-            loadingSettings={loadingSettings}
-            savingVisibility={savingVisibility}
-            handleVisibilityChange={handleVisibilityChange}
-            pendingUploads={pendingUploads}
-            photos={photos}
-            formattedStoredSize={formattedStoredSize}
-            fileInputRef={fileInputRef}
-            handleFilesSelected={handleFilesSelected}
-            removePendingUpload={removePendingUpload}
-            updatePendingUpload={updatePendingUpload}
-            uploadPendingPhotos={uploadPendingPhotos}
-            savingPhotos={savingPhotos}
-            updateStoredPhotoText={updateStoredPhotoText}
-            saveStoredPhotoText={saveStoredPhotoText}
-            movePhoto={movePhoto}
-            deletePhoto={deletePhoto}
-            deletingPhotoId={deletingPhotoId}
-          />
-        )}
-
-        {canManageAttendance && <AttendanceAdminSection />}
-
+            {visibleActiveSection === 'attendance' && canManageAttendance && <AttendanceAdminSection />}
+            {visibleActiveSection === 'archives' && canManageArchives && <LincArchivesSection />}
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   );

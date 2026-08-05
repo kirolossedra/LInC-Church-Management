@@ -110,6 +110,7 @@ describe('Administrator routes', () => {
     expect(response.status).toBe(200)
     expect(body.data.account.role).toBe('chief')
     expect(body.data.account.authority.manageAssessmentForms).toBe(true)
+    expect(body.data.account.authority.manageArchives).toBe(true)
   })
 
   it('denies authority allocation to a non-chief administrator', async () => {
@@ -124,9 +125,154 @@ describe('Administrator routes', () => {
     const response = await app.request(authenticatedRequest(
       '/api/v1/admin/users/target-uid/authority',
       'PATCH',
-      { manageAssessmentForms: true, manageCarousel: false, manageAttendance: false },
+      {
+        manageAssessmentForms: true,
+        manageCarousel: false,
+        manageAttendance: false,
+        manageArchives: false,
+      },
     ), undefined, bindings)
     expect(response.status).toBe(403)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('denies LInC Archives to an administrator without archive authority', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      uid: administrator.uid,
+      email: administrator.email,
+      role: 'administrator',
+      status: 'active',
+      authority: { manageArchives: false },
+    }))
+    const app = createTestApp(fetchMock)
+    const response = await app.request(
+      authenticatedRequest('/api/v1/admin/archives/folders'),
+      undefined,
+      bindings,
+    )
+    const body = await response.json() as { error: { code: string } }
+    expect(response.status).toBe(403)
+    expect(body.error.code).toBe('ADMIN_ARCHIVES_ACCESS_REQUIRED')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists normalized archive folders for an allocated administrator', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageArchives: true },
+        }))
+      }
+      if (url.endsWith('/administration/archives/folders.json')) {
+        return Promise.resolve(jsonResponse({
+          child: { name: 'Children', parentId: 'root-folder', createdAt: 20 },
+          invalid: { parentId: null },
+          'root-folder': { name: 'Administration', parentId: null, createdAt: 10 },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(fetchMock)
+    const response = await app.request(
+      authenticatedRequest('/api/v1/admin/archives/folders'),
+      undefined,
+      bindings,
+    )
+    const body = await response.json() as {
+      data: { folders: Array<{ id: string; name: string; parentId: string | null }> }
+    }
+    expect(response.status).toBe(200)
+    expect(body.data.folders).toEqual([
+      expect.objectContaining({ id: 'root-folder', name: 'Administration', parentId: null }),
+      expect.objectContaining({ id: 'child', name: 'Children', parentId: 'root-folder' }),
+    ])
+  })
+
+  it('creates a nested archive folder with server-owned metadata', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageArchives: true },
+        }))
+      }
+      if (url.endsWith('/administration/archives/folders.json')) {
+        return Promise.resolve(jsonResponse({
+          parent: { name: 'Leadership', parentId: null },
+        }))
+      }
+      if (init?.method === 'PATCH' && url.endsWith('/administration/archives/folders/folder-1.json')) {
+        return Promise.resolve(jsonResponse({}))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createApp({
+      admin: {
+        verifyToken: vi.fn().mockResolvedValue(administrator),
+        getAccessToken: vi.fn().mockResolvedValue('server-token'),
+        databaseFetch: fetchMock as unknown as typeof fetch,
+        now: () => 1_777_777_777_000,
+        generateId: () => 'folder-1',
+      },
+    })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/archives/folders',
+      'POST',
+      { name: '  Board Minutes  ', parentId: 'parent' },
+    ), undefined, bindings)
+    const body = await response.json() as {
+      data: { folder: { id: string; name: string; parentId: string | null; createdByUid: string } }
+    }
+    expect(response.status).toBe(201)
+    expect(body.data.folder).toMatchObject({
+      id: 'folder-1',
+      name: 'Board Minutes',
+      parentId: 'parent',
+      createdByUid: administrator.uid,
+    })
+    const patchCall = fetchMock.mock.calls.find(call =>
+      (call[1] as RequestInit | undefined)?.method === 'PATCH' &&
+      String(call[0]).endsWith('/administration/archives/folders/folder-1.json')
+    )
+    expect(patchCall).toBeDefined()
+  })
+
+  it('refuses to delete an archive folder that contains nested folders', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageArchives: true },
+        }))
+      }
+      if (url.endsWith('/administration/archives/folders.json')) {
+        return Promise.resolve(jsonResponse({
+          parent: { name: 'Leadership', parentId: null },
+          child: { name: 'Minutes', parentId: 'parent' },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(fetchMock)
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/archives/folders/parent',
+      'DELETE',
+    ), undefined, bindings)
+    const body = await response.json() as { error: { code: string } }
+    expect(response.status).toBe(409)
+    expect(body.error.code).toBe('ARCHIVE_FOLDER_NOT_EMPTY')
+    expect(fetchMock.mock.calls.some(call =>
+      (call[1] as RequestInit | undefined)?.method === 'DELETE'
+    )).toBe(false)
   })
 })

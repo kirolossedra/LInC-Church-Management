@@ -13,6 +13,8 @@ The administrator panel is organized by responsibility instead of keeping authen
 - `components/` — presentational sections for hierarchy, assessment controls, carousel management, and attendance access.
 - `attendance/` — the attendance feature boundary, including its UI, types, utilities, and responsive styles.
 
+- `archives/` — the LInC Archives workspace, hierarchy utilities, temporary file handling, and storage-provider boundary.
+
 ## Design rules
 
 1. Firebase paths and limits belong in `admin.constants.ts`.
@@ -20,3 +22,5 @@ The administrator panel is organized by responsibility instead of keeping authen
 3. Authentication and permission state belongs in `useAdministratorAccess`.
 4. Presentational sections receive data and callbacks through typed props.
 5. Attendance implementation details stay inside the `attendance/` feature folder.
+6. Archive folder metadata is persisted only through the authenticated Hono administrator API.
+7. Permanent archive file storage must remain behind the archives feature boundary; temporary browser files must never be presented as persisted uploads.

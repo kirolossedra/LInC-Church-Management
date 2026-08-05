@@ -6,11 +6,13 @@ export const EMPTY_ADMIN_AUTHORITY = {
   manageAssessmentForms: false,
   manageCarousel: false,
   manageAttendance: false,
+  manageArchives: false,
 }
 export const FULL_ADMIN_AUTHORITY = {
   manageAssessmentForms: true,
   manageCarousel: true,
   manageAttendance: true,
+  manageArchives: true,
 }
 
 export type AdminAuthority = typeof EMPTY_ADMIN_AUTHORITY
@@ -74,6 +76,7 @@ export function normalizeAdminAccount(
       manageAssessmentForms: rawAuthority.manageAssessmentForms === true,
       manageCarousel: rawAuthority.manageCarousel === true,
       manageAttendance: rawAuthority.manageAttendance === true,
+      manageArchives: rawAuthority.manageArchives === true,
     },
     firstSignedInAt: numberOrZero(record.firstSignedInAt),
     lastSignedInAt: numberOrZero(record.lastSignedInAt),
@@ -91,4 +94,3 @@ function optionalNumber(value: unknown) {
   const number = numberOrZero(value)
   return number > 0 ? number : undefined
 }
-

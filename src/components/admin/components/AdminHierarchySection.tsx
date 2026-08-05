@@ -104,7 +104,7 @@ export function AdminHierarchySection({
                   </span>
                 </div>
 
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   {(
                     [
                       {
@@ -121,6 +121,11 @@ export function AdminHierarchySection({
                         key: 'manageAttendance',
                         title: 'Attendance',
                         description: 'Manage people, attendance, and analysis.',
+                      },
+                      {
+                        key: 'manageArchives',
+                        title: 'LInC Archives',
+                        description: 'Organize folders and manage archive files.',
                       },
                     ] as const
                   ).map((authorityOption) => {
