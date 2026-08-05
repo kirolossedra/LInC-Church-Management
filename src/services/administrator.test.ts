@@ -61,4 +61,40 @@ describe('Administrator archive service', () => {
     });
     expect(fetchMock.mock.calls[2][0]).toContain('/api/v1/admin/archives/files/file-1/complete');
   });
+
+  it('preserves a successfully uploaded object when completion verification is delayed', async () => {
+    const pendingFile = {
+      id: 'file-2',
+      folderId: null,
+      name: 'photo.jpg',
+      size: 5,
+      contentType: 'image/jpeg',
+      status: 'pending' as const,
+      createdAt: 1,
+      createdByUid: 'admin',
+      updatedAt: 1,
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(apiResponse({
+        file: pendingFile,
+        uploadUrl: 'https://signed.backblaze.example/upload-2',
+        expiresAt: 301_000,
+      }, 201))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: false,
+        error: { message: 'Verification pending.' },
+      }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+
+    await expect(uploadArchiveFile(
+      new File(['photo'], 'photo.jpg', { type: 'image/jpeg' }),
+      null,
+    )).rejects.toThrow('The file reached Backblaze, but verification is pending. Use Verify upload.');
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.some(call => call[1]?.method === 'DELETE')).toBe(false);
+  });
 });

@@ -3,6 +3,7 @@ import { AwsClient } from 'aws4fetch'
 import type { BackblazeBindings } from '../types/app'
 
 const SIGNED_URL_TTL_SECONDS = 300
+const VERIFICATION_RETRY_DELAYS_MS = [250, 750, 1_500] as const
 
 export type ArchiveStoredObject = {
   size: number
@@ -19,6 +20,7 @@ export type ArchiveStorage = {
 export function createBackblazeArchiveStorage(
   bindings: BackblazeBindings,
   now: () => number = Date.now,
+  sleep: (milliseconds: number) => Promise<void> = delay,
 ): ArchiveStorage {
   const bucketName = requiredValue(bindings.B2_BUCKET_NAME, 'B2_BUCKET_NAME')
   const endpoint = normalizedEndpoint(bindings.B2_S3_ENDPOINT)
@@ -73,25 +75,35 @@ export function createBackblazeArchiveStorage(
     ),
     async inspectObject(objectKey) {
       return storageOperation(async () => {
-        const response = await client.fetch(objectUrl(objectKey), { method: 'HEAD' })
-        if (response.status === 404) {
-          throw new ArchiveStorageError(
-            'ARCHIVE_OBJECT_NOT_FOUND',
-            'The uploaded file could not be found in archive storage.',
-          )
+        for (let attempt = 0; attempt <= VERIFICATION_RETRY_DELAYS_MS.length; attempt += 1) {
+          const response = await client.fetch(objectUrl(objectKey), { method: 'HEAD' })
+          if (response.status === 404 && attempt < VERIFICATION_RETRY_DELAYS_MS.length) {
+            await sleep(VERIFICATION_RETRY_DELAYS_MS[attempt])
+            continue
+          }
+          if (response.status === 404) {
+            throw new ArchiveStorageError(
+              'ARCHIVE_OBJECT_NOT_FOUND',
+              'The uploaded file could not be found after verification retries.',
+            )
+          }
+          if (!response.ok) throw storageResponseError('inspect', response.status)
+          const size = Number(response.headers.get('content-length'))
+          if (!Number.isSafeInteger(size) || size < 0) {
+            throw new ArchiveStorageError(
+              'ARCHIVE_OBJECT_INVALID',
+              'Archive storage returned invalid file metadata.',
+            )
+          }
+          return {
+            size,
+            contentType: response.headers.get('content-type')?.trim() || 'application/octet-stream',
+          }
         }
-        if (!response.ok) throw storageResponseError('inspect', response.status)
-        const size = Number(response.headers.get('content-length'))
-        if (!Number.isSafeInteger(size) || size < 0) {
-          throw new ArchiveStorageError(
-            'ARCHIVE_OBJECT_INVALID',
-            'Archive storage returned invalid file metadata.',
-          )
-        }
-        return {
-          size,
-          contentType: response.headers.get('content-type')?.trim() || 'application/octet-stream',
-        }
+        throw new ArchiveStorageError(
+          'ARCHIVE_OBJECT_NOT_FOUND',
+          'The uploaded file could not be verified.',
+        )
       })
     },
     async deleteObject(objectKey) {
@@ -103,6 +115,10 @@ export function createBackblazeArchiveStorage(
       })
     },
   }
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, milliseconds))
 }
 
 async function storageOperation<T>(operation: () => Promise<T>) {

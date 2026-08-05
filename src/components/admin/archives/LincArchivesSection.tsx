@@ -222,6 +222,7 @@ export default function LincArchivesSection() {
                         key={file.id}
                         archiveFile={file}
                         onDownload={() => void archive.downloadFile(file)}
+                        onVerify={() => void archive.verifyFile(file.id)}
                         onRemove={() => {
                           if (window.confirm(`Remove “${file.name}” from LInC archives?`)) {
                             void archive.removeFile(file.id);
@@ -307,10 +308,12 @@ function ArchiveMetric({ value, label }: { value: number; label: string }) {
 function ArchiveFileRow({
   archiveFile,
   onDownload,
+  onVerify,
   onRemove,
 }: {
   archiveFile: ArchiveFile;
   onDownload: () => void;
+  onVerify: () => void;
   onRemove: () => void;
 }) {
   const type = archiveFile.contentType;
@@ -327,7 +330,11 @@ function ArchiveFileRow({
         <span className="block truncate text-sm font-extrabold text-stone-800">{archiveFile.name}</span>
         <span className="mt-1 block text-[11px] font-semibold text-stone-400">{formatArchiveBytes(archiveFile.size)} · {archiveFile.status === 'ready' ? 'stored privately' : 'upload incomplete'}</span>
       </span>
-      <button type="button" onClick={onDownload} disabled={archiveFile.status !== 'ready'} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-500 transition hover:bg-[#f8eeee] hover:text-[#8b1e1e] disabled:cursor-not-allowed disabled:opacity-30" aria-label={`Download ${archiveFile.name}`}><Download size={17} /></button>
+      {archiveFile.status === 'ready' ? (
+        <button type="button" onClick={onDownload} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-500 transition hover:bg-[#f8eeee] hover:text-[#8b1e1e]" aria-label={`Download ${archiveFile.name}`}><Download size={17} /></button>
+      ) : (
+        <button type="button" onClick={onVerify} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-amber-700 transition hover:bg-amber-50 hover:text-amber-900" aria-label={`Verify upload ${archiveFile.name}`} title="Verify upload"><RefreshCw size={17} /></button>
+      )}
       <button type="button" onClick={onRemove} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-400 transition hover:bg-red-50 hover:text-red-700" aria-label={`Remove ${archiveFile.name}`}><Trash2 size={16} /></button>
     </article>
   );

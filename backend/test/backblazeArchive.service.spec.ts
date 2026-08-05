@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createBackblazeArchiveStorage } from '../src/services/backblazeArchive.service'
 
@@ -9,6 +9,10 @@ const bindings = {
   B2_APPLICATION_KEY_ID: 'test-application-key-id',
   B2_APPLICATION_KEY: 'test-application-secret-key',
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('Backblaze archive storage', () => {
   it('creates a five-minute signed upload URL scoped to the archive object', async () => {
@@ -38,5 +42,24 @@ describe('Backblaze archive storage', () => {
     )
     expect(url.searchParams.get('X-Amz-Expires')).toBe('300')
     expect(result.expiresAt).toBe(305_000)
+  })
+
+  it('retries a newly uploaded object when the first HEAD request returns 404', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, {
+        status: 200,
+        headers: {
+          'Content-Length': '420',
+          'Content-Type': 'application/pdf',
+        },
+      }))
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    const storage = createBackblazeArchiveStorage(bindings, () => 1_000, sleep)
+
+    await expect(storage.inspectObject('archives/_root/file-3/report.pdf'))
+      .resolves.toEqual({ size: 420, contentType: 'application/pdf' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledWith(250)
   })
 })

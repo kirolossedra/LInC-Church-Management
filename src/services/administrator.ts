@@ -84,15 +84,24 @@ export async function uploadArchiveFile(file: File, folderId: string | null) {
     if (!uploadResponse.ok) {
       throw new Error(`Backblaze rejected the upload (HTTP ${uploadResponse.status}).`);
     }
-    const completed = await requestAdmin<{ file: ArchiveFile }>(
-      `/archives/files/${encodeURIComponent(prepared.file.id)}/complete`,
-      { method: 'POST' },
-    );
-    return completed.file;
   } catch (error) {
     try { await deleteArchiveFile(prepared.file.id); } catch { /* preserve the upload error */ }
     throw error;
   }
+
+  try {
+    return await completeArchiveFileUpload(prepared.file.id);
+  } catch {
+    throw new Error('The file reached Backblaze, but verification is pending. Use Verify upload.');
+  }
+}
+
+export async function completeArchiveFileUpload(fileId: string) {
+  const completed = await requestAdmin<{ file: ArchiveFile }>(
+    `/archives/files/${encodeURIComponent(fileId)}/complete`,
+    { method: 'POST' },
+  );
+  return completed.file;
 }
 
 export async function getArchiveFileDownloadUrl(fileId: string) {

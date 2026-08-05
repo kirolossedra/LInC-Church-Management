@@ -453,17 +453,20 @@ function archiveError(context: Context<AppEnv>, error: unknown) {
 function archiveOperationError(context: Context<AppEnv>, error: unknown) {
   if (error instanceof AdminArchiveError) return archiveError(context, error)
   if (error instanceof ArchiveStorageError) {
-    console.error('Archive storage operation failed:', error.code)
+    console.error('Archive storage operation failed:', error.code, error.message)
     const configurationFailure = error.code.startsWith('ARCHIVE_STORAGE_CONFIGURATION')
+    const verificationPending = error.code === 'ARCHIVE_OBJECT_NOT_FOUND'
     return context.json({
       success: false,
       error: {
         code: error.code,
         message: configurationFailure
           ? 'Archive storage is not configured.'
-          : 'Archive storage is temporarily unavailable.',
+          : verificationPending
+            ? 'The file reached Backblaze, but verification is still pending. Try Verify upload.'
+            : 'Archive storage is temporarily unavailable.',
       },
-    }, configurationFailure ? 503 : 502)
+    }, configurationFailure ? 503 : verificationPending ? 409 : 502)
   }
   throw error
 }

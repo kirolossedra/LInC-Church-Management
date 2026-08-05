@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  completeArchiveFileUpload,
   createArchiveFolder,
   deleteArchiveFile,
   deleteArchiveFolder,
@@ -171,6 +172,24 @@ export function useLincArchives() {
     }
   };
 
+  const verifyFile = async (fileId: string) => {
+    clearNotice();
+    setBusy(true);
+    try {
+      const verified = await completeArchiveFileUpload(fileId);
+      setFiles(current => current.map(file => file.id === fileId ? verified : file));
+      setMessage(`“${verified.name}” is verified and ready.`);
+      return true;
+    } catch (verificationError) {
+      setError(verificationError instanceof Error
+        ? verificationError.message
+        : 'The archive file could not be verified yet.');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const downloadFile = async (archiveFile: ArchiveFile) => {
     clearNotice();
     try {
@@ -206,6 +225,7 @@ export function useLincArchives() {
     addFolder,
     removeSelectedFolder,
     addFiles,
+    verifyFile,
     removeFile,
     downloadFile,
   };
