@@ -1,0 +1,101 @@
+erDiagram
+
+    PD_GROUP {
+        string group_code PK
+        string group_label
+    }
+
+    PD_MEMBER {
+        string member_key PK
+        string identifier
+        string full_name
+        string email
+        string primary_gift
+        string group_code FK
+    }
+
+    ASSESSMENT_RESPONSE {
+        string response_id PK
+        string user_identifier
+        string people_development_group
+    }
+
+    PD_MEMBER_RESPONSE {
+        string member_response_id PK
+        string member_key FK
+        string response_id FK
+    }
+
+    PD_ASSIGNMENT {
+        string assignment_id PK
+        string assignment_text
+        date assignment_date
+        boolean has_attachments
+    }
+
+    PD_ASSIGNMENT_GROUP {
+        string assignment_group_id PK
+        string assignment_id FK
+        string group_code FK
+    }
+
+    PD_ATTACHMENT {
+        string attachment_id PK
+        string assignment_id FK
+        string file_name
+        string mime_type
+        int size_bytes
+        string encoding
+    }
+
+    PD_PERSONAL_NOTE {
+        string note_id PK
+        string member_key FK
+        string group_code FK
+        string note_type
+        string note_text
+        date note_date
+    }
+
+    PD_MEETING_SCHEDULE {
+        string schedule_id PK
+        string group_code FK
+        string audience
+        string ordinal
+        int weekday
+        string start_time
+        boolean active
+    }
+
+    PEOPLE_NOTES_PERSON {
+        string person_id PK
+        string full_name
+        string contact
+    }
+
+    PEOPLE_NOTE_ITEM {
+        string item_id PK
+        string person_id FK
+        string item_type
+        string title
+        date date_added
+    }
+
+    PEOPLE_NOTE_COMMENT {
+        string comment_id PK
+        string item_id FK
+        string comment_text
+        timestamp created_at
+    }
+
+    PD_GROUP ||--o{ PD_MEMBER : contains
+    PD_MEMBER ||--o{ PD_MEMBER_RESPONSE : links
+    ASSESSMENT_RESPONSE ||--o| PD_MEMBER_RESPONSE : belongs_to
+    PD_ASSIGNMENT ||--o{ PD_ASSIGNMENT_GROUP : targets
+    PD_GROUP ||--o{ PD_ASSIGNMENT_GROUP : receives
+    PD_ASSIGNMENT ||--o{ PD_ATTACHMENT : contains
+    PD_MEMBER ||--o{ PD_PERSONAL_NOTE : has
+    PD_GROUP ||--o{ PD_PERSONAL_NOTE : classifies
+    PD_GROUP ||--o{ PD_MEETING_SCHEDULE : schedules
+    PEOPLE_NOTES_PERSON ||--o{ PEOPLE_NOTE_ITEM : contains
+    PEOPLE_NOTE_ITEM ||--o{ PEOPLE_NOTE_COMMENT : contains

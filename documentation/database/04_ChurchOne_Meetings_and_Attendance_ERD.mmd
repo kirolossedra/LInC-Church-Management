@@ -1,0 +1,66 @@
+erDiagram
+
+    MEETING_REQUEST {
+        string request_id PK
+        string name
+        string email
+        date requested_date
+        string start_time
+        string end_time
+        string status
+        string created_meeting_id FK
+        timestamp created_at
+    }
+
+    MEETING {
+        string meeting_id PK
+        string source_request_id FK
+        string title
+        date meeting_date
+        string start_time
+        string end_time
+        string meeting_type
+        boolean acknowledged
+    }
+
+    MEETING_PARTICIPANT {
+        string participant_link_id PK
+        string meeting_id FK
+        string response_id FK
+    }
+
+    ASSESSMENT_RESPONSE {
+        string response_id PK
+        string user_identifier
+        string full_name
+        string email
+    }
+
+    AVAILABILITY {
+        string availability_id PK
+        date available_date
+        string start_time
+        string end_time
+        boolean all_day
+    }
+
+    UNAVAILABILITY {
+        string unavailability_id PK
+        date unavailable_date
+        string start_time
+        string end_time
+        boolean all_day
+    }
+
+    ATTENDANCE_PERSON {
+        string attendance_person_id PK
+        string first_name
+        string last_name
+        string email
+        string phone_number
+        string attendance_dates_csv
+    }
+
+    MEETING_REQUEST |o--o| MEETING : creates
+    MEETING ||--o{ MEETING_PARTICIPANT : includes
+    ASSESSMENT_RESPONSE ||--o{ MEETING_PARTICIPANT : identifies

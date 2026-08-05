@@ -1,0 +1,72 @@
+erDiagram
+
+    FIREBASE_AUTH_USER {
+        string uid PK
+        string email
+    }
+
+    ADMIN_HIERARCHY {
+        string hierarchy_id PK
+        string chief_uid FK
+    }
+
+    ADMIN_USER {
+        string uid PK
+        string email
+        string role
+        string status
+        string approved_by_uid FK
+    }
+
+    TUTORIAL_PROGRESS {
+        string progress_id PK
+        string uid FK
+        string tutorial_id FK
+    }
+
+    ASSESSMENT_RESPONSE_IDENTITY {
+        string response_id PK
+        string user_identifier
+        string full_name
+        string email
+    }
+
+    PD_MEMBER_IDENTITY {
+        string member_key PK
+        string identifier
+        string full_name
+        string email
+    }
+
+    ATTENDANCE_PERSON_IDENTITY {
+        string attendance_person_id PK
+        string full_name
+        string email
+        string phone_number
+    }
+
+    PEOPLE_NOTES_PERSON_IDENTITY {
+        string person_id PK
+        string full_name
+        string contact
+    }
+
+    NEXTGEN_USER_IDENTITY {
+        string user_id PK
+        string normalized_user_id
+        string full_name
+        string email
+    }
+
+    MEETING_REQUEST_IDENTITY {
+        string request_id PK
+        string name
+        string email
+    }
+
+    FIREBASE_AUTH_USER ||--o| ADMIN_USER : has
+    ADMIN_HIERARCHY ||--o{ ADMIN_USER : contains
+    FIREBASE_AUTH_USER ||--o{ TUTORIAL_PROGRESS : owns
+    FIREBASE_AUTH_USER ||--o| ADMIN_HIERARCHY : may_be_chief
+    ADMIN_USER ||--o{ ADMIN_USER : approves
+    PD_MEMBER_IDENTITY ||--o{ ASSESSMENT_RESPONSE_IDENTITY : links_by_identifier

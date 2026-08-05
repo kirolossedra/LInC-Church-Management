@@ -1,0 +1,290 @@
+erDiagram
+
+    FIREBASE_AUTH_USER {
+        string uid PK
+        string email
+    }
+
+    ADMIN_HIERARCHY {
+        string hierarchy_id PK
+        string chief_uid FK
+    }
+
+    ADMIN_USER {
+        string uid PK
+        string email
+        string role
+        string status
+        json authority
+        string approved_by_uid FK
+    }
+
+    ASSESSMENT_FORM_CONTROL {
+        string form_id PK
+        string state
+        timestamp updated_at
+    }
+
+    ASSESSMENT_RESPONSE {
+        string response_id PK
+        string form_id FK
+        string response_kind
+        string user_identifier
+        string full_name
+        string email
+        string language
+        json fields
+        json scores
+        json results
+        string people_development_group
+        timestamp created_at
+    }
+
+    RESPONSE_EMAIL_EVENT {
+        string email_event_id PK
+        string response_id FK
+        string provider
+        string language
+        string message_id
+        timestamp sent_at
+    }
+
+    ATTENDANCE_PERSON {
+        string attendance_person_id PK
+        string first_name
+        string last_name
+        string email
+        string phone_number
+        string attendance_dates_csv
+    }
+
+    AVAILABILITY {
+        string availability_id PK
+        date available_date
+        string start_time
+        string end_time
+        boolean all_day
+    }
+
+    UNAVAILABILITY {
+        string unavailability_id PK
+        date unavailable_date
+        string start_time
+        string end_time
+        boolean all_day
+    }
+
+    MEETING_REQUEST {
+        string request_id PK
+        string name
+        string email
+        date requested_date
+        string status
+        string created_meeting_id FK
+    }
+
+    MEETING {
+        string meeting_id PK
+        string source_request_id FK
+        string title
+        date meeting_date
+        string meeting_type
+        boolean acknowledged
+    }
+
+    MEETING_PARTICIPANT {
+        string participant_link_id PK
+        string meeting_id FK
+        string response_id FK
+    }
+
+    PD_GROUP {
+        string group_code PK
+        string group_label
+    }
+
+    PD_MEMBER {
+        string member_key PK
+        string identifier
+        string full_name
+        string email
+        string primary_gift
+        string group_code FK
+    }
+
+    PD_MEMBER_RESPONSE {
+        string member_response_id PK
+        string member_key FK
+        string response_id FK
+    }
+
+    PD_ASSIGNMENT {
+        string assignment_id PK
+        string assignment_text
+        date assignment_date
+        boolean has_attachments
+    }
+
+    PD_ASSIGNMENT_GROUP {
+        string assignment_group_id PK
+        string assignment_id FK
+        string group_code FK
+    }
+
+    PD_ATTACHMENT {
+        string attachment_id PK
+        string assignment_id FK
+        string file_name
+        string mime_type
+        int size_bytes
+    }
+
+    PD_PERSONAL_NOTE {
+        string note_id PK
+        string member_key FK
+        string group_code FK
+        string note_type
+        string note_text
+        date note_date
+    }
+
+    PD_MEETING_SCHEDULE {
+        string schedule_id PK
+        string group_code FK
+        string audience
+        string ordinal
+        int weekday
+        boolean active
+    }
+
+    PEOPLE_NOTES_PERSON {
+        string person_id PK
+        string full_name
+        string contact
+    }
+
+    PEOPLE_NOTE_ITEM {
+        string item_id PK
+        string person_id FK
+        string item_type
+        string title
+    }
+
+    PEOPLE_NOTE_COMMENT {
+        string comment_id PK
+        string item_id FK
+        string comment_text
+    }
+
+    NEXTGEN_USER {
+        string user_id PK
+        string full_name
+        string email
+        string status
+    }
+
+    NEXTGEN_QUESTION {
+        string question_id PK
+        string submitted_by_user_id FK
+        string question_text
+        string status
+    }
+
+    NEXTGEN_VOTE {
+        string vote_id PK
+        string question_id FK
+        string user_id FK
+        string vote_type
+    }
+
+    NEXTGEN_PARTICIPATION_EVENT {
+        string participation_id PK
+        string user_id FK
+        string activity_type
+        string activity_id
+    }
+
+    NEXTGEN_SURVEY {
+        string survey_id PK
+        int survey_version
+        string survey_title
+    }
+
+    NEXTGEN_SURVEY_RESPONSE {
+        string response_id PK
+        string survey_id FK
+        string user_id FK
+        json answers
+    }
+
+    NEXTGEN_REVIEW_LOG {
+        string log_id PK
+        string user_id FK
+        string previous_status
+        string status
+    }
+
+    TUTORIAL {
+        string tutorial_id PK
+        string title
+        string audience
+        boolean published
+    }
+
+    TUTORIAL_STEP {
+        string step_id PK
+        string tutorial_id FK
+        int step_order
+        string action
+    }
+
+    TUTORIAL_PROGRESS {
+        string progress_id PK
+        string uid FK
+        string tutorial_id FK
+        boolean completed
+    }
+
+    CAROUSEL_CONFIG {
+        string carousel_id PK
+        boolean enabled
+    }
+
+    CAROUSEL_PHOTO {
+        string photo_id PK
+        string carousel_id FK
+        string photo_url
+        int display_order
+    }
+
+    FIREBASE_AUTH_USER ||--o| ADMIN_USER : has
+    ADMIN_HIERARCHY ||--o{ ADMIN_USER : contains
+    FIREBASE_AUTH_USER ||--o| ADMIN_HIERARCHY : may_be_chief
+    ADMIN_USER ||--o{ ADMIN_USER : approves
+    ASSESSMENT_FORM_CONTROL ||--o{ ASSESSMENT_RESPONSE : controls
+    ASSESSMENT_RESPONSE ||--o{ RESPONSE_EMAIL_EVENT : records
+    MEETING_REQUEST |o--o| MEETING : creates
+    MEETING ||--o{ MEETING_PARTICIPANT : includes
+    ASSESSMENT_RESPONSE ||--o{ MEETING_PARTICIPANT : identifies
+    PD_GROUP ||--o{ PD_MEMBER : contains
+    PD_MEMBER ||--o{ PD_MEMBER_RESPONSE : links
+    ASSESSMENT_RESPONSE ||--o| PD_MEMBER_RESPONSE : belongs_to
+    PD_ASSIGNMENT ||--o{ PD_ASSIGNMENT_GROUP : targets
+    PD_GROUP ||--o{ PD_ASSIGNMENT_GROUP : receives
+    PD_ASSIGNMENT ||--o{ PD_ATTACHMENT : contains
+    PD_MEMBER ||--o{ PD_PERSONAL_NOTE : has
+    PD_GROUP ||--o{ PD_PERSONAL_NOTE : classifies
+    PD_GROUP ||--o{ PD_MEETING_SCHEDULE : schedules
+    PEOPLE_NOTES_PERSON ||--o{ PEOPLE_NOTE_ITEM : contains
+    PEOPLE_NOTE_ITEM ||--o{ PEOPLE_NOTE_COMMENT : contains
+    NEXTGEN_USER ||--o{ NEXTGEN_QUESTION : submits
+    NEXTGEN_USER ||--o{ NEXTGEN_VOTE : casts
+    NEXTGEN_QUESTION ||--o{ NEXTGEN_VOTE : receives
+    NEXTGEN_USER ||--o{ NEXTGEN_PARTICIPATION_EVENT : records
+    NEXTGEN_SURVEY ||--o{ NEXTGEN_SURVEY_RESPONSE : receives
+    NEXTGEN_USER ||--o{ NEXTGEN_SURVEY_RESPONSE : submits
+    NEXTGEN_USER ||--o{ NEXTGEN_REVIEW_LOG : has
+    FIREBASE_AUTH_USER ||--o{ TUTORIAL_PROGRESS : owns
+    TUTORIAL ||--|{ TUTORIAL_STEP : contains
+    TUTORIAL ||--o{ TUTORIAL_PROGRESS : tracks
+    CAROUSEL_CONFIG ||--o{ CAROUSEL_PHOTO : contains
