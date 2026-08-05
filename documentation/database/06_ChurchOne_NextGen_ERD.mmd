@@ -1,0 +1,71 @@
+erDiagram
+
+    NEXTGEN_USER {
+        string user_id PK
+        string normalized_user_id
+        string full_name
+        string email
+        string status
+        timestamp reviewed_at
+    }
+
+    NEXTGEN_QUESTION {
+        string question_id PK
+        string submitted_by_user_id FK
+        string question_text
+        string category
+        string status
+        int total_upvotes
+        int total_downvotes
+        int net_votes
+    }
+
+    NEXTGEN_VOTE {
+        string vote_id PK
+        string question_id FK
+        string user_id FK
+        string vote_type
+        timestamp completed_at
+    }
+
+    NEXTGEN_PARTICIPATION_EVENT {
+        string participation_id PK
+        string user_id FK
+        string activity_type
+        string activity_id
+        string filling_status
+        timestamp completed_at
+    }
+
+    NEXTGEN_SURVEY {
+        string survey_id PK
+        int survey_version
+        string survey_title
+    }
+
+    NEXTGEN_SURVEY_RESPONSE {
+        string response_id PK
+        string survey_id FK
+        string user_id FK
+        string language
+        string completion_status
+        json answers
+        timestamp completed_at
+    }
+
+    NEXTGEN_REVIEW_LOG {
+        string log_id PK
+        string user_id FK
+        string previous_status
+        string status
+        string reviewed_by
+        timestamp reviewed_at
+    }
+
+    NEXTGEN_USER ||--o{ NEXTGEN_QUESTION : submits
+    NEXTGEN_USER ||--o{ NEXTGEN_VOTE : casts
+    NEXTGEN_QUESTION ||--o{ NEXTGEN_VOTE : receives
+    NEXTGEN_USER ||--o{ NEXTGEN_PARTICIPATION_EVENT : records
+    NEXTGEN_SURVEY ||--o{ NEXTGEN_SURVEY_RESPONSE : receives
+    NEXTGEN_USER ||--o{ NEXTGEN_SURVEY_RESPONSE : submits
+    NEXTGEN_USER ||--o{ NEXTGEN_REVIEW_LOG : has

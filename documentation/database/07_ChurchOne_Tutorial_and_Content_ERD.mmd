@@ -1,0 +1,56 @@
+erDiagram
+
+    FIREBASE_AUTH_USER {
+        string uid PK
+        string email
+    }
+
+    TUTORIAL {
+        string tutorial_id PK
+        string title
+        string description
+        string category
+        string audience
+        boolean published
+        string created_by
+    }
+
+    TUTORIAL_STEP {
+        string step_id PK
+        string tutorial_id FK
+        int step_order
+        string title
+        string route
+        string target
+        string action
+    }
+
+    TUTORIAL_PROGRESS {
+        string progress_id PK
+        string uid FK
+        string tutorial_id FK
+        boolean completed
+        int last_step_index
+        timestamp completed_at
+        timestamp last_started_at
+    }
+
+    CAROUSEL_CONFIG {
+        string carousel_id PK
+        boolean enabled
+        timestamp updated_at
+    }
+
+    CAROUSEL_PHOTO {
+        string photo_id PK
+        string carousel_id FK
+        string photo_url
+        string alt_en
+        string alt_ar
+        int display_order
+    }
+
+    FIREBASE_AUTH_USER ||--o{ TUTORIAL_PROGRESS : owns
+    TUTORIAL ||--|{ TUTORIAL_STEP : contains
+    TUTORIAL ||--o{ TUTORIAL_PROGRESS : tracks
+    CAROUSEL_CONFIG ||--o{ CAROUSEL_PHOTO : contains
