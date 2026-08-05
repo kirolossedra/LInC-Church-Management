@@ -1,8 +1,5 @@
 import {
-  PEOPLE_DEVELOPMENT_ROOT,
-} from './peopleDevelopment.constants';
-
-import {
+  assignPeopleDevelopmentMember,
   createPeopleDevelopmentAssignment,
   createPeopleDevelopmentMeetingSchedule,
   createPeoplePersonalNote,
@@ -10,8 +7,7 @@ import {
   deletePeopleDevelopmentMeetingSchedule,
   deletePeoplePersonalNote,
   updatePeopleDevelopmentMeetingSchedule,
-  updatePeopleDevelopmentRecords,
-} from './peopleDevelopment.firebase';
+} from '../../../services/peopleDevelopment';
 
 import type {
   PeopleDevelopmentAttachment,
@@ -125,12 +121,6 @@ export async function assignPersonToPeopleDevelopmentGroup(
 
   validatePerson(person);
 
-  const updatedAt =
-    params.timestamp ?? Date.now();
-
-  const updatedAtISO =
-    new Date(updatedAt).toISOString();
-
   const memberKey =
     String(person.memberKey).trim();
 
@@ -147,71 +137,16 @@ export async function assignPersonToPeopleDevelopmentGroup(
       person.sourceKeys,
     );
 
-  const updates: Record<
-    string,
-    unknown
-  > = {
-    [`${PEOPLE_DEVELOPMENT_ROOT}/members/${memberKey}`]: {
-      memberKey,
-      identifier,
-
-      fullName: String(
-        person.fullName || '',
-      ).trim(),
-
-      email: String(
-        person.email || '',
-      ).trim(),
-
-      group,
-      groupLabel,
-
-      primaryGift: String(
-        person.primaryGift || '',
-      ).trim(),
-
-      sourcePath,
-      sourceKeys,
-      updatedAt,
-      updatedAtISO,
-    },
-  };
-
-  sourceKeys.forEach(sourceKey => {
-    updates[
-      `${sourcePath}/${sourceKey}/peopleDevelopmentGroup`
-    ] = group;
-
-    updates[
-      `${sourcePath}/${sourceKey}/peopleDevelopment`
-    ] = {
-      group,
-      groupLabel,
-      memberKey,
-      identifier,
-      updatedAt,
-      updatedAtISO,
-    };
-
-    updates[
-      `${sourcePath}/${sourceKey}/fields/peopleDevelopment/group`
-    ] = {
-      fieldEnglish:
-        'People Development Group',
-
-      fieldArabic:
-        'مجموعة نمو الأشخاص',
-
-      value: group,
-      label: groupLabel,
-      updatedAt,
-      updatedAtISO,
-    };
+  await assignPeopleDevelopmentMember(memberKey, {
+    identifier,
+    fullName: String(person.fullName || '').trim(),
+    email: String(person.email || '').trim(),
+    primaryGift: String(person.primaryGift || '').trim(),
+    sourcePath,
+    sourceKeys,
+    group,
+    groupLabel,
   });
-
-  await updatePeopleDevelopmentRecords(
-    updates,
-  );
 }
 
 export async function savePeoplePersonalNote(

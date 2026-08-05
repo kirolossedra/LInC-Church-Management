@@ -21,8 +21,9 @@ export {
   subscribeToPeopleDevelopmentMembers,
   subscribeToPeoplePersonalNotes,
   updatePeopleDevelopmentMeetingSchedule,
-  updatePeopleDevelopmentRecords,
-} from './peopleDevelopment.firebase';
+  assignPeopleDevelopmentMember,
+  replacePeopleDevelopmentAssignmentAttachments,
+} from '../../../services/peopleDevelopment';
 
 export type {
   CreatePeopleDevelopmentAssignmentInput,
@@ -30,7 +31,7 @@ export type {
   CreatePeoplePersonalNoteInput,
   PeopleDevelopmentMembersByKey as FirebasePeopleDevelopmentMembersByKey,
   UpdatePeopleDevelopmentMeetingScheduleInput,
-} from './peopleDevelopment.firebase';
+} from '../../../services/peopleDevelopment';
 
 export * from './peopleDevelopment.selectors';
 export * from './peopleDevelopment.types';

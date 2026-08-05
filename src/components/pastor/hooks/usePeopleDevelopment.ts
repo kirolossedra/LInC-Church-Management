@@ -13,7 +13,6 @@ import {
 import {
   MAX_PEOPLE_ASSIGNMENT_PDF_SIZE_BYTES,
   PEOPLE_DEVELOPMENT_GROUPS,
-  PEOPLE_DEVELOPMENT_ROOT,
   assignPersonToPeopleDevelopmentGroup,
   formatFileSize,
   getParticipantPeopleDevelopmentGroup,
@@ -29,7 +28,7 @@ import {
   subscribeToPeopleDevelopmentAssignments,
   subscribeToPeopleDevelopmentMembers,
   subscribeToPeoplePersonalNotes,
-  updatePeopleDevelopmentRecords,
+  replacePeopleDevelopmentAssignmentAttachments,
   type PeopleDevelopmentAttachment,
   type PeopleDevelopmentEntry,
   type PeopleDevelopmentGroupId,
@@ -1078,23 +1077,9 @@ export default function usePeopleDevelopment({
             entry.id,
           );
         } else {
-          const updatedAt =
-            Date.now();
-
-          await updatePeopleDevelopmentRecords(
-            {
-              [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/attachments`]:
-                remainingAttachments,
-              [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/hasAttachments`]:
-                remainingAttachments.length >
-                0,
-              [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/updatedAt`]:
-                updatedAt,
-              [`${PEOPLE_DEVELOPMENT_ROOT}/assignments/${entry.id}/updatedAtISO`]:
-                new Date(
-                  updatedAt,
-                ).toISOString(),
-            },
+          await replacePeopleDevelopmentAssignmentAttachments(
+            entry.id,
+            remainingAttachments,
           );
         }
 

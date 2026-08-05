@@ -20,6 +20,10 @@ import {
   type PeopleNotesDependencies,
 } from './routes/peopleNotes.routes'
 import {
+  createPeopleDevelopmentRoutes,
+  type PeopleDevelopmentDependencies,
+} from './routes/peopleDevelopment.routes'
+import {
   createBookingRoutes,
   type BookingDependencies,
 } from './routes/booking.routes'
@@ -41,6 +45,7 @@ export type AppDependencies = {
   auth?: AuthRoutesDependencies
   nextGenMissionMap?: NextGenMissionMapDependencies
   peopleNotes?: PeopleNotesDependencies
+  peopleDevelopment?: PeopleDevelopmentDependencies
   booking?: BookingDependencies
   pastorCalendar?: PastorCalendarDependencies
   meetingInvitations?: MeetingInvitationsDependencies
@@ -192,6 +197,11 @@ const requestSchema = z
   app.route(
     '/api/v1/people-notes',
     createPeopleNotesRoutes(dependencies.peopleNotes),
+  )
+
+  app.route(
+    '/api/v1/people-development',
+    createPeopleDevelopmentRoutes(dependencies.peopleDevelopment),
   )
 
   app.route(
