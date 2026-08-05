@@ -1,0 +1,428 @@
+erDiagram
+
+    FIREBASE_AUTH_USER {
+        string uid PK "Firebase Authentication UID"
+        string email "Authentication email"
+    }
+
+    ADMIN_HIERARCHY {
+        string singleton_key PK "administration/adminHierarchy"
+        string chief_uid FK "References Firebase Auth UID"
+    }
+
+    ADMIN_USER {
+        string uid PK, FK "Path: administration/adminHierarchy/users/{uid}"
+        string email
+        string role "chief | administrator"
+        string status "pending | active | suspended"
+        json authority "Assessment, carousel, attendance permissions"
+        timestamp first_signed_in_at
+        timestamp last_signed_in_at
+        timestamp approved_at
+        string approved_by_uid FK
+        timestamp updated_at
+    }
+
+    ASSESSMENT_FORM_CONTROL {
+        string form_id PK "Path: assessmentPage/forms/{formId}"
+        string state "active | disabled | hidden"
+        timestamp updated_at
+        string updated_by
+    }
+
+    ASSESSMENT_RESPONSE {
+        string response_id PK "Path: form/{responseId}"
+        string form_id FK "Conflicting legacy/current meanings"
+        string table_name_equivalent
+        string signup_type
+        string submission_mode
+        string source
+        string full_name
+        string email
+        string user_identifier "Informal participant identifier"
+        string linked_user_identifier
+        string database_form_id
+        string linked_form_id
+        string interface_language
+        json fields "Dynamic assessment answers"
+        json scores "Gift/ministry totals"
+        json results "English and Arabic results"
+        string people_development_group
+        json people_development "Duplicated member/group linkage"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    ATTENDANCE_PERSON {
+        string attendance_person_id PK "Path: attendance/people/{id}"
+        string first_name
+        string last_name
+        string arabic_first_name
+        string arabic_last_name
+        string phone_number
+        string email
+        string photo_base64 "Embedded image"
+        string days_of_attendance_csv "Comma-separated dates"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    AVAILABILITY {
+        string availability_id PK "Path: availability/{id}"
+        date availability_date
+        string start_time
+        string end_time
+        string reason
+        boolean all_day
+        timestamp created_at
+        timestamp updated_at
+        string updated_by
+    }
+
+    UNAVAILABILITY {
+        string unavailability_id PK "Path: unavailability/{id}"
+        date unavailable_date
+        string start_time
+        string end_time
+        string reason
+        boolean all_day
+        timestamp created_at
+        timestamp updated_at
+        string updated_by
+    }
+
+    MEETING_REQUEST {
+        string request_id PK "Path: meetingRequests/{id}"
+        string name
+        string email
+        date requested_date
+        string start_time
+        string end_time
+        string reason
+        string requester_locale
+        string requester_language
+        string status "pending | accepted | rejected"
+        string source
+        string created_meeting_id FK
+        string updated_by
+        boolean confirmation_sent
+        boolean rejection_email_sent
+        timestamp created_at
+        timestamp accepted_at
+        timestamp updated_at
+    }
+
+    MEETING {
+        string meeting_id PK "Path: meetings/{id}"
+        string source_request_id FK
+        string title
+        string description
+        date meeting_date
+        string start_time
+        string end_time
+        string location
+        string meet_link
+        string type "prayer | counseling | service | other"
+        string_array participant_ids "Firebase form response IDs"
+        boolean acknowledged
+        string request_name
+        string request_email
+        string request_reason
+        string requester_locale
+        string requester_language
+        timestamp acknowledged_at
+        timestamp created_at
+        timestamp updated_at
+        string updated_by
+    }
+
+    MEETING_PARTICIPANT_LINK {
+        string link_key PK "LOGICAL: derived from meetings.participantIds[]"
+        string meeting_id FK
+        string assessment_response_id FK "References form/{responseId}"
+    }
+
+    PD_GROUP_ENUM {
+        string group_code PK "LOGICAL static enum; no Firebase collection"
+        string group_label
+    }
+
+    PD_MEMBER {
+        string member_key PK "Path: peopleDevelopment/members/{memberKey}"
+        string identifier "Canonical within People Development only"
+        string full_name
+        string email
+        string primary_gift
+        string group_code FK
+        string group_label
+        string source_path "Usually form/{responseId}"
+        string_array source_keys "Assessment response IDs"
+        timestamp updated_at
+    }
+
+    PD_ASSIGNMENT {
+        string assignment_id PK "Path: peopleDevelopment/assignments/{id}"
+        string legacy_group
+        string_array groups "Many group codes"
+        string group_label
+        string text
+        date assignment_date
+        boolean has_attachments
+        string source
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    PD_ASSIGNMENT_GROUP {
+        string assignment_group_key PK "LOGICAL: derived from assignments.groups[]"
+        string assignment_id FK
+        string group_code FK
+    }
+
+    PD_ATTACHMENT {
+        string attachment_key PK "EMBEDDED in assignment.attachments[]"
+        string assignment_id FK
+        string name
+        string mime_type
+        int size_bytes
+        string encoding "base64"
+        string storage "realtimeDatabase"
+        string base64_data "Embedded file"
+        timestamp uploaded_at
+    }
+
+    PD_PERSONAL_NOTE {
+        string note_id PK "Path: peopleDevelopment/personalNotes/{id}"
+        string member_key FK
+        string identifier
+        string full_name "Duplicated snapshot"
+        string email "Duplicated snapshot"
+        string group_code FK
+        string group_label
+        string type "strength | weakness"
+        string text
+        date note_date
+        string source
+        timestamp created_at
+    }
+
+    PD_MEETING_SCHEDULE {
+        string schedule_id PK "Path: peopleDevelopment/meetingSchedules/{id}"
+        string audience "group | shared"
+        string group_code FK "Empty for shared schedule"
+        string ordinal "1 | 2 | 3 | 4 | last"
+        int weekday "0 through 6"
+        string start_time
+        date start_date
+        date end_date
+        boolean active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    PEOPLE_NOTES_PERSON {
+        string person_id PK "Path: peopleNotes/{personId}"
+        string full_name
+        string contact
+        string created_by
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    PEOPLE_NOTE_ITEM {
+        string item_id PK "Path: peopleNotes/{personId}/items/{itemId}"
+        string person_id FK
+        string type "strength | growth"
+        string title
+        string description
+        date date_added
+        date latest_follow_up_date
+        string created_by
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    PEOPLE_NOTE_COMMENT {
+        string comment_id PK "Path: peopleNotes/{personId}/items/{itemId}/comments/{commentId}"
+        string item_id FK
+        string text
+        string created_by
+        timestamp created_at
+    }
+
+    NEXTGEN_USER {
+        string user_id PK "Path/key: nextGenUsers/{fourCharacterUserId}"
+        string normalized_user_id
+        string full_name
+        string email
+        string status "pending | approved | rejected"
+        string source
+        string reviewed_by
+        timestamp created_at
+        timestamp updated_at
+        timestamp reviewed_at
+    }
+
+    NEXTGEN_QA_SESSION {
+        string question_id PK "Path: nextGenActivities/qaSessions/{questionId}"
+        string submitted_by_identifier FK
+        string submitted_by_name "Duplicated snapshot"
+        string question
+        string category
+        string notes
+        string status
+        json verses
+        string translation
+        int total_upvotes "Derived counter"
+        int total_downvotes "Derived counter"
+        int net_votes "Derived counter"
+        boolean selected_for_session
+        timestamp selected_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    NEXTGEN_VOTE {
+        string vote_key PK "EMBEDDED: qaSessions/{questionId}/votesByIdentifier/{userId}"
+        string question_id FK
+        string user_id FK
+        string identifier
+        string vote_type "upvote | downvote"
+        boolean migrated_from_history
+        timestamp completed_at
+    }
+
+    NEXTGEN_PARTICIPATION_EVENT {
+        string participation_key PK "EMBEDDED under participationByIdentifier/{userId}"
+        string user_id FK
+        string activity_type "questionSubmission | peerReviewVote | feedbackSurvey"
+        string activity_id "Question or survey ID"
+        string filling_status "completed"
+        string vote_type
+        timestamp completed_at
+    }
+
+    NEXTGEN_SURVEY {
+        string survey_id PK "Path: nextGenActivities/surveys/{surveyId}"
+        int survey_version
+        string survey_title
+    }
+
+    NEXTGEN_SURVEY_RESPONSE {
+        string response_key PK "Path: surveys/{surveyId}/responsesByIdentifier/{userId}"
+        string survey_id FK
+        string user_id FK
+        string participant_name "Duplicated snapshot"
+        string participant_email "Duplicated snapshot"
+        string interface_language
+        string completion_status
+        boolean all_questions_required
+        int total_questions
+        int answered_questions
+        json answers
+        json answer_details
+        string source
+        timestamp completed_at
+    }
+
+    NEXTGEN_REGISTRATION_REVIEW_LOG {
+        string log_id PK "Path: nextGenActivities/registrationReviewLogs/{id}"
+        string user_id FK
+        string full_name "Historical snapshot"
+        string email "Historical snapshot"
+        string previous_status
+        string status
+        string reviewed_by
+        timestamp reviewed_at
+    }
+
+    TUTORIAL {
+        string tutorial_id PK "Path: tutorialBuilder/tutorials/{id}"
+        string title
+        string description
+        string category
+        string audience "all | pastor | congregation"
+        boolean published
+        string created_by
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TUTORIAL_STEP {
+        string step_id PK "EMBEDDED in tutorial.steps[]"
+        string tutorial_id FK
+        int step_order
+        string title
+        string description
+        string route
+        string target
+        string target_label
+        string action "explain | simulate-click | navigate | information"
+        string placement
+        string simulation_title
+        string simulation_description
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TUTORIAL_PROGRESS {
+        string progress_key PK "Path: tutorialBuilder/progress/{uid}/{tutorialId}"
+        string firebase_auth_uid FK
+        string tutorial_id FK
+        boolean completed
+        int last_step_index
+        timestamp completed_at
+        timestamp last_started_at
+    }
+
+    CAROUSEL_CONFIG {
+        string singleton_key PK "Path: landingPage/carousel"
+        boolean enabled
+        timestamp updated_at
+    }
+
+    CAROUSEL_PHOTO {
+        string photo_id PK "Path: landingPage/carousel/photos/{photoId}"
+        string carousel_key FK
+        string url "Often Base64 data URL"
+        string alt_en
+        string alt_ar
+        int display_order
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    FIREBASE_AUTH_USER ||--o| ADMIN_USER : "may have admin profile"
+    FIREBASE_AUTH_USER ||--o{ TUTORIAL_PROGRESS : "owns progress"
+    ADMIN_HIERARCHY ||--o{ ADMIN_USER : "contains users"
+    FIREBASE_AUTH_USER |o--|| ADMIN_HIERARCHY : "may be chiefUid"
+    ADMIN_USER |o--o{ ADMIN_USER : "approvedByUid"
+
+    ASSESSMENT_FORM_CONTROL ||--o{ ASSESSMENT_RESPONSE : "formId controls"
+    PD_MEMBER |o--o{ ASSESSMENT_RESPONSE : "sourceKeys link responses"
+    PD_GROUP_ENUM |o--o{ PD_MEMBER : "assigned group"
+    PD_ASSIGNMENT ||--o{ PD_ASSIGNMENT_GROUP : "contains group links"
+    PD_GROUP_ENUM ||--o{ PD_ASSIGNMENT_GROUP : "receives assignments"
+    PD_ASSIGNMENT ||--o{ PD_ATTACHMENT : "embeds attachments"
+    PD_MEMBER ||--o{ PD_PERSONAL_NOTE : "has notes"
+    PD_GROUP_ENUM |o--o{ PD_PERSONAL_NOTE : "snapshot group"
+    PD_GROUP_ENUM |o--o{ PD_MEETING_SCHEDULE : "group schedule"
+
+    MEETING_REQUEST |o--o| MEETING : "accepted request creates meeting"
+    MEETING ||--o{ MEETING_PARTICIPANT_LINK : "contains participantIds"
+    ASSESSMENT_RESPONSE ||--o{ MEETING_PARTICIPANT_LINK : "participant response"
+
+    PEOPLE_NOTES_PERSON ||--o{ PEOPLE_NOTE_ITEM : "contains items"
+    PEOPLE_NOTE_ITEM ||--o{ PEOPLE_NOTE_COMMENT : "contains comments"
+
+    NEXTGEN_USER ||--o{ NEXTGEN_QA_SESSION : "submits questions"
+    NEXTGEN_USER ||--o{ NEXTGEN_VOTE : "casts votes"
+    NEXTGEN_QA_SESSION ||--o{ NEXTGEN_VOTE : "receives votes"
+    NEXTGEN_USER ||--o{ NEXTGEN_PARTICIPATION_EVENT : "has participation history"
+    NEXTGEN_SURVEY ||--o{ NEXTGEN_SURVEY_RESPONSE : "receives responses"
+    NEXTGEN_USER ||--o{ NEXTGEN_SURVEY_RESPONSE : "submits response"
+    NEXTGEN_USER ||--o{ NEXTGEN_REGISTRATION_REVIEW_LOG : "has review history"
+
+    TUTORIAL ||--|{ TUTORIAL_STEP : "contains steps"
+    TUTORIAL ||--o{ TUTORIAL_PROGRESS : "tracked by progress"
+    CAROUSEL_CONFIG ||--o{ CAROUSEL_PHOTO : "contains photos"
