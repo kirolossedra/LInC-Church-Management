@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { RefObject } from 'react';
+import LincCrossMark from '../brand/LincCrossMark';
 
 interface LincOneHeroProps {
   isAr: boolean;
@@ -59,7 +60,10 @@ export default function LincOneHero({ isAr, dir, onToggleLocale, actionsRef }: L
 
       <nav className="relative z-20 mx-auto flex max-w-7xl items-center justify-between">
         <Link to="/" className="group inline-flex items-center gap-3" aria-label="LINC One home">
-          <span className="grid h-11 w-11 place-items-center rounded-full bg-[#8b1e1e] text-lg text-white shadow-[0_10px_30px_rgba(139,30,30,0.25)] transition-transform group-hover:rotate-12">✦</span>
+          <LincCrossMark
+            size={44}
+            className="shadow-[0_10px_30px_rgba(139,30,30,0.25)] transition-transform duration-500 group-hover:rotate-6 group-hover:scale-105"
+          />
           <span className="font-serif text-2xl font-bold tracking-[-0.03em] text-[#661818]">LINC One</span>
         </Link>
         <button

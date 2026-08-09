@@ -11,6 +11,7 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
+import LincCrossMark from '../brand/LincCrossMark';
 
 interface AdminLoadingScreenProps {
   message: string;
@@ -65,7 +66,7 @@ export function AdminLoginScreen({
           className="text-white"
         >
           <a href="/" className="mb-14 inline-flex items-center gap-3" aria-label="LINC One home">
-            <span className="grid h-11 w-11 place-items-center rounded-full bg-[#8b1e1e] text-[#f2a900]">✦</span>
+            <LincCrossMark size={44} className="shadow-[0_10px_28px_rgba(0,0,0,0.24)]" />
             <span className="font-serif text-2xl font-bold">LINC One</span>
           </a>
           <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.24em] text-[#f2a900]"><Sparkles size={14} /> Administration</p>

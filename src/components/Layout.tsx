@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   BookOpen,
   Calendar as CalendarIcon,
-  Church,
   Globe,
   Home,
   Info,
@@ -17,6 +16,7 @@ import { Link } from 'react-router-dom';
 import { auth } from '../firebase';
 import { useI18n } from '../i18n';
 import { TutorialLibrary } from './tutorial-builder';
+import LincCrossMark from './brand/LincCrossMark';
 
 interface LayoutProps {
   children: ReactNode;
@@ -68,9 +68,7 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
       <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#160b0b]/95 px-2 py-2 text-white shadow-[0_-18px_50px_rgba(28,8,8,0.25)] backdrop-blur-2xl md:inset-x-5 md:bottom-auto md:top-4 md:rounded-[1.7rem] md:border md:px-4 md:py-3 md:shadow-[0_18px_60px_rgba(28,8,8,0.24)]">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3">
           <Link to="/" data-tutorial-id="nav-brand-home" className="hidden shrink-0 items-center gap-3 md:flex">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#8b1e1e] text-white shadow-[0_8px_24px_rgba(139,30,30,0.42)]">
-              <Church size={20} />
-            </div>
+            <LincCrossMark size={44} className="shadow-[0_8px_24px_rgba(139,30,30,0.42)]" />
             <div>
               <span className="block font-serif text-xl font-semibold leading-none text-white">LInC One</span>
               <span className="mt-1 block text-[8px] font-bold uppercase tracking-[0.28em] text-[#f2a900]">Connect · Grow · Serve</span>

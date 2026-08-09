@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowUpRight, Crown, LogOut, ShieldCheck, Sparkles } from 'lucide-react';
+import LincCrossMark from '../../brand/LincCrossMark';
 
 export type AdminSectionId =
   | 'overview'
@@ -52,7 +53,10 @@ export function AdminCommandHeader({
 
       <nav className="relative mx-auto flex max-w-7xl items-center justify-between gap-4">
         <a href="/" className="group inline-flex items-center gap-3" aria-label="LINC One home">
-          <span className="grid h-11 w-11 place-items-center rounded-full bg-[#8b1e1e] text-lg text-[#f2a900] shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition-transform group-hover:rotate-12">✦</span>
+          <LincCrossMark
+            size={44}
+            className="shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition-transform duration-500 group-hover:rotate-6 group-hover:scale-105"
+          />
           <span>
             <span className="block font-serif text-xl font-bold leading-none">LINC One</span>
             <span className="mt-1 block text-[9px] font-extrabold uppercase tracking-[0.22em] text-white/35">Administration</span>

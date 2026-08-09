@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Info, LogIn, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import LincCrossMark from '../brand/LincCrossMark';
 
 interface FloatingLandingNavProps {
   isAr: boolean;
@@ -63,7 +64,7 @@ export default function FloatingLandingNav({ isAr, visible }: FloatingLandingNav
               aria-label="LINC One home"
               className="hidden shrink-0 items-center gap-2 px-3 text-white lg:flex"
             >
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-[#8b1e1e] text-[#f2a900]">✦</span>
+              <LincCrossMark size={36} className="shadow-[0_8px_20px_rgba(0,0,0,0.22)]" />
               <span className="font-serif text-lg font-bold tracking-[-0.03em]">LINC One</span>
             </Link>
 
