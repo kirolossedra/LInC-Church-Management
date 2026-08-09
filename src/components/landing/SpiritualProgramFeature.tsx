@@ -1,7 +1,8 @@
 import { motion, useReducedMotion, useScroll, useTransform } from 'motion/react';
-import { ArrowUpRight, CalendarDays, ClipboardCheck, NotebookTabs, Sparkles } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, ClipboardCheck, NotebookTabs } from 'lucide-react';
 import { useRef } from 'react';
 import { Link } from 'react-router-dom';
+import LincLogo from '../brand/LincLogo';
 
 interface SpiritualProgramFeatureProps {
   isAr: boolean;
@@ -55,7 +56,7 @@ export default function SpiritualProgramFeature({ isAr, dir }: SpiritualProgramF
         <div className="grid items-end gap-10 lg:grid-cols-[1fr_0.72fr]">
           <motion.div initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.3 }} transition={{ duration: 0.75 }}>
             <p className="mb-6 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.25em] text-[#f2a900]">
-              <Sparkles size={15} /> {isAr ? 'المميز' : 'Featured'}
+              <LincLogo size={19} className="rounded-full" /> {isAr ? 'المميز' : 'Featured'}
             </p>
             <h2 className="max-w-4xl font-serif text-[clamp(3.5rem,9vw,8rem)] font-semibold leading-[0.82] tracking-[-0.06em]">
               {isAr ? 'اكتشف دعوتك.' : 'Discover your calling.'}
@@ -100,7 +101,7 @@ export default function SpiritualProgramFeature({ isAr, dir }: SpiritualProgramF
           <div className={`linc-marquee-track flex w-max items-center gap-8 ${dir === 'rtl' ? 'linc-marquee-reverse' : ''}`}>
             {[...gifts, ...gifts].map((gift, index) => (
               <span key={`${gift}-${index}`} className="flex items-center gap-8 whitespace-nowrap font-serif text-3xl text-white/75 sm:text-5xl">
-                {gift}<span className="text-lg text-[#f2a900]">✦</span>
+                {gift}<LincLogo size={24} className="rounded-full" />
               </span>
             ))}
           </div>

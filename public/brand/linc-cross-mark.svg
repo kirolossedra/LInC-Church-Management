@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="linc-cross-title">
-  <title id="linc-cross-title">LInC cross mark</title>
-  <circle cx="32" cy="32" r="31" fill="#8b1e1e"/>
-  <circle cx="32" cy="32" r="27.25" fill="none" stroke="#f2a900" stroke-width="1.5" opacity=".72"/>
-  <path fill="#fffaf1" d="M28.25 12.75C28.25 10.68 29.93 9 32 9s3.75 1.68 3.75 3.75V24.5h10.5c2.07 0 3.75 1.68 3.75 3.75S48.32 32 46.25 32h-10.5v19.25C35.75 53.32 34.07 55 32 55s-3.75-1.68-3.75-3.75V32h-10.5C15.68 32 14 30.32 14 28.25s1.68-3.75 3.75-3.75h10.5V12.75Z"/>
-</svg>

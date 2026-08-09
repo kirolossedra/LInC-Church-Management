@@ -1,5 +1,6 @@
-import { AlertTriangle, CalendarDays, Plus, Sparkles } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Plus } from 'lucide-react';
 import type { PeopleNotesController } from './usePeopleNotes';
+import LincLogo from '../brand/LincLogo';
 
 export default function AddDevelopmentItemForm({ controller }: { controller: PeopleNotesController }) {
   const { isArabic, saving, itemForm, setItemForm, actionsDisabled, handleAddItem } = controller;
@@ -23,7 +24,7 @@ export default function AddDevelopmentItemForm({ controller }: { controller: Peo
                           : 'bg-white border-gray-200 text-gray-500 hover:bg-stone-50'
                       }`}
                     >
-                      <Sparkles size={16} />
+                      <LincLogo size={18} className="rounded-full" />
                       {isArabic ? 'نقطة قوة' : 'Strength'}
                     </button>
 
@@ -116,4 +117,3 @@ export default function AddDevelopmentItemForm({ controller }: { controller: Peo
               </section>
   );
 }
-

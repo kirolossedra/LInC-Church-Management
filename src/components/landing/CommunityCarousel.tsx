@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { database } from '../../firebase';
+import LincLogo from '../brand/LincLogo';
 
 interface CommunityCarouselProps { isAr: boolean; dir: 'ltr' | 'rtl' }
 interface CarouselPhoto { id: string; url: string; altEn: string; altAr: string; order: number }
@@ -100,7 +101,7 @@ export default function CommunityCarousel({ isAr, dir }: CommunityCarouselProps)
                 ) : (
                   <div className={`h-full w-full bg-gradient-to-br ${active === 0 ? 'from-[#8b1e1e] to-[#b54835]' : active === 1 ? 'from-[#f2a900] to-[#ffe3a0]' : 'from-[#d8c4ab] to-[#f4eadb]'}`}>
                     <div className="linc-grid h-full w-full opacity-30" />
-                    <span className="absolute inset-0 grid place-items-center font-serif text-[8rem] text-white/30">✦</span>
+                    <span className="absolute inset-0 grid place-items-center"><LincLogo size={128} className="rounded-full opacity-35 shadow-2xl" /></span>
                   </div>
                 )}
               </motion.div>

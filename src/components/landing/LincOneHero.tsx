@@ -6,12 +6,11 @@ import {
   Info,
   LogIn,
   ShieldCheck,
-  Sparkles,
   UsersRound,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { RefObject } from 'react';
-import LincCrossMark from '../brand/LincCrossMark';
+import LincLogo from '../brand/LincLogo';
 
 interface LincOneHeroProps {
   isAr: boolean;
@@ -60,9 +59,9 @@ export default function LincOneHero({ isAr, dir, onToggleLocale, actionsRef }: L
 
       <nav className="relative z-20 mx-auto flex max-w-7xl items-center justify-between">
         <Link to="/" className="group inline-flex items-center gap-3" aria-label="LINC One home">
-          <LincCrossMark
+          <LincLogo
             size={44}
-            className="shadow-[0_10px_30px_rgba(139,30,30,0.25)] transition-transform duration-500 group-hover:rotate-6 group-hover:scale-105"
+            className="rounded-full shadow-[0_10px_30px_rgba(139,30,30,0.25)] transition-transform duration-500 group-hover:rotate-3 group-hover:scale-105"
           />
           <span className="font-serif text-2xl font-bold tracking-[-0.03em] text-[#661818]">LINC One</span>
         </Link>
@@ -84,7 +83,7 @@ export default function LincOneHero({ isAr, dir, onToggleLocale, actionsRef }: L
           className="max-w-2xl"
         >
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#8b1e1e]/15 bg-white/70 px-4 py-2 text-xs font-extrabold uppercase tracking-[0.2em] text-[#8b1e1e] backdrop-blur">
-            <Sparkles size={14} />
+            <LincLogo size={18} className="rounded-full" />
             {isAr ? 'مكان واحد. مجتمع واحد.' : 'One place. One community.'}
           </p>
           <h1 className="font-serif text-[clamp(4.5rem,14vw,10rem)] font-semibold leading-[0.78] tracking-[-0.075em] text-[#6f1919]">
@@ -118,8 +117,8 @@ export default function LincOneHero({ isAr, dir, onToggleLocale, actionsRef }: L
             whileHover={prefersReducedMotion ? undefined : { y: -7, rotate: -0.5 }}
             className="group relative min-h-[230px] overflow-hidden rounded-[2rem] bg-[#761b1b] p-7 text-start text-white shadow-[0_24px_70px_rgba(87,18,18,0.24)] sm:col-span-2"
           >
-            <span className="absolute -right-6 -top-16 font-serif text-[12rem] leading-none text-white/[0.06]">✦</span>
-            <span className="relative grid h-12 w-12 place-items-center rounded-2xl bg-white/12"><Sparkles size={23} /></span>
+            <LincLogo size={190} className="absolute -right-10 -top-16 rounded-full opacity-[0.06]" />
+            <span className="relative grid h-12 w-12 place-items-center rounded-2xl bg-white/12"><LincLogo size={38} className="rounded-full" /></span>
             <span className="relative mt-12 flex items-end justify-between gap-5">
               <span>
                 <span className="block text-xs font-bold uppercase tracking-[0.18em] text-white/55">01 / {isAr ? 'النمو' : 'Growth'}</span>

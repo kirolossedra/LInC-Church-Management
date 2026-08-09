@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Info, LogIn, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
+import { Info, LogIn, ShieldCheck, UsersRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import LincCrossMark from '../brand/LincCrossMark';
+import LincLogo from '../brand/LincLogo';
 
 interface FloatingLandingNavProps {
   isAr: boolean;
@@ -14,7 +14,7 @@ export default function FloatingLandingNav({ isAr, visible }: FloatingLandingNav
     {
       label: isAr ? 'المواهب الروحية' : 'Spiritual Gifts',
       href: '#spiritual-gifts-program',
-      icon: Sparkles,
+      icon: LincLogo,
       className: 'bg-[#f2a900] text-[#2a1806] hover:bg-[#ffc43d]',
     },
     {
@@ -64,7 +64,7 @@ export default function FloatingLandingNav({ isAr, visible }: FloatingLandingNav
               aria-label="LINC One home"
               className="hidden shrink-0 items-center gap-2 px-3 text-white lg:flex"
             >
-              <LincCrossMark size={36} className="shadow-[0_8px_20px_rgba(0,0,0,0.22)]" />
+              <LincLogo size={36} className="rounded-full shadow-[0_8px_20px_rgba(0,0,0,0.22)]" />
               <span className="font-serif text-lg font-bold tracking-[-0.03em]">LINC One</span>
             </Link>
 

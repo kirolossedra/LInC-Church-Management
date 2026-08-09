@@ -1,7 +1,8 @@
-import { AlertTriangle, Sparkles } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import type { DevelopmentItem, DevelopmentType } from '../../services/peopleNotes';
 import DevelopmentItemCard from './DevelopmentItemCard';
 import type { PeopleNotesController } from './usePeopleNotes';
+import LincLogo from '../brand/LincLogo';
 
 export default function DevelopmentItemSection({
   controller,
@@ -18,7 +19,7 @@ export default function DevelopmentItemSection({
   return (
     <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 space-y-4">
       <h3 className="text-xl font-bold text-[#8B1E1E] flex items-center gap-2">
-        {isStrength ? <Sparkles size={20} /> : <AlertTriangle size={20} />}
+        {isStrength ? <LincLogo size={22} className="rounded-full" /> : <AlertTriangle size={20} />}
         {isStrength
           ? isArabic ? 'نقاط القوة' : 'Strengths'
           : isArabic ? 'مجالات النمو' : 'Growth Areas'}
@@ -38,4 +39,3 @@ export default function DevelopmentItemSection({
     </section>
   );
 }
-

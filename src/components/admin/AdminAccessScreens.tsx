@@ -8,10 +8,9 @@ import {
   LockKeyhole,
   LogOut,
   ShieldCheck,
-  Sparkles,
   Users,
 } from 'lucide-react';
-import LincCrossMark from '../brand/LincCrossMark';
+import LincLogo from '../brand/LincLogo';
 
 interface AdminLoadingScreenProps {
   message: string;
@@ -66,10 +65,10 @@ export function AdminLoginScreen({
           className="text-white"
         >
           <a href="/" className="mb-14 inline-flex items-center gap-3" aria-label="LINC One home">
-            <LincCrossMark size={44} className="shadow-[0_10px_28px_rgba(0,0,0,0.24)]" />
+            <LincLogo size={44} className="rounded-full shadow-[0_10px_28px_rgba(0,0,0,0.24)]" />
             <span className="font-serif text-2xl font-bold">LINC One</span>
           </a>
-          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.24em] text-[#f2a900]"><Sparkles size={14} /> Administration</p>
+          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.24em] text-[#f2a900]"><LincLogo size={18} className="rounded-full" /> Administration</p>
           <h1 className="mt-5 font-serif text-[clamp(4rem,9vw,8rem)] font-semibold leading-[0.78] tracking-[-0.07em]">
             Work with
             <span className="block ps-[0.14em] text-[#c83b34]">purpose<span className="text-[#f2a900]">.</span></span>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import LincPageHero from '../components/linc/LincPageHero';
@@ -15,6 +15,7 @@ import {
   useNextGenSurvey,
 } from '../components/nextgen/activities';
 import type { NextGenActivityPanel } from '../components/nextgen/activities';
+import LincLogo from '../components/brand/LincLogo';
 
 export default function NextGenActivities() {
   const navigate = useNavigate();
@@ -61,7 +62,7 @@ export default function NextGenActivities() {
               ? 'ابدأ كمستخدم NextGen جديد أو شارك باستخدام معرّف تمت الموافقة عليه.'
               : 'Get started as a new NextGen user or participate with an approved identifier.'}
             eyebrow="LInC NextGen"
-            icon={<Sparkles size={22} />}
+            icon={<LincLogo size={28} className="rounded-full" />}
           />
 
           {!identity.activeUser ? (

@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowUpRight, Crown, LogOut, ShieldCheck, Sparkles } from 'lucide-react';
-import LincCrossMark from '../../brand/LincCrossMark';
+import { ArrowUpRight, Crown, LogOut, ShieldCheck } from 'lucide-react';
+import LincLogo from '../../brand/LincLogo';
 
 export type AdminSectionId =
   | 'overview'
@@ -53,9 +53,9 @@ export function AdminCommandHeader({
 
       <nav className="relative mx-auto flex max-w-7xl items-center justify-between gap-4">
         <a href="/" className="group inline-flex items-center gap-3" aria-label="LINC One home">
-          <LincCrossMark
+          <LincLogo
             size={44}
-            className="shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition-transform duration-500 group-hover:rotate-6 group-hover:scale-105"
+            className="rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition-transform duration-500 group-hover:rotate-3 group-hover:scale-105"
           />
           <span>
             <span className="block font-serif text-xl font-bold leading-none">LINC One</span>
@@ -80,7 +80,7 @@ export function AdminCommandHeader({
           transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
         >
           <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.24em] text-[#f2a900]">
-            <Sparkles size={14} /> LInC command center
+            <LincLogo size={18} className="rounded-full" /> LInC command center
           </p>
           <h1 className="mt-5 max-w-5xl font-serif text-[clamp(4rem,10vw,8.5rem)] font-semibold leading-[0.78] tracking-[-0.07em]">
             Lead with
