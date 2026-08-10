@@ -269,7 +269,7 @@ function AppRoutes() {
     if (path === '/guide') return 'guide';
     if (path === '/group-notes') return 'spiritual-program';
     if (path === '/booking') return 'spiritual-program';
-    if (path === '/nextgen-activities') return 'nextgen-activities';
+    if (path.startsWith('/nextgen-activities')) return 'nextgen-activities';
 
     return 'home';
   };
@@ -332,6 +332,15 @@ function AppRoutes() {
 
       <Route
         path="/nextgen-activities"
+        element={
+          <Layout activeTab="nextgen-activities" isAdmin={false}>
+            <NextGenActivities />
+          </Layout>
+        }
+      />
+
+      <Route
+        path="/nextgen-activities/qa/:sessionId"
         element={
           <Layout activeTab="nextgen-activities" isAdmin={false}>
             <NextGenActivities />

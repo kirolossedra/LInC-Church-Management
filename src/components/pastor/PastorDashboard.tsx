@@ -25,9 +25,7 @@ import {
   CheckCircle,
   XCircle,
   Mail,
-  Trophy,
-  UserPlus,
-  BarChart3,
+  ShieldCheck,
   BookOpenCheck,
 } from 'lucide-react';
 
@@ -66,9 +64,7 @@ import {
 } from './meeting-requests';
 
 import {
-  NextGenQuestionsSection,
-  NextGenRegistrationsSection,
-  NextGenSurveyResultsSection,
+  NextGenQaSessionsAdmin,
 } from './nextgen';
 
 import {
@@ -77,7 +73,6 @@ import {
   useMeetingRequests,
   useMeetings,
   usePastorCalendarData,
-  useNextGen,
   useParticipants,
   usePeopleDevelopment,
   usePeopleDevelopmentMeetingSchedules,
@@ -89,6 +84,7 @@ export default function PastorDashboard() {
   const { t, dir, locale } = useI18n();
   const displayLocale = locale === 'ar' ? 'ar' : 'en';
   const [showTutorialBuilder, setShowTutorialBuilder] = useState(false);
+  const [showNextGenQa, setShowNextGenQa] = useState(false);
 
   const {
     participants,
@@ -195,31 +191,6 @@ export default function PastorDashboard() {
     availability: calendarAvailability,
     unavailability: calendarUnavailability,
     refreshCalendar,
-  });
-
-  const {
-    nextGenQuestions,
-    showNextGenQuestions,
-    setShowNextGenQuestions,
-    nextGenSurveyResults,
-    showNextGenSurveyResults,
-    setShowNextGenSurveyResults,
-    nextGenSurveyResultsLoading,
-    nextGenSurveyResultsError,
-    nextGenRegistrations,
-    showNextGenRegistrations,
-    setShowNextGenRegistrations,
-    nextGenRegistrationSearchTerm,
-    setNextGenRegistrationSearchTerm,
-    nextGenRegistrationStatusFilter,
-    setNextGenRegistrationStatusFilter,
-    nextGenRegistrationUpdatingId,
-    nextGenSelectionLoadingId,
-    pendingNextGenRegistrationCount,
-    handleRegistrationStatus: handleNextGenRegistrationStatus,
-    handleQuestionSelection: handleNextGenQuestionSelection,
-  } = useNextGen({
-    locale: displayLocale,
   });
 
   const {
@@ -590,65 +561,20 @@ export default function PastorDashboard() {
           </button>
           <button
             type="button"
-            data-tutorial-id="pastor-nextgen-registrations-toggle"
-            onClick={() => setShowNextGenRegistrations(!showNextGenRegistrations)}
+            data-tutorial-id="pastor-nextgen-qa-toggle"
+            onClick={() => setShowNextGenQa(previous => !previous)}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
-              showNextGenRegistrations
-                ? 'bg-indigo-700 text-white border-indigo-700'
-                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+              showNextGenQa
+                ? 'bg-[#7a1717] text-white border-[#7a1717]'
+                : 'bg-amber-50 hover:bg-amber-100 text-[#7a1717] border-amber-200'
             }`}
           >
-            <UserPlus size={16} />
-            <span>{displayLocale === 'ar' ? 'تسجيلات NextGen' : 'NextGen Registrations'}</span>
-            {pendingNextGenRegistrationCount > 0 && (
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                showNextGenRegistrations ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'
-              }`}>
-                {pendingNextGenRegistrationCount}
-              </span>
-            )}
+            <ShieldCheck size={16} />
+            <span>{displayLocale === 'ar' ? 'جلسات NextGen QA' : 'NextGen QA Sessions'}</span>
             <ChevronDown
               size={16}
-              className={`transition-transform ${showNextGenRegistrations ? 'rotate-180' : ''}`}
+              className={`transition-transform ${showNextGenQa ? 'rotate-180' : ''}`}
             />
-          </button>
-          <button
-            type="button"
-            data-tutorial-id="pastor-nextgen-survey-toggle"
-            onClick={() => setShowNextGenSurveyResults(!showNextGenSurveyResults)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
-              showNextGenSurveyResults
-                ? 'bg-emerald-700 text-white border-emerald-700'
-                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-            }`}
-          >
-            <BarChart3 size={16} />
-            <span>{displayLocale === 'ar' ? 'نتائج استبيان NextGen' : 'NextGen Survey Results'}</span>
-            {nextGenSurveyResults.totalResponses > 0 && (
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                showNextGenSurveyResults ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
-              }`}>
-                {nextGenSurveyResults.totalResponses}
-              </span>
-            )}
-            <ChevronDown
-              size={16}
-              className={`transition-transform ${showNextGenSurveyResults ? 'rotate-180' : ''}`}
-            />
-          </button>
-          <button
-            type="button"
-            data-tutorial-id="pastor-nextgen-questions-toggle"
-            onClick={() => setShowNextGenQuestions(!showNextGenQuestions)}
-            className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 px-5 py-3 rounded-xl font-bold transition-colors text-sm border border-amber-200"
-          >
-            <Trophy size={16} />
-            <span>{displayLocale === 'ar' ? 'أسئلة NextGen' : 'NextGen Questions'}</span>
-            {nextGenQuestions.length > 0 && (
-              <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-bold">
-                {nextGenQuestions.length}
-              </span>
-            )}
           </button>
           <button
             data-tutorial-id="pastor-add-event"
@@ -832,61 +758,11 @@ export default function PastorDashboard() {
         onDecision={handleRequestStatus}
       />
 
-      {showNextGenRegistrations && (
-        <NextGenRegistrationsSection
-          registrations={nextGenRegistrations}
-          expanded={showNextGenRegistrations}
-          searchTerm={nextGenRegistrationSearchTerm}
-          statusFilter={nextGenRegistrationStatusFilter}
-          updatingUserId={nextGenRegistrationUpdatingId}
-          locale={displayLocale}
+      {showNextGenQa && (
+        <NextGenQaSessionsAdmin
+          expanded={showNextGenQa}
           onToggleExpanded={() =>
-            setShowNextGenRegistrations(
-              previous => !previous,
-            )
-          }
-          onSearchTermChange={
-            setNextGenRegistrationSearchTerm
-          }
-          onStatusFilterChange={
-            setNextGenRegistrationStatusFilter
-          }
-          onStatusChange={
-            handleNextGenRegistrationStatus
-          }
-        />
-      )}
-
-      {showNextGenSurveyResults && (
-        <NextGenSurveyResultsSection
-          results={nextGenSurveyResults}
-          expanded={showNextGenSurveyResults}
-          loading={nextGenSurveyResultsLoading}
-          error={nextGenSurveyResultsError}
-          locale={displayLocale}
-          onToggleExpanded={() =>
-            setShowNextGenSurveyResults(
-              previous => !previous,
-            )
-          }
-        />
-      )}
-
-      {showNextGenQuestions && (
-        <NextGenQuestionsSection
-          questions={nextGenQuestions}
-          expanded={showNextGenQuestions}
-          loadingQuestionId={
-            nextGenSelectionLoadingId
-          }
-          locale={displayLocale}
-          onToggleExpanded={() =>
-            setShowNextGenQuestions(
-              previous => !previous,
-            )
-          }
-          onSelectionChange={
-            handleNextGenQuestionSelection
+            setShowNextGenQa(previous => !previous)
           }
         />
       )}

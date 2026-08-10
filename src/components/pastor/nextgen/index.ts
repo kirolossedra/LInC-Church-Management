@@ -1,4 +1,5 @@
 export { default as NextGenQuestionsSection } from './NextGenQuestionsSection';
+export { default as NextGenQaSessionsAdmin } from './NextGenQaSessionsAdmin';
 
 export { default as NextGenRegistrationsSection } from './NextGenRegistrationsSection';
 

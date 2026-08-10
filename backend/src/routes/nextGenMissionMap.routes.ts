@@ -7,9 +7,6 @@ import {
 } from '../security/firebaseAuth'
 import type { AppEnv } from '../types/app'
 
-const NEXTGEN_EMAIL_PATTERN =
-  /^nextgen@montreal\.ca$/i
-
 const locationSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9-]+$/),
@@ -95,10 +92,7 @@ export function createNextGenMissionMapRoutes(
 
   routes.get('/', context => {
     const user = context.get('firebaseUser')
-    const isAuthorized =
-      user.email !== null &&
-      NEXTGEN_EMAIL_PATTERN.test(user.email.trim()) &&
-      user.signInProvider === 'password'
+    const isAuthorized = user.email !== null
 
     if (!isAuthorized) {
       return context.json(

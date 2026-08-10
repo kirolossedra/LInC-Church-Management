@@ -12,6 +12,10 @@ import {
   type NextGenMissionMapDependencies,
 } from './routes/nextGenMissionMap.routes'
 import {
+  createNextGenPortalRoutes,
+  type NextGenPortalDependencies,
+} from './routes/nextGenPortal.routes'
+import {
   createAuthRoutes,
   type AuthRoutesDependencies,
 } from './routes/auth.routes'
@@ -44,6 +48,7 @@ import type { AppEnv } from './types/app'
 export type AppDependencies = {
   auth?: AuthRoutesDependencies
   nextGenMissionMap?: NextGenMissionMapDependencies
+  nextGenPortal?: NextGenPortalDependencies
   peopleNotes?: PeopleNotesDependencies
   peopleDevelopment?: PeopleDevelopmentDependencies
   booking?: BookingDependencies
@@ -88,13 +93,7 @@ const requestSchema = z
   })
 
   app.post('/api/v1/email/test', async (c) => {
-  let requestBody: unknown = {}
-
-  try {
-    requestBody = await c.req.json()
-  } catch {
-    requestBody = {}
-  }
+  const requestBody: unknown = await c.req.json().catch(() => ({}))
 
   const validation = requestSchema.safeParse(requestBody)
 
@@ -229,6 +228,11 @@ const requestSchema = z
     createNextGenMissionMapRoutes(
       dependencies.nextGenMissionMap,
     ),
+  )
+
+  app.route(
+    '/api/v1/nextgen',
+    createNextGenPortalRoutes(dependencies.nextGenPortal),
   )
 
   app.route(

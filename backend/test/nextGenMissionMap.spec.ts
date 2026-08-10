@@ -84,7 +84,7 @@ describe('NextGen Montréal Mission Trip map', () => {
     expect(body.error.code).toBe('AUTHENTICATION_REQUIRED')
   })
 
-  it('forbids a different Firebase email', async () => {
+  it('accepts another authenticated Firebase email', async () => {
     const app = createApp({
       nextGenMissionMap: {
         verifyToken: vi.fn().mockResolvedValue({
@@ -99,17 +99,10 @@ describe('NextGen Montréal Mission Trip map', () => {
       undefined,
       mockBindings,
     )
-    const body = (await response.json()) as {
-      error: { code: string }
-    }
-
-    expect(response.status).toBe(403)
-    expect(body.error.code).toBe(
-      'NEXTGEN_MISSION_MAP_ACCESS_REQUIRED',
-    )
+    expect(response.status).toBe(200)
   })
 
-  it('requires the Firebase password provider', async () => {
+  it('accepts any Firebase sign-in provider', async () => {
     const app = createApp({
       nextGenMissionMap: {
         verifyToken: vi.fn().mockResolvedValue({
@@ -125,7 +118,7 @@ describe('NextGen Montréal Mission Trip map', () => {
       mockBindings,
     )
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(200)
   })
 
   it('returns validated map data for the exact login', async () => {

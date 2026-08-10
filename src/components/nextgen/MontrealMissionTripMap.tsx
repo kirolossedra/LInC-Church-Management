@@ -183,28 +183,23 @@ export default function MontrealMissionTripMap({
 
   const normalizedUserEmail =
     firebaseUser?.email?.trim().toLowerCase() || '';
-  const isMapAccount =
-    normalizedUserEmail === NEXTGEN_MAP_EMAIL;
+  const isMapAccount = Boolean(normalizedUserEmail);
 
   useEffect(() => {
     if (!firebaseUser || !isMapAccount) {
-      setMapData(null);
-      setMapLoading(false);
-      setMapError('');
-      setSelectedLocationId(null);
-      setRouteFromId('');
-      setRouteToId('');
       return undefined;
     }
 
     const controller = new AbortController();
-    setMapLoading(true);
-    setMapError('');
-
-    void getNextGenMissionMap(
-      firebaseUser,
-      controller.signal,
-    )
+    void Promise.resolve()
+      .then(() => {
+        setMapLoading(true);
+        setMapError('');
+        return getNextGenMissionMap(
+          firebaseUser,
+          controller.signal,
+        );
+      })
       .then(data => {
         setMapData(data);
         setSelectedLocationId(
