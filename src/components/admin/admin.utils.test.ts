@@ -9,10 +9,15 @@ describe('administrator authority normalization', () => {
       manageCarousel: false,
       manageAttendance: true,
       manageArchives: false,
+      manageNextGenQa: false,
     });
   });
 
   it('recognizes an explicit LInC Archives allocation', () => {
     expect(normalizeAdminAuthority({ manageArchives: true }).manageArchives).toBe(true);
+  });
+
+  it('recognizes an explicit NextGen QA allocation', () => {
+    expect(normalizeAdminAuthority({ manageNextGenQa: true }).manageNextGenQa).toBe(true);
   });
 });

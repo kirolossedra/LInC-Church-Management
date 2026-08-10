@@ -131,6 +131,7 @@ describe('Administrator routes', () => {
         manageCarousel: false,
         manageAttendance: false,
         manageArchives: false,
+        manageNextGenQa: false,
       },
     ), undefined, bindings)
     expect(response.status).toBe(403)

@@ -16,6 +16,7 @@ export const EMPTY_ADMIN_AUTHORITY: AdminAuthority = {
   manageCarousel: false,
   manageAttendance: false,
   manageArchives: false,
+  manageNextGenQa: false,
 };
 
 export const FULL_ADMIN_AUTHORITY: AdminAuthority = {
@@ -23,6 +24,7 @@ export const FULL_ADMIN_AUTHORITY: AdminAuthority = {
   manageCarousel: true,
   manageAttendance: true,
   manageArchives: true,
+  manageNextGenQa: true,
 };
 
 export const ASSESSMENT_FORM_DEFINITIONS = [

@@ -10,6 +10,20 @@ const mockBindings = {
   FIREBASE_DATABASE_URL: 'https://test-project.firebaseio.com',
 }
 
+const jsonDatabaseResponse = (value: unknown, status = 200) => new Response(
+  JSON.stringify(value),
+  { status, headers: { 'Content-Type': 'application/json' } },
+)
+
+const firebaseUser = {
+  uid: 'member-uid',
+  email: 'member@example.com',
+  emailVerified: false,
+  name: 'Member',
+  picture: null,
+  signInProvider: 'password',
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -81,6 +95,120 @@ describe('LinC backend', () => {
     expect(response.status).toBe(404)
     expect(body.error.code).toBe('NEXTGEN_ROUTE_NOT_FOUND')
     expect(body.error.message).toContain('does not exist')
+  })
+
+  it('returns closed QA sessions to members as visible records while keeping drafts private', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/nextGenPortal/qa/migrations/legacyQaSession1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({ complete: true }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/sessions/qa-session-1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          title: 'QA Session 1', status: 'closed', createdAt: 1, updatedAt: 1,
+        }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/sessions.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          open: { title: 'Open Session', status: 'open', createdAt: 3, updatedAt: 3 },
+          'qa-session-1': { title: 'QA Session 1', status: 'closed', createdAt: 1, updatedAt: 1 },
+          draft: { title: 'Draft Session', status: 'draft', createdAt: 4, updatedAt: 4 },
+        }))
+      }
+      return Promise.resolve(jsonDatabaseResponse(null))
+    })
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
+        databaseFetch: databaseFetch as typeof fetch,
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/qa/sessions',
+      { headers: { Authorization: 'Bearer valid-token' } },
+      mockBindings,
+    )
+    const body = await response.json() as {
+      data: { sessions: Array<{ title: string; status: string }> }
+    }
+
+    expect(response.status).toBe(200)
+    expect(body.data.sessions.map(item => [item.title, item.status])).toEqual([
+      ['Open Session', 'open'],
+      ['QA Session 1', 'closed'],
+    ])
+  })
+
+  it('allows an administrator with NextGen QA authority to use the management endpoint', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/member-uid.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          email: firebaseUser.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageNextGenQa: true },
+        }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/migrations/legacyQaSession1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({ complete: true }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/sessions/qa-session-1.json')) {
+        return Promise.resolve(jsonDatabaseResponse(null))
+      }
+      if (url.endsWith('/nextGenPortal/qa/sessions.json')) {
+        return Promise.resolve(jsonDatabaseResponse({}))
+      }
+      return Promise.resolve(jsonDatabaseResponse(null))
+    })
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
+        databaseFetch: databaseFetch as typeof fetch,
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/pastor/qa/sessions',
+      { headers: { Authorization: 'Bearer valid-token' } },
+      mockBindings,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ success: true, data: { sessions: [] } })
+  })
+
+  it('returns a meaningful authorization error to an administrator without NextGen QA authority', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/member-uid.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          email: firebaseUser.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageNextGenQa: false },
+        }))
+      }
+      return Promise.resolve(jsonDatabaseResponse(null))
+    })
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
+        databaseFetch: databaseFetch as typeof fetch,
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/pastor/qa/sessions',
+      { headers: { Authorization: 'Bearer valid-token' } },
+      mockBindings,
+    )
+    const body = await response.json() as { error: { code: string; message: string } }
+
+    expect(response.status).toBe(403)
+    expect(body.error.code).toBe('NEXTGEN_QA_MANAGEMENT_ACCESS_REQUIRED')
+    expect(body.error.message).toContain('allocated administrator')
   })
 
   it('rejects an invalid email test request body', async () => {

@@ -127,6 +127,11 @@ export function AdminHierarchySection({
                         title: 'LInC Archives',
                         description: 'Organize folders and manage archive files.',
                       },
+                      {
+                        key: 'manageNextGenQa',
+                        title: 'NextGen QA',
+                        description: 'Create QA sessions, review voters, and open or close voting.',
+                      },
                     ] as const
                   ).map((authorityOption) => {
                     const selected = draft[authorityOption.key];

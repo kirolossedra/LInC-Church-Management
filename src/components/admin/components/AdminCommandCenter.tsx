@@ -9,6 +9,7 @@ export type AdminSectionId =
   | 'assessment'
   | 'carousel'
   | 'attendance'
+  | 'nextgen-qa'
   | 'archives';
 
 export interface AdminArea {

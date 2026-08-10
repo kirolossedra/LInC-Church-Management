@@ -43,6 +43,7 @@ const authoritySchema = z.object({
   manageCarousel: z.boolean(),
   manageAttendance: z.boolean(),
   manageArchives: z.boolean(),
+  manageNextGenQa: z.boolean(),
 }).strict().refine(value => Object.values(value).some(Boolean), {
   message: 'At least one administrator authority is required.',
 })

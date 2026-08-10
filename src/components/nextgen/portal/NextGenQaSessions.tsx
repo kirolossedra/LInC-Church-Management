@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Loader2, MessageCircleQuestion } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, LockKeyhole, MessageCircleQuestion } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import {
@@ -15,6 +15,7 @@ export function NextGenQaSessionList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const openSessionCount = sessions.filter(session => session.status === 'open').length;
 
   useEffect(() => {
     void getNextGenSessions().then(result => setSessions(result.sessions)).catch(loadError => setError(loadError instanceof Error ? loadError.message : 'QA sessions could not be loaded.')).finally(() => setLoading(false));
@@ -27,20 +28,38 @@ export function NextGenQaSessionList() {
     <section>
       <div className="mb-6 flex items-end justify-between gap-5">
         <div><p className="text-xs font-black uppercase tracking-[0.28em] text-[#a66c18]">Separate forms</p><h2 className="mt-2 font-serif text-4xl text-[#661816]">QA sessions</h2></div>
-        <span className="rounded-full bg-[#efe5d5] px-4 py-2 text-xs font-black text-[#661816]">{sessions.length} open</span>
+        <span className="rounded-full bg-[#efe5d5] px-4 py-2 text-xs font-black text-[#661816]">{openSessionCount} open</span>
       </div>
       {sessions.length === 0 ? (
-        <div className="rounded-[2rem] border border-dashed border-[#7a1717]/20 bg-white/70 px-8 py-16 text-center"><MessageCircleQuestion className="mx-auto text-[#a66c18]" size={42} /><p className="mt-5 font-serif text-2xl text-[#661816]">No QA session is open yet.</p></div>
+        <div className="rounded-[2rem] border border-dashed border-[#7a1717]/20 bg-white/70 px-8 py-16 text-center"><MessageCircleQuestion className="mx-auto text-[#a66c18]" size={42} /><p className="mt-5 font-serif text-2xl text-[#661816]">No QA sessions are available yet.</p></div>
       ) : (
         <div className="grid gap-5 md:grid-cols-2">
-          {sessions.map(session => (
-            <button key={session.id} onClick={() => navigate(`/nextgen-activities/qa/${session.id}`)} className="group rounded-[2rem] border border-[#7a1717]/10 bg-white p-7 text-left shadow-[0_18px_45px_rgba(70,20,18,0.08)] transition hover:-translate-y-1 hover:border-[#7a1717]/30">
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#a66c18]">Open session</p>
+          {sessions.map(session => {
+            const isOpen = session.status === 'open';
+            return (
+            <button
+              key={session.id}
+              type="button"
+              disabled={!isOpen}
+              aria-label={isOpen ? `Open ${session.title}` : `${session.title} is closed`}
+              onClick={() => navigate(`/nextgen-activities/qa/${session.id}`)}
+              className={`group rounded-[2rem] border p-7 text-left transition ${isOpen
+                ? 'border-[#7a1717]/10 bg-white shadow-[0_18px_45px_rgba(70,20,18,0.08)] hover:-translate-y-1 hover:border-[#7a1717]/30'
+                : 'cursor-not-allowed border-stone-200 bg-stone-100 text-stone-500 opacity-70 grayscale'
+              }`}
+            >
+              <p className={`flex items-center gap-2 text-xs font-black uppercase tracking-[0.22em] ${isOpen ? 'text-[#a66c18]' : 'text-stone-500'}`}>
+                {!isOpen && <LockKeyhole size={14} />}
+                {isOpen ? 'Open session' : 'Closed session'}
+              </p>
               <h3 className="mt-3 font-serif text-3xl text-[#661816]">{session.title}</h3>
               {session.description && <p className="mt-3 line-clamp-3 text-sm leading-6 text-stone-600">{session.description}</p>}
-              <span className="mt-7 inline-flex items-center gap-2 text-sm font-black text-[#7a1717]">Open form <ArrowRight size={17} className="transition group-hover:translate-x-1" /></span>
+              <span className={`mt-7 inline-flex items-center gap-2 text-sm font-black ${isOpen ? 'text-[#7a1717]' : 'text-stone-500'}`}>
+                {isOpen ? 'Open form' : 'Voting closed'}
+                {isOpen && <ArrowRight size={17} className="transition group-hover:translate-x-1" />}
+              </span>
             </button>
-          ))}
+          );})}
         </div>
       )}
     </section>

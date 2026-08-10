@@ -54,6 +54,7 @@ export interface AdminAuthority {
   manageCarousel: boolean;
   manageAttendance: boolean;
   manageArchives: boolean;
+  manageNextGenQa: boolean;
 }
 
 export interface AdminAccount {

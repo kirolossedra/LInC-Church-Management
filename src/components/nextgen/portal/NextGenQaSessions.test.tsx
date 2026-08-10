@@ -30,6 +30,19 @@ describe('NextGen QA session pages', () => {
     expect(screen.getByText('Open form')).toBeInTheDocument();
   });
 
+  it('shows a closed session as disabled instead of hiding it', async () => {
+    vi.mocked(getNextGenSessions).mockResolvedValue({
+      sessions: [{ ...session, id: 'qa-session-1', title: 'QA Session 1', status: 'closed' }],
+    });
+    render(<MemoryRouter><NextGenQaSessionList /></MemoryRouter>);
+
+    const closedSession = await screen.findByRole('button', { name: 'QA Session 1 is closed' });
+    expect(closedSession).toBeDisabled();
+    expect(screen.getByText('Closed session')).toBeInTheDocument();
+    expect(screen.getByText('Voting closed')).toBeInTheDocument();
+    expect(screen.getByText('0 open')).toBeInTheDocument();
+  });
+
   it('shows a completed question as immutable when the email already voted', async () => {
     vi.mocked(getNextGenSession).mockResolvedValue({
       session,

@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   GalleryHorizontalEnd,
   LayoutDashboard,
+  MessageCircleQuestion,
   UsersRound,
   X,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import {
   type AdminSectionId,
 } from './components';
 import { LincArchivesSection } from './archives';
+import { NextGenQaSessionsAdmin } from '../pastor/nextgen';
 import {
   AdminApprovalScreen,
   AdminLoadingScreen,
@@ -57,6 +59,7 @@ import {
 export default function AdministratorPanel() {
   const prefersReducedMotion = useReducedMotion();
   const [activeSection, setActiveSection] = useState<AdminSectionId>('overview');
+  const [nextGenQaExpanded, setNextGenQaExpanded] = useState(true);
   const [carouselEnabled, setCarouselEnabled] = useState(true);
   const [photos, setPhotos] = useState<CarouselPhoto[]>([]);
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
@@ -100,6 +103,7 @@ export default function AdministratorPanel() {
     canManageCarousel,
     canManageAttendance,
     canManageArchives,
+    canManageNextGenQa,
     sortedAdminAccounts,
     handleLogin,
     handleLogout,
@@ -172,6 +176,14 @@ export default function AdministratorPanel() {
       icon: BarChart3,
       accent: 'bg-[#265a52] text-white',
     }] : []),
+    ...(canManageNextGenQa ? [{
+      id: 'nextgen-qa' as const,
+      label: 'NextGen QA',
+      eyebrow: 'Session integrity',
+      description: 'Create QA sessions, review voters, and control when participation is open.',
+      icon: MessageCircleQuestion,
+      accent: 'bg-[#a66c18] text-white',
+    }] : []),
     ...(canManageArchives ? [{
       id: 'archives' as const,
       label: 'LInC Archives',
@@ -180,7 +192,7 @@ export default function AdministratorPanel() {
       icon: Archive,
       accent: 'bg-[#1b1010] text-white',
     }] : []),
-  ], [canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, isChief]);
+  ], [canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, canManageNextGenQa, isChief]);
 
   const visibleActiveSection = adminAreas.some(area => area.id === activeSection)
     ? activeSection
@@ -693,6 +705,12 @@ export default function AdministratorPanel() {
             )}
 
             {visibleActiveSection === 'attendance' && canManageAttendance && <AttendanceAdminSection />}
+            {visibleActiveSection === 'nextgen-qa' && canManageNextGenQa && (
+              <NextGenQaSessionsAdmin
+                expanded={nextGenQaExpanded}
+                onToggleExpanded={() => setNextGenQaExpanded(current => !current)}
+              />
+            )}
             {visibleActiveSection === 'archives' && canManageArchives && <LincArchivesSection />}
           </motion.div>
         </AnimatePresence>

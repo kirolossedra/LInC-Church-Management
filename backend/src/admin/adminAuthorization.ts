@@ -7,12 +7,14 @@ export const EMPTY_ADMIN_AUTHORITY = {
   manageCarousel: false,
   manageAttendance: false,
   manageArchives: false,
+  manageNextGenQa: false,
 }
 export const FULL_ADMIN_AUTHORITY = {
   manageAssessmentForms: true,
   manageCarousel: true,
   manageAttendance: true,
   manageArchives: true,
+  manageNextGenQa: true,
 }
 
 export type AdminAuthority = typeof EMPTY_ADMIN_AUTHORITY
@@ -77,6 +79,7 @@ export function normalizeAdminAccount(
       manageCarousel: rawAuthority.manageCarousel === true,
       manageAttendance: rawAuthority.manageAttendance === true,
       manageArchives: rawAuthority.manageArchives === true,
+      manageNextGenQa: rawAuthority.manageNextGenQa === true,
     },
     firstSignedInAt: numberOrZero(record.firstSignedInAt),
     lastSignedInAt: numberOrZero(record.lastSignedInAt),

@@ -1,6 +1,10 @@
 import type { FirebaseRealtimeDatabaseClient } from '../services/firebaseRealtimeDatabase.service'
 
 export const NEXTGEN_QA_PATH = ['nextGenPortal', 'qa'] as const
+export const LEGACY_NEXTGEN_QA_PATH = ['nextGenActivities', 'qaSessions'] as const
+export const LEGACY_NEXTGEN_USERS_PATH = ['nextGenUsers'] as const
+export const LEGACY_QA_SESSION_ID = 'qa-session-1'
+const LEGACY_QA_MIGRATION_PATH = [...NEXTGEN_QA_PATH, 'migrations', 'legacyQaSession1'] as const
 
 export type NextGenQaSessionStatus = 'draft' | 'open' | 'closed'
 export type NextGenParticipantStatus = 'pending' | 'verified' | 'discarded'
@@ -46,6 +50,121 @@ type NextGenQaVote = {
 
 export async function listQaSessions(database: FirebaseRealtimeDatabaseClient) {
   return normalizeSessions(await database.get([...NEXTGEN_QA_PATH, 'sessions']))
+}
+
+export async function ensureLegacyQaSession({
+  database,
+  timestamp,
+}: {
+  database: FirebaseRealtimeDatabaseClient
+  timestamp: number
+}) {
+  const migration = asRecord(await database.get(LEGACY_QA_MIGRATION_PATH))
+  if (migration.complete === true) return getQaSession(database, LEGACY_QA_SESSION_ID)
+
+  const legacyQuestionEntries = Object.entries(
+    asRecord(await database.get(LEGACY_NEXTGEN_QA_PATH)),
+  ).filter(([, value]) => stringValue(asRecord(value).question))
+
+  if (legacyQuestionEntries.length === 0) {
+    await database.patch(LEGACY_QA_MIGRATION_PATH, {
+      complete: true,
+      migratedAt: timestamp,
+      questionCount: 0,
+    })
+    return null
+  }
+
+  const earliestCreatedAt = legacyQuestionEntries.reduce((earliest, [, value]) => {
+    const createdAt = numberValue(asRecord(value).createdAt)
+    return createdAt > 0 && createdAt < earliest ? createdAt : earliest
+  }, timestamp)
+  const session: NextGenQaSession = {
+    id: LEGACY_QA_SESSION_ID,
+    title: 'QA Session 1',
+    description: 'Archived questions from the previous NextGen QA page.',
+    status: 'closed',
+    createdAt: earliestCreatedAt,
+    createdByUid: 'legacy-nextgen-migration',
+    updatedAt: timestamp,
+  }
+  await database.putIfAbsent([...NEXTGEN_QA_PATH, 'sessions', session.id], session)
+
+  const legacyUsers = asRecord(await database.get(LEGACY_NEXTGEN_USERS_PATH))
+  let voteCount = 0
+  const participantKeys = new Set<string>()
+
+  for (const [questionId, value] of legacyQuestionEntries) {
+    const record = asRecord(value)
+    const question: NextGenQaQuestion = {
+      id: questionId,
+      sessionId: session.id,
+      prompt: stringValue(record.question),
+      options: [
+        { id: 'option-1', label: 'Upvote' },
+        { id: 'option-2', label: 'Downvote' },
+      ],
+      createdAt: numberValue(record.createdAt) || earliestCreatedAt,
+      createdByUid: stringValue(record.submittedByIdentifier) || 'legacy-nextgen-migration',
+      updatedAt: numberValue(record.updatedAt) || timestamp,
+    }
+    await database.putIfAbsent(
+      [...NEXTGEN_QA_PATH, 'questions', session.id, questionId],
+      question,
+    )
+
+    const legacyVotes = asRecord(record.votesByIdentifier)
+    const voterIdentifiers = new Set([
+      ...Object.keys(asRecord(record.voterIdentifiers)),
+      ...Object.keys(legacyVotes),
+    ])
+    for (const identifier of voterIdentifiers) {
+      const user = asRecord(legacyUsers[identifier])
+      const email = stringValue(user.email).toLowerCase()
+      if (!email) continue
+      const emailVoteKey = await createEmailVoteKey(email)
+      const participantUid = `legacy_${emailVoteKey.slice(0, 40)}`
+      const legacyVote = asRecord(legacyVotes[identifier])
+      const firstVotedAt = numberValue(legacyVote.completedAt) || question.createdAt
+      const status: NextGenParticipantStatus = user.status === 'approved'
+        ? 'verified'
+        : user.status === 'rejected'
+          ? 'discarded'
+          : 'pending'
+      const participant: NextGenQaParticipant = {
+        uid: participantUid,
+        email,
+        name: stringValue(user.fullName) || email,
+        status,
+        firstVotedAt,
+        updatedAt: timestamp,
+      }
+      await database.putIfAbsent(
+        [...NEXTGEN_QA_PATH, 'participants', session.id, participantUid],
+        participant,
+      )
+      participantKeys.add(participantUid)
+
+      const optionId = legacyVote.voteType === 'downvote'
+        ? 'option-2'
+        : legacyVote.voteType === 'upvote'
+          ? 'option-1'
+          : null
+      if (optionId && await database.putIfAbsent(
+        [...NEXTGEN_QA_PATH, 'votes', session.id, questionId, emailVoteKey],
+        { participantUid, optionId, createdAt: firstVotedAt },
+      )) voteCount += 1
+    }
+  }
+
+  await database.patch(LEGACY_QA_MIGRATION_PATH, {
+    complete: true,
+    migratedAt: timestamp,
+    questionCount: legacyQuestionEntries.length,
+    participantCount: participantKeys.size,
+    voteCount,
+  })
+  return getQaSession(database, LEGACY_QA_SESSION_ID)
 }
 
 export async function getQaSession(database: FirebaseRealtimeDatabaseClient, sessionId: string) {

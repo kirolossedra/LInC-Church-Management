@@ -17,6 +17,7 @@ import {
   createEmailVoteKey,
   createQaQuestion,
   createQaSession,
+  ensureLegacyQaSession,
   getMemberSessionView,
   getPastorSessionView,
   getQaSession,
@@ -25,6 +26,7 @@ import {
   recordQaVote,
   updateParticipantStatus,
 } from '../nextgen/nextGenPortal'
+import { requireAdminAuthority } from '../admin/adminAuthorization'
 import { createFirebaseAuthMiddleware, type FirebaseTokenVerifier } from '../security/firebaseAuth'
 import { getFirebaseServiceAccountAccessToken } from '../security/firebaseServiceAccount'
 import { isPastorUser } from '../security/pastorAuthorization'
@@ -112,7 +114,8 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
   })
 
   routes.get('/qa/sessions', context => withDatabase(context, dependencies, async database => {
-    const sessions = (await listQaSessions(database)).filter(session => session.status === 'open')
+    await ensureLegacyQaSession({ database, timestamp: now() })
+    const sessions = (await listQaSessions(database)).filter(session => session.status !== 'draft')
     return context.json({ success: true, data: { sessions } })
   }))
 
@@ -150,7 +153,8 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     })
   })
 
-  routes.get('/pastor/qa/sessions', context => withPastor(context, dependencies, async database => {
+  routes.get('/pastor/qa/sessions', context => withQaManager(context, dependencies, async database => {
+    await ensureLegacyQaSession({ database, timestamp: now() })
     const sessions = await listQaSessions(database)
     const summaries = await Promise.all(sessions.map(async session => {
       const detail = await getPastorSessionView(database, session)
@@ -167,7 +171,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
   routes.post('/pastor/qa/sessions', async context => {
     const body = sessionSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
-    return withPastor(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async database => {
       const session = await createQaSession({
         database,
         id: generateId(),
@@ -183,7 +187,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     const sessionId = idSchema.safeParse(context.req.param('sessionId'))
     const body = sessionUpdateSchema.safeParse(await readJson(context))
     if (!sessionId.success || !body.success) return validationError(context)
-    return withPastor(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async database => {
       const session = await getQaSession(database, sessionId.data)
       if (!session) return notFound(context, 'NEXTGEN_QA_SESSION_NOT_FOUND', 'The QA session was not found.')
       const updated = { ...session, ...body.data, updatedAt: now() }
@@ -196,9 +200,12 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     const sessionId = idSchema.safeParse(context.req.param('sessionId'))
     const body = questionSchema.safeParse(await readJson(context))
     if (!sessionId.success || !body.success) return validationError(context)
-    return withPastor(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async database => {
       const session = await getQaSession(database, sessionId.data)
       if (!session) return notFound(context, 'NEXTGEN_QA_SESSION_NOT_FOUND', 'The QA session was not found.')
+      if (session.status === 'closed') {
+        return context.json({ success: false, error: { code: 'NEXTGEN_QA_SESSION_CLOSED', message: 'Reopen this QA session before adding questions.' } }, 409)
+      }
       const question = await createQaQuestion({
         database,
         session,
@@ -215,7 +222,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
   routes.get('/pastor/qa/sessions/:sessionId', context => {
     const sessionId = idSchema.safeParse(context.req.param('sessionId'))
     if (!sessionId.success) return validationError(context)
-    return withPastor(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async database => {
       const session = await getQaSession(database, sessionId.data)
       if (!session) return notFound(context, 'NEXTGEN_QA_SESSION_NOT_FOUND', 'The QA session was not found.')
       return context.json({ success: true, data: await getPastorSessionView(database, session) })
@@ -227,7 +234,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     const participantUid = idSchema.safeParse(context.req.param('participantUid'))
     const body = participantStatusSchema.safeParse(await readJson(context))
     if (!sessionId.success || !participantUid.success || !body.success) return validationError(context)
-    return withPastor(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async database => {
       try {
         const participant = await updateParticipantStatus({
           database,
@@ -339,11 +346,16 @@ async function withMemberSession(context: Context<AppEnv>, dependencies: NextGen
   })
 }
 
-async function withPastor(context: Context<AppEnv>, dependencies: NextGenPortalDependencies, operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>) {
-  if (!isPastorUser(context.get('firebaseUser'))) {
-    return context.json({ success: false, error: { code: 'PASTOR_ACCESS_REQUIRED', message: 'Pastor access is required.' } }, 403)
-  }
-  return withDatabase(context, dependencies, operation)
+async function withQaManager(context: Context<AppEnv>, dependencies: NextGenPortalDependencies, operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>) {
+  return withDatabase(context, dependencies, async database => {
+    const user = context.get('firebaseUser')
+    if (isPastorUser(user)) return operation(database)
+    const authorization = await requireAdminAuthority(database, user, 'manageNextGenQa')
+    if (!authorization.allowed) {
+      return context.json({ success: false, error: { code: 'NEXTGEN_QA_MANAGEMENT_ACCESS_REQUIRED', message: 'Pastor or allocated administrator access is required to manage QA sessions.' } }, 403)
+    }
+    return operation(database)
+  })
 }
 
 async function withFile(context: Context<AppEnv>, dependencies: NextGenPortalDependencies, operation: (database: FirebaseRealtimeDatabaseClient, file: NextGenFile) => Promise<Response>) {

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { createNextGenObjectKey } from '../src/nextgen/nextGenFiles'
 import {
+  ensureLegacyQaSession,
   getPastorSessionView,
+  LEGACY_QA_SESSION_ID,
   recordQaVote,
   type NextGenQaQuestion,
   type NextGenQaSession,
@@ -72,6 +74,65 @@ describe('NextGen portal domain', () => {
     await recordQaVote(input)
     await expect(recordQaVote({ ...input, optionId: 'option-2', timestamp: 11 }))
       .rejects.toMatchObject({ code: 'NEXTGEN_QA_ALREADY_VOTED' })
+  })
+
+  it('migrates legacy questions once into a closed QA Session 1', async () => {
+    const { database, values } = memoryDatabase({
+      'nextGenActivities/qaSessions': {
+        'legacy-question': {
+          question: 'Which topic should be discussed?',
+          submittedByIdentifier: 'person-a',
+          totalUpvotes: 1,
+          totalDownvotes: 0,
+          voterIdentifiers: { 'person-a': true },
+          votesByIdentifier: {
+            'person-a': { voteType: 'upvote', completedAt: 15 },
+          },
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      },
+      nextGenUsers: {
+        'person-a': {
+          fullName: 'Legacy Member',
+          email: 'legacy@example.com',
+          status: 'approved',
+        },
+      },
+    })
+
+    const migrated = await ensureLegacyQaSession({ database, timestamp: 30 })
+    const valueCountAfterFirstMigration = values.size
+    const repeated = await ensureLegacyQaSession({ database, timestamp: 40 })
+
+    expect(migrated).toMatchObject({
+      id: LEGACY_QA_SESSION_ID,
+      title: 'QA Session 1',
+      status: 'closed',
+    })
+    expect(repeated?.status).toBe('closed')
+    expect(values.size).toBe(valueCountAfterFirstMigration)
+    expect(values.get(`nextGenPortal/qa/questions/${LEGACY_QA_SESSION_ID}/legacy-question`))
+      .toMatchObject({ prompt: 'Which topic should be discussed?' })
+    expect(values.get(`nextGenPortal/qa/migrations/legacyQaSession1`))
+      .toMatchObject({ complete: true, questionCount: 1, participantCount: 1, voteCount: 1 })
+    expect([...values.entries()].find(([key]) => key.startsWith(`nextGenPortal/qa/participants/${LEGACY_QA_SESSION_ID}/`))?.[1])
+      .toMatchObject({ name: 'Legacy Member', status: 'verified' })
+    expect([...values.keys()].some(key => key.startsWith(`nextGenPortal/qa/votes/${LEGACY_QA_SESSION_ID}/legacy-question/`)))
+      .toBe(true)
+  })
+
+  it('keeps a closed session read-only for voting', async () => {
+    const { database } = memoryDatabase()
+    await expect(recordQaVote({
+      database,
+      session: { ...session, status: 'closed' },
+      question,
+      participant: { uid: 'member-1', email: 'member@example.com', name: 'Member One' },
+      optionId: 'option-1',
+      emailVoteKey: 'email-hash',
+      timestamp: 10,
+    })).rejects.toMatchObject({ code: 'NEXTGEN_QA_SESSION_NOT_OPEN' })
   })
 
   it('returns voter identities separately from aggregate results and excludes unverified votes', async () => {
