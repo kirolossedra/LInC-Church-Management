@@ -117,7 +117,7 @@ export async function uploadNextGenFile(file: File, folderId: string | null) {
   const response = await fetch(prepared.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
   if (!response.ok) {
     try { await deleteNextGenFile(prepared.file.id); } catch { /* preserve upload error */ }
-    throw new Error(`Backblaze rejected the upload (HTTP ${response.status}).`);
+    throw new Error(`Private storage rejected the upload (HTTP ${response.status}).`);
   }
   return completeNextGenFile(prepared.file.id);
 }
@@ -141,15 +141,33 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
       Authorization: `Bearer ${await user.getIdToken(refresh)}`,
     },
   });
-  let response = await send(false);
-  if (response.status === 401) response = await send(true);
+  let response: Response;
+  try {
+    response = await send(false);
+    if (response.status === 401) response = await send(true);
+  } catch {
+    throw new Error('The NextGen backend could not be reached. Check the connection or backend deployment.');
+  }
   const body = await response.json().catch(() => null) as {
     success?: boolean;
     data?: T;
     error?: { message?: string };
   } | null;
   if (!response.ok || body?.success !== true || body.data === undefined) {
-    throw new Error(body?.error?.message || 'The NextGen request failed.');
+    throw new Error(nextGenResponseError(response.status, body?.error));
   }
   return body.data;
+}
+
+export function nextGenResponseError(
+  status: number,
+  error?: { message?: string; code?: string },
+) {
+  if (error?.message) return `${error.message} (HTTP ${status})`;
+  if (status === 404) {
+    return 'The NextGen backend endpoint is not deployed or does not exist (HTTP 404).';
+  }
+  if (status === 401) return 'Your Firebase login expired. Sign in again (HTTP 401).';
+  if (status === 403) return 'This account cannot use that NextGen function (HTTP 403).';
+  return `The NextGen backend returned an unexpected response (HTTP ${status}).`;
 }

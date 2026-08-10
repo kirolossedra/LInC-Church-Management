@@ -82,7 +82,7 @@ export async function uploadArchiveFile(file: File, folderId: string | null) {
       body: file,
     });
     if (!uploadResponse.ok) {
-      throw new Error(`Backblaze rejected the upload (HTTP ${uploadResponse.status}).`);
+      throw new Error(`Private storage rejected the upload (HTTP ${uploadResponse.status}).`);
     }
   } catch (error) {
     try { await deleteArchiveFile(prepared.file.id); } catch { /* preserve the upload error */ }
@@ -92,7 +92,7 @@ export async function uploadArchiveFile(file: File, folderId: string | null) {
   try {
     return await completeArchiveFileUpload(prepared.file.id);
   } catch {
-    throw new Error('The file reached Backblaze, but verification is pending. Use Verify upload.');
+    throw new Error('The file reached private storage, but verification is pending. Use Verify upload.');
   }
 }
 

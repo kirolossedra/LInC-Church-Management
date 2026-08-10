@@ -81,6 +81,19 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
   const routes = new Hono<AppEnv>()
   const now = dependencies.now ?? Date.now
   const generateId = dependencies.generateId ?? (() => crypto.randomUUID())
+
+  routes.get('/health', context => {
+    context.header('Cache-Control', 'no-store, max-age=0')
+    return context.json({
+      success: true,
+      data: {
+        service: 'nextgen',
+        status: 'ok',
+        contractVersion: 1,
+      },
+    })
+  })
+
   routes.use('*', createFirebaseAuthMiddleware(dependencies.verifyToken))
 
   routes.get('/session', context => {
@@ -302,6 +315,14 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
       return context.json({ success: true, data: { deleted: true } })
     } catch (error) { return storageOrFileError(context, error) }
   }))
+
+  routes.all('*', context => context.json({
+    success: false,
+    error: {
+      code: 'NEXTGEN_ROUTE_NOT_FOUND',
+      message: 'The requested NextGen backend endpoint does not exist.',
+    },
+  }, 404))
 
   return routes
 }

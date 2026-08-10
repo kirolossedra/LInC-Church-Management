@@ -92,7 +92,7 @@ describe('Administrator archive service', () => {
     await expect(uploadArchiveFile(
       new File(['photo'], 'photo.jpg', { type: 'image/jpeg' }),
       null,
-    )).rejects.toThrow('The file reached Backblaze, but verification is pending. Use Verify upload.');
+    )).rejects.toThrow('The file reached private storage, but verification is pending. Use Verify upload.');
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.some(call => call[1]?.method === 'DELETE')).toBe(false);

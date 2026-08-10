@@ -191,7 +191,7 @@ export default function LincArchivesSection() {
             <div className={archive.visibleFolders.length > 0 ? 'mt-7' : ''}>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-stone-400">Files in this location</p>
-                <span className="rounded-full bg-[#e9dfd0] px-3 py-1 text-[10px] font-extrabold uppercase tracking-wide text-[#761b1b]">Private Backblaze storage</span>
+                <span className="rounded-full bg-[#e9dfd0] px-3 py-1 text-[10px] font-extrabold uppercase tracking-wide text-[#761b1b]">Private file workspace</span>
               </div>
 
               <div

@@ -6,6 +6,7 @@
     "deploy": "wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "typecheck": "tsc --noEmit",
+    "smoke:production": "node scripts/production-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

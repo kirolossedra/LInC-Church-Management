@@ -22,6 +22,67 @@ describe('LinC backend', () => {
     expect(await response.text()).toBe('Hello Hono!')
   })
 
+  it('exposes the deployed NextGen contract health endpoint', async () => {
+    const response = await app.request(
+      '/api/v1/nextgen/health',
+      {},
+      mockBindings,
+    )
+    const body = (await response.json()) as {
+      success: boolean
+      data: { service: string; status: string; contractVersion: number }
+    }
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('application/json')
+    expect(body).toEqual({
+      success: true,
+      data: {
+        service: 'nextgen',
+        status: 'ok',
+        contractVersion: 1,
+      },
+    })
+  })
+
+  it.each([
+    '/api/v1/nextgen/qa/sessions',
+    '/api/v1/nextgen/files',
+    '/api/v1/nextgen/files/folders',
+  ])('mounts the protected NextGen endpoint %s', async endpoint => {
+    const response = await app.request(endpoint, {}, mockBindings)
+    const body = (await response.json()) as { error: { code: string } }
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('Content-Type')).toContain('application/json')
+    expect(body.error.code).toBe('AUTHENTICATION_REQUIRED')
+  })
+
+  it('returns a meaningful JSON error for an unknown authenticated NextGen endpoint', async () => {
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue({
+          uid: 'member-uid',
+          email: 'member@example.com',
+          emailVerified: false,
+          name: 'Member',
+          picture: null,
+          signInProvider: 'password',
+        }),
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/not-a-real-route',
+      { headers: { Authorization: 'Bearer valid-token' } },
+      mockBindings,
+    )
+    const body = (await response.json()) as { error: { code: string; message: string } }
+
+    expect(response.status).toBe(404)
+    expect(body.error.code).toBe('NEXTGEN_ROUTE_NOT_FOUND')
+    expect(body.error.message).toContain('does not exist')
+  })
+
   it('rejects an invalid email test request body', async () => {
     const response = await app.request(
       '/api/v1/email/test',

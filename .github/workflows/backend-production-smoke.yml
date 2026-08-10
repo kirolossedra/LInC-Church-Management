@@ -1,0 +1,36 @@
+name: Production Backend Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 10 * * *"
+  workflow_run:
+    workflows: ["Backend Tests"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  nextgen-contract:
+    name: Verify deployed NextGen endpoints
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Verify production NextGen API contract
+        working-directory: backend
+        run: npm run smoke:production
