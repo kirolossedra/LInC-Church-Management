@@ -41,7 +41,7 @@ export async function generateGeminiJson<T>({
     )
   }
 
-  const model = bindings.GEMINI_MODEL?.trim() || 'gemini-2.5-flash'
+  const model = bindings.GEMINI_MODEL?.trim() || 'gemini-3.6-flash'
   const response = await fetchImpl(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
