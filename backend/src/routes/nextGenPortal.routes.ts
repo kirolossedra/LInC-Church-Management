@@ -28,11 +28,12 @@ import {
 } from '../nextgen/nextGenPortal'
 import { requireAdminAuthority } from '../admin/adminAuthorization'
 import { createFirebaseAuthMiddleware, type FirebaseTokenVerifier } from '../security/firebaseAuth'
-import { getFirebaseServiceAccountAccessToken } from '../security/firebaseServiceAccount'
+import { FirebaseServiceAccountError, getFirebaseServiceAccountAccessToken } from '../security/firebaseServiceAccount'
 import { isPastorUser } from '../security/pastorAuthorization'
 import { ArchiveStorageError, createBackblazeArchiveStorage, type ArchiveStorage } from '../services/backblazeArchive.service'
 import {
   createFirebaseAdminRealtimeDatabaseClient,
+  FirebaseRealtimeDatabaseError,
   type FirebaseDatabaseFetch,
   type FirebaseRealtimeDatabaseClient,
 } from '../services/firebaseRealtimeDatabase.service'
@@ -378,7 +379,15 @@ async function withDatabase(context: Context<AppEnv>, dependencies: NextGenPorta
     context.header('Cache-Control', 'private, no-store, max-age=0')
     return await operation(database)
   } catch (error) {
-    console.error('NextGen backend operation failed:', error instanceof Error ? error.name : 'UnknownError')
+    const errorName = error instanceof Error ? error.name : 'UnknownError'
+    const databaseStatus = error instanceof FirebaseRealtimeDatabaseError ? error.status : null
+    console.error('NextGen backend operation failed:', errorName, databaseStatus ?? '')
+    if (error instanceof FirebaseServiceAccountError) {
+      return context.json({ success: false, error: { code: 'NEXTGEN_FIREBASE_AUTH_UNAVAILABLE', message: 'Firebase server authentication is temporarily unavailable.' } }, 503)
+    }
+    if (error instanceof FirebaseRealtimeDatabaseError) {
+      return context.json({ success: false, error: { code: 'NEXTGEN_DATABASE_REQUEST_FAILED', message: `Firebase database request failed (HTTP ${error.status}).` } }, 503)
+    }
     return context.json({ success: false, error: { code: 'NEXTGEN_SERVICE_UNAVAILABLE', message: 'NextGen services are temporarily unavailable.' } }, 503)
   }
 }

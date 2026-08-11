@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import app, { createApp } from '../src/index'
+import { FirebaseServiceAccountError } from '../src/security/firebaseServiceAccount'
 
 const mockBindings = {
   BREVO_API_KEY: 'test-brevo-api-key',
@@ -95,6 +96,50 @@ describe('LinC backend', () => {
     expect(response.status).toBe(404)
     expect(body.error.code).toBe('NEXTGEN_ROUTE_NOT_FOUND')
     expect(body.error.message).toContain('does not exist')
+  })
+
+  it('identifies a Firebase service-account authentication failure', async () => {
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockRejectedValue(
+          new FirebaseServiceAccountError('Google OAuth rejected the credentials.'),
+        ),
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/qa/sessions',
+      { headers: { Authorization: 'Bearer valid-token' } },
+      mockBindings,
+    )
+    const body = await response.json() as { error: { code: string; message: string } }
+
+    expect(response.status).toBe(503)
+    expect(body.error.code).toBe('NEXTGEN_FIREBASE_AUTH_UNAVAILABLE')
+    expect(body.error.message).toContain('authentication')
+  })
+
+  it('identifies the Firebase Database HTTP status without exposing credentials', async () => {
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
+        databaseFetch: vi.fn().mockResolvedValue(
+          jsonDatabaseResponse({ error: 'Permission denied' }, 403),
+        ) as typeof fetch,
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/qa/sessions',
+      { headers: { Authorization: 'Bearer valid-token' } },
+      mockBindings,
+    )
+    const body = await response.json() as { error: { code: string; message: string } }
+
+    expect(response.status).toBe(503)
+    expect(body.error.code).toBe('NEXTGEN_DATABASE_REQUEST_FAILED')
+    expect(body.error.message).toContain('HTTP 403')
+    expect(JSON.stringify(body)).not.toContain('firebase-access-token')
   })
 
   it('returns closed QA sessions to members as visible records while keeping drafts private', async () => {

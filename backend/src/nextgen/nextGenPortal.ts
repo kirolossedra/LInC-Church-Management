@@ -88,7 +88,7 @@ export async function ensureLegacyQaSession({
     createdByUid: 'legacy-nextgen-migration',
     updatedAt: timestamp,
   }
-  await database.putIfAbsent([...NEXTGEN_QA_PATH, 'sessions', session.id], session)
+  await patchIfMissing(database, [...NEXTGEN_QA_PATH, 'sessions', session.id], session)
 
   const legacyUsers = asRecord(await database.get(LEGACY_NEXTGEN_USERS_PATH))
   let voteCount = 0
@@ -108,7 +108,8 @@ export async function ensureLegacyQaSession({
       createdByUid: stringValue(record.submittedByIdentifier) || 'legacy-nextgen-migration',
       updatedAt: numberValue(record.updatedAt) || timestamp,
     }
-    await database.putIfAbsent(
+    await patchIfMissing(
+      database,
       [...NEXTGEN_QA_PATH, 'questions', session.id, questionId],
       question,
     )
@@ -139,7 +140,8 @@ export async function ensureLegacyQaSession({
         firstVotedAt,
         updatedAt: timestamp,
       }
-      await database.putIfAbsent(
+      await patchIfMissing(
+        database,
         [...NEXTGEN_QA_PATH, 'participants', session.id, participantUid],
         participant,
       )
@@ -150,7 +152,8 @@ export async function ensureLegacyQaSession({
         : legacyVote.voteType === 'upvote'
           ? 'option-1'
           : null
-      if (optionId && await database.putIfAbsent(
+      if (optionId && await patchIfMissing(
+        database,
         [...NEXTGEN_QA_PATH, 'votes', session.id, questionId, emailVoteKey],
         { participantUid, optionId, createdAt: firstVotedAt },
       )) voteCount += 1
@@ -477,6 +480,16 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 function stringValue(value: unknown) { return typeof value === 'string' ? value.trim() : '' }
 function numberValue(value: unknown) { return typeof value === 'number' && Number.isFinite(value) ? value : 0 }
+
+async function patchIfMissing(
+  database: FirebaseRealtimeDatabaseClient,
+  path: readonly string[],
+  value: unknown,
+) {
+  if (await database.get(path) !== null) return false
+  await database.patch(path, value)
+  return true
+}
 
 export class NextGenPortalError extends Error {
   constructor(
