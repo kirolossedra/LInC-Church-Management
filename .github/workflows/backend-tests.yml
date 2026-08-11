@@ -1,6 +1,8 @@
 name: Backend Tests
 
 on:
+  workflow_dispatch:
+
   push:
     paths:
       - "backend/**"
@@ -10,6 +12,9 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-tests.yml"
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -39,3 +44,53 @@ jobs:
 
       - name: Check backend TypeScript
         run: npm run typecheck
+
+  deploy-production:
+    name: Deploy tested backend to Cloudflare
+    needs: test
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: linc-backend-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://linc-backend.linc-ministry.workers.dev
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Confirm Cloudflare deployment credentials
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "CLOUDFLARE_ACCOUNT_ID is not configured."; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "CLOUDFLARE_API_TOKEN is not configured."; exit 1; }
+
+      - name: Deploy Hono Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy
+
+      - name: Verify the deployed backend contract
+        run: npm run smoke:production
