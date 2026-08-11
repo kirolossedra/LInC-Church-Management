@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { motion } from 'motion/react';
 
 interface LincPageHeroProps {
   title: string;
@@ -19,18 +18,15 @@ export default function LincPageHero({
   compact = false,
 }: LincPageHeroProps) {
   return (
-    <motion.header
+    <header
       data-tutorial-id="page-title"
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       className={`linc-page-hero relative isolate overflow-hidden rounded-[2rem] border border-white/10 bg-[#1b0d0d] text-white shadow-[0_28px_80px_rgba(40,10,10,0.2)] ${
         compact ? 'px-6 py-7 md:px-9 md:py-8' : 'px-6 py-9 md:px-12 md:py-12'
       }`}
     >
       <div className="linc-grid pointer-events-none absolute inset-0 opacity-[0.12]" />
-      <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-[#8f2424]/60 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-[#f2a900]/15 blur-3xl" />
+      <div className="pointer-events-none absolute -right-16 -top-24 hidden h-64 w-64 rounded-full bg-[#8f2424]/60 blur-3xl md:block" />
+      <div className="pointer-events-none absolute -bottom-24 left-1/3 hidden h-48 w-48 rounded-full bg-[#f2a900]/15 blur-3xl md:block" />
 
       <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-4xl">
@@ -53,6 +49,6 @@ export default function LincPageHero({
         </div>
         {aside && <div className="shrink-0">{aside}</div>}
       </div>
-    </motion.header>
+    </header>
   );
 }

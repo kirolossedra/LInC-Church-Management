@@ -68,6 +68,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 type SnapshotListener = { onData: (snapshot: Snapshot) => void; onError?: (error: Error) => void };
 const listeners = new Set<SnapshotListener>();
 let snapshot: Snapshot | null = null;
+let snapshotSignature = '';
 let pollTimer: number | null = null;
 let inFlight: Promise<void> | null = null;
 
@@ -75,7 +76,10 @@ async function refreshSnapshot() {
   if (inFlight) return inFlight;
   inFlight = request<Snapshot>('/snapshot')
     .then(next => {
+      const nextSignature = JSON.stringify(next);
+      if (nextSignature === snapshotSignature) return;
       snapshot = next;
+      snapshotSignature = nextSignature;
       listeners.forEach(listener => listener.onData(next));
     })
     .catch(error => {
@@ -93,7 +97,9 @@ function subscribe(onData: (snapshot: Snapshot) => void, onError?: (error: Error
   if (snapshot) onData(snapshot);
   void refreshSnapshot().catch(() => undefined);
   if (pollTimer === null) {
-    pollTimer = window.setInterval(() => void refreshSnapshot().catch(() => undefined), 30_000);
+    pollTimer = window.setInterval(() => {
+      if (!document.hidden) void refreshSnapshot().catch(() => undefined);
+    }, 30_000);
   }
   return () => {
     listeners.delete(listener);
@@ -101,6 +107,7 @@ function subscribe(onData: (snapshot: Snapshot) => void, onError?: (error: Error
       window.clearInterval(pollTimer);
       pollTimer = null;
       snapshot = null;
+      snapshotSignature = '';
     }
   };
 }

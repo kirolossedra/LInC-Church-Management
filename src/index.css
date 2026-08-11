@@ -130,8 +130,27 @@
 }
 
 @media (max-width: 767px) {
+  html {
+    scroll-behavior: auto;
+  }
+
   .linc-page-hero {
     border-radius: 1.55rem;
+  }
+
+  .linc-app-shell [class*="backdrop-blur"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .people-notes-ui .bg-white,
+  .nextgen-ui .bg-white,
+  .congregation-notes-ui .bg-white,
+  .assessment-ui section {
+    background-color: #fffdf9 !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    box-shadow: 0 10px 28px rgba(80, 24, 24, 0.06);
   }
 }
 

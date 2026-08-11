@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { motion } from 'motion/react';
 import {
   ArrowUpRight,
   BookOpen,
@@ -36,7 +35,7 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
 
   return (
     <div className="linc-app-shell min-h-screen overflow-x-hidden bg-[#f4efe6] text-[#251716]" dir={dir}>
-      <div className="pointer-events-none fixed inset-0 z-0">
+      <div className="pointer-events-none fixed inset-0 z-0 hidden md:block">
         <div className="linc-grid absolute inset-0 opacity-[0.035]" />
         <div className="absolute -right-24 top-32 h-80 w-80 rounded-full bg-[#8b1e1e]/10 blur-3xl" />
         <div className="absolute -left-28 bottom-24 h-72 w-72 rounded-full bg-[#f2a900]/10 blur-3xl" />
@@ -47,7 +46,7 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
         <button
           data-tutorial-id="nav-language-toggle"
           onClick={() => setLocale(locale === 'en' ? 'ar' : 'en')}
-          className="grid h-10 min-w-10 place-items-center rounded-xl border border-white/15 bg-[#160b0b]/95 px-2 text-xs font-bold text-white shadow-lg backdrop-blur-xl"
+          className="grid h-10 min-w-10 place-items-center rounded-xl border border-white/15 bg-[#160b0b] px-2 text-xs font-bold text-white shadow-lg"
           aria-label="Change language"
         >
           {locale === 'en' ? 'ع' : 'En'}
@@ -56,7 +55,7 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
           <button
             data-tutorial-id="nav-sign-out"
             onClick={() => auth.signOut()}
-            className="grid h-10 w-10 place-items-center rounded-xl border border-white/15 bg-[#160b0b]/95 text-stone-200 shadow-lg backdrop-blur-xl"
+            className="grid h-10 w-10 place-items-center rounded-xl border border-white/15 bg-[#160b0b] text-stone-200 shadow-lg"
             title={t('nav.signOut')}
           >
             <LogOut size={17} />
@@ -64,7 +63,7 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
         )}
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#160b0b]/95 px-2 py-2 text-white shadow-[0_-18px_50px_rgba(28,8,8,0.25)] backdrop-blur-2xl md:inset-x-5 md:bottom-auto md:top-4 md:rounded-[1.7rem] md:border md:px-4 md:py-3 md:shadow-[0_18px_60px_rgba(28,8,8,0.24)]">
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-[#160b0b] px-2 py-2 text-white shadow-[0_-8px_24px_rgba(28,8,8,0.2)] md:inset-x-5 md:bottom-auto md:top-4 md:rounded-[1.7rem] md:border md:bg-[#160b0b]/95 md:px-4 md:py-3 md:shadow-[0_18px_60px_rgba(28,8,8,0.24)] md:backdrop-blur-2xl">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3">
           <Link to="/" data-tutorial-id="nav-brand-home" className="hidden shrink-0 items-center gap-3 md:flex">
             <LincLogo size={44} className="rounded-full shadow-[0_8px_24px_rgba(139,30,30,0.42)]" />
@@ -131,14 +130,9 @@ export default function Layout({ children, activeTab, isAdmin }: LayoutProps) {
       </nav>
 
       <main className="relative z-10 mx-auto max-w-[1500px] px-4 pb-28 pt-16 sm:px-6 md:pb-16 md:pt-32 lg:px-10">
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          key={activeTab}
-        >
+        <div key={activeTab} className="linc-route-content">
           {children}
-        </motion.div>
+        </div>
       </main>
 
       <footer className="relative z-10 overflow-hidden border-t border-white/10 bg-[#160b0b] px-6 pb-28 pt-12 text-white md:pb-12">
