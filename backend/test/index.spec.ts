@@ -185,6 +185,160 @@ describe('LinC backend', () => {
     ])
   })
 
+  it('lets an authenticated member create a question with fixed voting choices', async () => {
+    const writes: Array<{ url: string; method: string; body: unknown }> = []
+    const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) : null
+      if (method === 'PATCH') writes.push({ url, method, body })
+      if (url.endsWith('/nextGenPortal/qa/sessions/session-1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          title: 'Member Questions', status: 'open', createdAt: 1, updatedAt: 1,
+        }))
+      }
+      return Promise.resolve(jsonDatabaseResponse(body))
+    })
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
+        databaseFetch: databaseFetch as typeof fetch,
+        generateId: () => 'member-question-1',
+        now: () => 25,
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/qa/sessions/session-1/questions',
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'What should we discuss?' }),
+      },
+      mockBindings,
+    )
+    const body = await response.json() as { data: { question: { options: Array<{ label: string }>; createdByUid: string } } }
+
+    expect(response.status).toBe(201)
+    expect(body.data.question.options.map(option => option.label)).toEqual(['Upvote', 'Downvote'])
+    expect(body.data.question.createdByUid).toBe(firebaseUser.uid)
+    expect(writes.some(write => write.url.endsWith('/nextGenPortal/qa/questions/session-1/member-question-1.json'))).toBe(true)
+  })
+
+  it('lets an authenticated member change an existing vote through the HTTP contract', async () => {
+    const writes: Array<{ url: string; body: Record<string, unknown> }> = []
+    const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
+      if (method === 'PATCH') writes.push({ url, body })
+      if (url.endsWith('/nextGenPortal/qa/sessions/session-1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({ title: 'Voting', status: 'open', createdAt: 1, updatedAt: 1 }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/questions/session-1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          'question-1': {
+            prompt: 'Which question?',
+            options: [{ id: 'option-1', label: 'Upvote' }, { id: 'option-2', label: 'Downvote' }],
+            createdAt: 2,
+            updatedAt: 2,
+          },
+        }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/votes/session-1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          'question-1': {},
+        }))
+      }
+      if (url.includes('/nextGenPortal/qa/votes/session-1/question-1/') && method === 'GET') {
+        return Promise.resolve(jsonDatabaseResponse({
+          participantUid: firebaseUser.uid,
+          optionId: 'option-1',
+          voteType: 'upvote',
+          createdAt: 10,
+          updatedAt: 10,
+        }))
+      }
+      return Promise.resolve(jsonDatabaseResponse(method === 'GET' ? null : body))
+    })
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
+        databaseFetch: databaseFetch as typeof fetch,
+        now: () => 30,
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/qa/sessions/session-1/questions/question-1/votes',
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voteType: 'downvote' }),
+      },
+      mockBindings,
+    )
+    const body = await response.json() as { data: { submitted: boolean; voteType: string } }
+    const voteWrite = writes.find(write => write.url.includes('/nextGenPortal/qa/votes/session-1/question-1/'))
+
+    expect(response.status).toBe(200)
+    expect(body.data).toEqual({ submitted: true, voteType: 'downvote' })
+    expect(voteWrite?.body).toMatchObject({ optionId: 'option-2', voteType: 'downvote', createdAt: 10, updatedAt: 30 })
+  })
+
+  it('lets an allocated administrator select a member question for discussion', async () => {
+    const writes: Array<{ url: string; body: Record<string, unknown> }> = []
+    const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
+      if (method === 'PATCH') writes.push({ url, body })
+      if (url.endsWith('/administration/adminHierarchy/users/member-uid.json')) {
+        return Promise.resolve(jsonDatabaseResponse({
+          email: firebaseUser.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageNextGenQa: true },
+        }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/sessions/session-1.json')) {
+        return Promise.resolve(jsonDatabaseResponse({ title: 'Discussion', status: 'open', createdAt: 1, updatedAt: 1 }))
+      }
+      if (url.endsWith('/nextGenPortal/qa/questions/session-1/question-1.json') && method === 'GET') {
+        return Promise.resolve(jsonDatabaseResponse({
+          prompt: 'Discuss this?',
+          options: [{ id: 'option-1', label: 'Upvote' }, { id: 'option-2', label: 'Downvote' }],
+          createdAt: 2,
+          updatedAt: 2,
+        }))
+      }
+      return Promise.resolve(jsonDatabaseResponse(method === 'GET' ? null : body))
+    })
+    const authenticatedApp = createApp({
+      nextGenPortal: {
+        verifyToken: vi.fn().mockResolvedValue(firebaseUser),
+        getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
+        databaseFetch: databaseFetch as typeof fetch,
+        now: () => 35,
+      },
+    })
+    const response = await authenticatedApp.request(
+      '/api/v1/nextgen/pastor/qa/sessions/session-1/questions/question-1',
+      {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectedForDiscussion: true }),
+      },
+      mockBindings,
+    )
+    const responseBody = await response.json() as { data: { question: { selectedForDiscussion: boolean } } }
+    const selectionWrite = writes.find(write => write.url.endsWith('/nextGenPortal/qa/questions/session-1/question-1.json'))
+
+    expect(response.status).toBe(200)
+    expect(responseBody.data.question.selectedForDiscussion).toBe(true)
+    expect(selectionWrite?.body).toMatchObject({ selectedForDiscussion: true, selectedByUid: firebaseUser.uid, selectedAt: 35 })
+  })
+
   it('allows an administrator with NextGen QA authority to use the management endpoint', async () => {
     const databaseFetch = vi.fn((input: string | URL | Request) => {
       const url = String(input)

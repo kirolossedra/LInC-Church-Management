@@ -7,6 +7,8 @@ const BACKEND_BASE_URL = (
 
 export type NextGenQaSessionStatus = 'draft' | 'open' | 'closed';
 export type NextGenParticipantStatus = 'pending' | 'verified' | 'discarded';
+export type NextGenQaVoteType = 'upvote' | 'downvote';
+export type NextGenQaMemberView = 'all' | 'my-upvotes' | 'net-votes';
 
 export interface NextGenQaSession {
   id: string;
@@ -26,6 +28,8 @@ export interface NextGenQaQuestion {
   prompt: string;
   options: Array<{ id: string; label: string }>;
   createdAt: number;
+  selectedForDiscussion: boolean;
+  selectedAt?: number;
 }
 
 export interface NextGenQaParticipant {
@@ -68,16 +72,27 @@ export interface NextGenFile {
 export const getNextGenSessions = async () =>
   request<{ sessions: NextGenQaSession[] }>('/qa/sessions', { method: 'GET' });
 
-export const getNextGenSession = async (sessionId: string) =>
-  request<{ session: NextGenQaSession; questions: NextGenQaQuestion[]; votedQuestionIds: string[] }>(
-    `/qa/sessions/${encodeURIComponent(sessionId)}`,
+export const getNextGenSession = async (sessionId: string, view: NextGenQaMemberView = 'all') =>
+  request<{
+    session: NextGenQaSession;
+    questions: NextGenQaQuestion[];
+    currentVotes: Record<string, NextGenQaVoteType>;
+    view: NextGenQaMemberView;
+  }>(
+    `/qa/sessions/${encodeURIComponent(sessionId)}?view=${encodeURIComponent(view)}`,
     { method: 'GET' },
   );
 
-export const submitNextGenVote = async (sessionId: string, questionId: string, optionId: string) =>
-  request<{ submitted: true }>(
+export const submitNextGenQuestion = async (sessionId: string, prompt: string) =>
+  request<{ question: NextGenQaQuestion }>(
+    `/qa/sessions/${encodeURIComponent(sessionId)}/questions`,
+    { method: 'POST', body: JSON.stringify({ prompt }) },
+  );
+
+export const submitNextGenVote = async (sessionId: string, questionId: string, voteType: NextGenQaVoteType) =>
+  request<{ submitted: true; voteType: NextGenQaVoteType }>(
     `/qa/sessions/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(questionId)}/votes`,
-    { method: 'POST', body: JSON.stringify({ optionId }) },
+    { method: 'POST', body: JSON.stringify({ voteType }) },
   );
 
 export const getPastorNextGenSessions = async () =>
@@ -89,8 +104,14 @@ export const createPastorNextGenSession = async (input: { title: string; descrip
 export const updatePastorNextGenSession = async (sessionId: string, input: Partial<Pick<NextGenQaSession, 'title' | 'description' | 'status'>>) =>
   request<{ session: NextGenQaSession }>(`/pastor/qa/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', body: JSON.stringify(input) });
 
-export const addPastorNextGenQuestion = async (sessionId: string, input: { prompt: string; options: string[] }) =>
-  request<{ question: NextGenQaQuestion }>(`/pastor/qa/sessions/${encodeURIComponent(sessionId)}/questions`, { method: 'POST', body: JSON.stringify(input) });
+export const updateNextGenQuestionDiscussionSelection = async (
+  sessionId: string,
+  questionId: string,
+  selectedForDiscussion: boolean,
+) => request<{ question: NextGenQaQuestion }>(
+  `/pastor/qa/sessions/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(questionId)}`,
+  { method: 'PATCH', body: JSON.stringify({ selectedForDiscussion }) },
+);
 
 export const getPastorNextGenSession = async (sessionId: string) =>
   request<NextGenPastorSessionView>(`/pastor/qa/sessions/${encodeURIComponent(sessionId)}`, { method: 'GET' });

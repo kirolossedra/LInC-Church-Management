@@ -24,6 +24,7 @@ import {
   listQaSessions,
   NextGenPortalError,
   recordQaVote,
+  updateQuestionDiscussionSelection,
   updateParticipantStatus,
 } from '../nextgen/nextGenPortal'
 import { requireAdminAuthority } from '../admin/adminAuthorization'
@@ -46,12 +47,10 @@ const sessionSchema = z.object({
   status: z.enum(['draft', 'open', 'closed']).default('draft'),
 }).strict()
 const sessionUpdateSchema = sessionSchema.partial().refine(value => Object.keys(value).length > 0)
-const questionSchema = z.object({
-  prompt: z.string().trim().min(1).max(500),
-  options: z.array(z.string().trim().min(1).max(180)).min(2).max(8)
-    .refine(options => new Set(options.map(option => option.toLowerCase())).size === options.length, 'Answer options must be unique.'),
-}).strict()
-const voteSchema = z.object({ optionId: z.string().trim().regex(/^option-[1-8]$/) }).strict()
+const questionSchema = z.object({ prompt: z.string().trim().min(1).max(500) }).strict()
+const voteSchema = z.object({ voteType: z.enum(['upvote', 'downvote']) }).strict()
+const memberViewSchema = z.enum(['all', 'my-upvotes', 'net-votes']).default('all')
+const discussionSelectionSchema = z.object({ selectedForDiscussion: z.boolean() }).strict()
 const participantStatusSchema = z.object({ status: z.enum(['verified', 'discarded']) }).strict()
 const folderSchema = z.object({
   name: z.string().trim().min(1).max(80).refine(value => value !== '.' && value !== '..' && !/[\\/]/.test(value)),
@@ -121,8 +120,26 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
   }))
 
   routes.get('/qa/sessions/:sessionId', context => withMemberSession(context, dependencies, async (database, session, emailVoteKey) => {
-    return context.json({ success: true, data: await getMemberSessionView({ database, session, emailVoteKey }) })
+    const view = memberViewSchema.safeParse(context.req.query('view'))
+    if (!view.success) return validationError(context)
+    return context.json({ success: true, data: await getMemberSessionView({ database, session, emailVoteKey, view: view.data }) })
   }))
+
+  routes.post('/qa/sessions/:sessionId/questions', async context => {
+    const body = questionSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withMemberSession(context, dependencies, async (database, session) => {
+      const question = await createQaQuestion({
+        database,
+        session,
+        id: generateId(),
+        prompt: body.data.prompt,
+        userUid: context.get('firebaseUser').uid,
+        timestamp: now(),
+      })
+      return context.json({ success: true, data: { question } }, 201)
+    })
+  })
 
   routes.post('/qa/sessions/:sessionId/questions/:questionId/votes', async context => {
     const questionId = idSchema.safeParse(context.req.param('questionId'))
@@ -143,11 +160,11 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
             email: user.email!,
             name: user.name?.trim() || user.email!,
           },
-          optionId: body.data.optionId,
+          voteType: body.data.voteType,
           emailVoteKey,
           timestamp: now(),
         })
-        return context.json({ success: true, data: { submitted: true } }, 201)
+        return context.json({ success: true, data: { submitted: true, voteType: body.data.voteType } })
       } catch (error) {
         return portalError(context, error)
       }
@@ -197,26 +214,27 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     })
   })
 
-  routes.post('/pastor/qa/sessions/:sessionId/questions', async context => {
+  routes.patch('/pastor/qa/sessions/:sessionId/questions/:questionId', async context => {
     const sessionId = idSchema.safeParse(context.req.param('sessionId'))
-    const body = questionSchema.safeParse(await readJson(context))
-    if (!sessionId.success || !body.success) return validationError(context)
+    const questionId = idSchema.safeParse(context.req.param('questionId'))
+    const body = discussionSelectionSchema.safeParse(await readJson(context))
+    if (!sessionId.success || !questionId.success || !body.success) return validationError(context)
     return withQaManager(context, dependencies, async database => {
       const session = await getQaSession(database, sessionId.data)
       if (!session) return notFound(context, 'NEXTGEN_QA_SESSION_NOT_FOUND', 'The QA session was not found.')
-      if (session.status === 'closed') {
-        return context.json({ success: false, error: { code: 'NEXTGEN_QA_SESSION_CLOSED', message: 'Reopen this QA session before adding questions.' } }, 409)
+      try {
+        const question = await updateQuestionDiscussionSelection({
+          database,
+          sessionId: session.id,
+          questionId: questionId.data,
+          selectedForDiscussion: body.data.selectedForDiscussion,
+          managerUid: context.get('firebaseUser').uid,
+          timestamp: now(),
+        })
+        return context.json({ success: true, data: { question } })
+      } catch (error) {
+        return portalError(context, error)
       }
-      const question = await createQaQuestion({
-        database,
-        session,
-        id: generateId(),
-        prompt: body.data.prompt,
-        optionLabels: body.data.options,
-        userUid: context.get('firebaseUser').uid,
-        timestamp: now(),
-      })
-      return context.json({ success: true, data: { question } }, 201)
     })
   })
 

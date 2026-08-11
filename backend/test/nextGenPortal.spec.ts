@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { createNextGenObjectKey } from '../src/nextgen/nextGenFiles'
 import {
+  createQaQuestion,
   ensureLegacyQaSession,
+  getMemberSessionView,
   getPastorSessionView,
   LEGACY_QA_SESSION_ID,
   recordQaVote,
+  updateQuestionDiscussionSelection,
   type NextGenQaQuestion,
   type NextGenQaSession,
 } from '../src/nextgen/nextGenPortal'
@@ -57,23 +60,54 @@ const question: NextGenQaQuestion = {
   createdAt: 2,
   createdByUid: 'pastor',
   updatedAt: 2,
+  selectedForDiscussion: false,
 }
 
 describe('NextGen portal domain', () => {
-  it('atomically rejects a second vote from the same email key', async () => {
-    const { database } = memoryDatabase()
+  it('stores one current vote per email key and allows changing that vote', async () => {
+    const { database, values } = memoryDatabase()
     const input = {
       database,
       session,
       question,
       participant: { uid: 'member-1', email: 'member@example.com', name: 'Member One' },
-      optionId: 'option-1',
+      voteType: 'upvote' as const,
       emailVoteKey: 'email-hash',
       timestamp: 10,
     }
     await recordQaVote(input)
-    await expect(recordQaVote({ ...input, optionId: 'option-2', timestamp: 11 }))
-      .rejects.toMatchObject({ code: 'NEXTGEN_QA_ALREADY_VOTED' })
+    const changed = await recordQaVote({ ...input, voteType: 'downvote', timestamp: 11 })
+
+    expect(changed).toMatchObject({ voteType: 'downvote', changed: true })
+    expect(values.get('nextGenPortal/qa/votes/session-1/question-1/email-hash')).toMatchObject({
+      participantUid: 'member-1',
+      optionId: 'option-2',
+      voteType: 'downvote',
+      createdAt: 10,
+      updatedAt: 11,
+    })
+  })
+
+  it('creates member questions with fixed upvote and downvote choices', async () => {
+    const { database } = memoryDatabase()
+    const created = await createQaQuestion({
+      database,
+      session,
+      id: 'question-2',
+      prompt: '  What should we discuss?  ',
+      userUid: 'member-2',
+      timestamp: 12,
+    })
+
+    expect(created).toMatchObject({
+      prompt: 'What should we discuss?',
+      createdByUid: 'member-2',
+      selectedForDiscussion: false,
+      options: [
+        { id: 'option-1', label: 'Upvote' },
+        { id: 'option-2', label: 'Downvote' },
+      ],
+    })
   })
 
   it('migrates legacy questions once into a closed QA Session 1', async () => {
@@ -129,7 +163,7 @@ describe('NextGen portal domain', () => {
       session: { ...session, status: 'closed' },
       question,
       participant: { uid: 'member-1', email: 'member@example.com', name: 'Member One' },
-      optionId: 'option-1',
+      voteType: 'upvote',
       emailVoteKey: 'email-hash',
       timestamp: 10,
     })).rejects.toMatchObject({ code: 'NEXTGEN_QA_SESSION_NOT_OPEN' })
@@ -153,6 +187,69 @@ describe('NextGen portal domain', () => {
     expect(view.participants.map(participant => participant.name)).toEqual(['Fake Person', 'Real Person'])
     expect(view.results[0]).toEqual({ questionId: 'question-1', totalVerifiedVotes: 1, counts: { 'option-1': 1, 'option-2': 0 } })
     expect(JSON.stringify(view.participants)).not.toContain('option-1')
+  })
+
+  it('filters personal upvotes and ranks by verified net votes without returning scores', async () => {
+    const secondQuestion = { ...question, id: 'question-2', prompt: 'Second question', createdAt: 3 }
+    const { database } = memoryDatabase({
+      'nextGenPortal/qa/questions/session-1': {
+        'question-1': question,
+        'question-2': secondQuestion,
+      },
+      'nextGenPortal/qa/participants/session-1': {
+        verified: { uid: 'verified', email: 'verified@example.com', name: 'Verified', status: 'verified', firstVotedAt: 4, updatedAt: 4 },
+        discarded: { uid: 'discarded', email: 'discarded@example.com', name: 'Discarded', status: 'discarded', firstVotedAt: 5, updatedAt: 5 },
+      },
+      'nextGenPortal/qa/votes/session-1': {
+        'question-1': {
+          memberHash: { participantUid: 'member', optionId: 'option-1', voteType: 'upvote', createdAt: 4 },
+          verifiedHash: { participantUid: 'verified', optionId: 'option-2', voteType: 'downvote', createdAt: 4 },
+          discardedHash: { participantUid: 'discarded', optionId: 'option-1', voteType: 'upvote', createdAt: 5 },
+        },
+        'question-2': {
+          verifiedHash: { participantUid: 'verified', optionId: 'option-1', voteType: 'upvote', createdAt: 4 },
+        },
+      },
+    })
+
+    const personal = await getMemberSessionView({ database, session, emailVoteKey: 'memberHash', view: 'my-upvotes' })
+    const ranked = await getMemberSessionView({ database, session, emailVoteKey: 'memberHash', view: 'net-votes' })
+
+    expect(personal.questions.map(item => item.id)).toEqual(['question-1'])
+    expect(personal.currentVotes).toEqual({ 'question-1': 'upvote' })
+    expect(ranked.questions.map(item => item.id)).toEqual(['question-2', 'question-1'])
+    expect(JSON.stringify(ranked)).not.toContain('netScore')
+  })
+
+  it('lets management select and unselect a member question for discussion', async () => {
+    const { database, values } = memoryDatabase({
+      'nextGenPortal/qa/questions/session-1/question-1': question,
+    })
+
+    const selected = await updateQuestionDiscussionSelection({
+      database,
+      sessionId: session.id,
+      questionId: question.id,
+      selectedForDiscussion: true,
+      managerUid: 'admin-1',
+      timestamp: 20,
+    })
+    expect(selected).toMatchObject({ selectedForDiscussion: true, selectedByUid: 'admin-1', selectedAt: 20 })
+
+    const unselected = await updateQuestionDiscussionSelection({
+      database,
+      sessionId: session.id,
+      questionId: question.id,
+      selectedForDiscussion: false,
+      managerUid: 'pastor-1',
+      timestamp: 21,
+    })
+    expect(unselected.selectedForDiscussion).toBe(false)
+    expect(values.get('nextGenPortal/qa/questions/session-1/question-1')).toMatchObject({
+      selectedForDiscussion: false,
+      selectedAt: null,
+      selectedByUid: null,
+    })
   })
 
   it('places every NextGen object below the isolated nextgen prefix', () => {

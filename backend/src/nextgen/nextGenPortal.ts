@@ -8,6 +8,8 @@ const LEGACY_QA_MIGRATION_PATH = [...NEXTGEN_QA_PATH, 'migrations', 'legacyQaSes
 
 export type NextGenQaSessionStatus = 'draft' | 'open' | 'closed'
 export type NextGenParticipantStatus = 'pending' | 'verified' | 'discarded'
+export type NextGenQaVoteType = 'upvote' | 'downvote'
+export type NextGenQaMemberView = 'all' | 'my-upvotes' | 'net-votes'
 
 export type NextGenQaSession = {
   id: string
@@ -29,6 +31,9 @@ export type NextGenQaQuestion = {
   createdAt: number
   createdByUid: string
   updatedAt: number
+  selectedForDiscussion: boolean
+  selectedAt?: number
+  selectedByUid?: string
 }
 
 export type NextGenQaParticipant = {
@@ -45,7 +50,9 @@ export type NextGenQaParticipant = {
 type NextGenQaVote = {
   participantUid: string
   optionId: string
+  voteType: NextGenQaVoteType
   createdAt: number
+  updatedAt: number
 }
 
 export async function listQaSessions(database: FirebaseRealtimeDatabaseClient) {
@@ -60,7 +67,12 @@ export async function ensureLegacyQaSession({
   timestamp: number
 }) {
   const migration = asRecord(await database.get(LEGACY_QA_MIGRATION_PATH))
-  if (migration.complete === true) return getQaSession(database, LEGACY_QA_SESSION_ID)
+  if (migration.complete === true) {
+    if (migration.discussionSelectionBackfilled !== true) {
+      await backfillLegacyDiscussionSelection(database, timestamp)
+    }
+    return getQaSession(database, LEGACY_QA_SESSION_ID)
+  }
 
   const legacyQuestionEntries = Object.entries(
     asRecord(await database.get(LEGACY_NEXTGEN_QA_PATH)),
@@ -107,6 +119,11 @@ export async function ensureLegacyQaSession({
       createdAt: numberValue(record.createdAt) || earliestCreatedAt,
       createdByUid: stringValue(record.submittedByIdentifier) || 'legacy-nextgen-migration',
       updatedAt: numberValue(record.updatedAt) || timestamp,
+      selectedForDiscussion: record.selectedForNextGenSession === true,
+      ...(record.selectedForNextGenSession === true ? {
+        selectedAt: numberValue(record.selectedAt) || timestamp,
+        selectedByUid: 'legacy-nextgen-migration',
+      } : {}),
     }
     await patchIfMissing(
       database,
@@ -155,7 +172,13 @@ export async function ensureLegacyQaSession({
       if (optionId && await patchIfMissing(
         database,
         [...NEXTGEN_QA_PATH, 'votes', session.id, questionId, emailVoteKey],
-        { participantUid, optionId, createdAt: firstVotedAt },
+        {
+          participantUid,
+          optionId,
+          voteType: optionId === 'option-1' ? 'upvote' : 'downvote',
+          createdAt: firstVotedAt,
+          updatedAt: firstVotedAt,
+        },
       )) voteCount += 1
     }
   }
@@ -166,6 +189,7 @@ export async function ensureLegacyQaSession({
     questionCount: legacyQuestionEntries.length,
     participantCount: participantKeys.size,
     voteCount,
+    discussionSelectionBackfilled: true,
   })
   return getQaSession(database, LEGACY_QA_SESSION_ID)
 }
@@ -219,7 +243,6 @@ export async function createQaQuestion({
   session,
   id,
   prompt,
-  optionLabels,
   userUid,
   timestamp,
 }: {
@@ -227,7 +250,6 @@ export async function createQaQuestion({
   session: NextGenQaSession
   id: string
   prompt: string
-  optionLabels: string[]
   userUid: string
   timestamp: number
 }) {
@@ -235,13 +257,14 @@ export async function createQaQuestion({
     id,
     sessionId: session.id,
     prompt: prompt.trim(),
-    options: optionLabels.map((label, index) => ({
-      id: `option-${index + 1}`,
-      label: label.trim(),
-    })),
+    options: [
+      { id: 'option-1', label: 'Upvote' },
+      { id: 'option-2', label: 'Downvote' },
+    ],
     createdAt: timestamp,
     createdByUid: userUid,
     updatedAt: timestamp,
+    selectedForDiscussion: false,
   }
   await database.patch([...NEXTGEN_QA_PATH, 'questions', session.id, id], question)
   return question
@@ -252,7 +275,7 @@ export async function recordQaVote({
   session,
   question,
   participant,
-  optionId,
+  voteType,
   emailVoteKey,
   timestamp,
 }: {
@@ -260,29 +283,25 @@ export async function recordQaVote({
   session: NextGenQaSession
   question: NextGenQaQuestion
   participant: Pick<NextGenQaParticipant, 'uid' | 'email' | 'name'>
-  optionId: string
+  voteType: NextGenQaVoteType
   emailVoteKey: string
   timestamp: number
 }) {
   if (session.status !== 'open') {
     throw new NextGenPortalError('NEXTGEN_QA_SESSION_NOT_OPEN', 'This QA session is not accepting votes.', 409)
   }
-  if (!question.options.some(option => option.id === optionId)) {
-    throw new NextGenPortalError('NEXTGEN_QA_OPTION_NOT_FOUND', 'The selected answer no longer exists.', 404)
-  }
+  const optionId = voteType === 'upvote' ? 'option-1' : 'option-2'
 
+  const votePath = [...NEXTGEN_QA_PATH, 'votes', session.id, question.id, emailVoteKey]
+  const existingVote = normalizeVote(await database.get(votePath))
   const vote: NextGenQaVote = {
     participantUid: participant.uid,
     optionId,
-    createdAt: timestamp,
+    voteType,
+    createdAt: existingVote?.createdAt || timestamp,
+    updatedAt: timestamp,
   }
-  const stored = await database.putIfAbsent(
-    [...NEXTGEN_QA_PATH, 'votes', session.id, question.id, emailVoteKey],
-    vote,
-  )
-  if (!stored) {
-    throw new NextGenPortalError('NEXTGEN_QA_ALREADY_VOTED', 'This email has already voted on this question.', 409)
-  }
+  await database.patch(votePath, vote)
 
   const currentParticipant = normalizeParticipant(
     participant.uid,
@@ -302,31 +321,72 @@ export async function recordQaVote({
     [...NEXTGEN_QA_PATH, 'participants', session.id, participant.uid],
     participantRecord,
   )
-  return participantRecord
+  return { participant: participantRecord, voteType, changed: existingVote?.voteType !== voteType }
 }
 
 export async function getMemberSessionView({
   database,
   session,
   emailVoteKey,
+  view = 'all',
 }: {
   database: FirebaseRealtimeDatabaseClient
   session: NextGenQaSession
   emailVoteKey: string
+  view?: NextGenQaMemberView
 }) {
-  const questions = await listQaQuestions(database, session.id)
-  const votedQuestionIds: string[] = []
-  await Promise.all(questions.map(async question => {
-    const vote = await database.get([
-      ...NEXTGEN_QA_PATH,
-      'votes',
-      session.id,
-      question.id,
-      emailVoteKey,
-    ])
-    if (vote !== null) votedQuestionIds.push(question.id)
-  }))
-  return { session, questions, votedQuestionIds }
+  const [allQuestions, rawVotes] = await Promise.all([
+    listQaQuestions(database, session.id),
+    database.get([...NEXTGEN_QA_PATH, 'votes', session.id]),
+  ])
+  const votesByQuestion = asRecord(rawVotes)
+  const currentVotes = Object.fromEntries(allQuestions.flatMap(question => {
+    const vote = normalizeVote(asRecord(votesByQuestion[question.id])[emailVoteKey])
+    return vote ? [[question.id, vote.voteType]] : []
+  })) as Record<string, NextGenQaVoteType>
+
+  let questions = allQuestions
+  if (view === 'my-upvotes') {
+    questions = questions.filter(question => currentVotes[question.id] === 'upvote')
+  } else if (view === 'net-votes') {
+    const participants = normalizeParticipants(
+      await database.get([...NEXTGEN_QA_PATH, 'participants', session.id]),
+    )
+    const verifiedUids = new Set(
+      participants.filter(participant => participant.status === 'verified').map(participant => participant.uid),
+    )
+    const score = (question: NextGenQaQuestion) => Object.values(asRecord(votesByQuestion[question.id]))
+      .map(normalizeVote)
+      .filter((vote): vote is NextGenQaVote => vote !== null && verifiedUids.has(vote.participantUid))
+      .reduce((total, vote) => total + (vote.voteType === 'upvote' ? 1 : -1), 0)
+    questions = [...questions].sort((left, right) => score(right) - score(left) || left.createdAt - right.createdAt)
+  }
+  return { session, questions, currentVotes, view }
+}
+
+export async function updateQuestionDiscussionSelection({
+  database,
+  sessionId,
+  questionId,
+  selectedForDiscussion,
+  managerUid,
+  timestamp,
+}: {
+  database: FirebaseRealtimeDatabaseClient
+  sessionId: string
+  questionId: string
+  selectedForDiscussion: boolean
+  managerUid: string
+  timestamp: number
+}) {
+  const path = [...NEXTGEN_QA_PATH, 'questions', sessionId, questionId]
+  const question = normalizeQuestion(sessionId, questionId, await database.get(path))
+  if (!question) throw new NextGenPortalError('NEXTGEN_QA_QUESTION_NOT_FOUND', 'The question was not found.', 404)
+  const selection = selectedForDiscussion
+    ? { selectedForDiscussion: true, selectedAt: timestamp, selectedByUid: managerUid, updatedAt: timestamp }
+    : { selectedForDiscussion: false, selectedAt: null, selectedByUid: null, updatedAt: timestamp }
+  await database.patch(path, selection)
+  return { ...question, ...selection }
 }
 
 export async function getPastorSessionView(
@@ -418,6 +478,47 @@ function normalizeSession(id: string, value: unknown): NextGenQaSession | null {
   }
 }
 
+function normalizeVote(value: unknown): NextGenQaVote | null {
+  const record = asRecord(value)
+  const participantUid = stringValue(record.participantUid)
+  const optionId = stringValue(record.optionId)
+  const voteType = record.voteType === 'upvote' || record.voteType === 'downvote'
+    ? record.voteType
+    : optionId === 'option-1'
+      ? 'upvote'
+      : optionId === 'option-2'
+        ? 'downvote'
+        : null
+  if (!participantUid || !voteType) return null
+  return {
+    participantUid,
+    optionId: voteType === 'upvote' ? 'option-1' : 'option-2',
+    voteType,
+    createdAt: numberValue(record.createdAt),
+    updatedAt: numberValue(record.updatedAt) || numberValue(record.createdAt),
+  }
+}
+
+async function backfillLegacyDiscussionSelection(
+  database: FirebaseRealtimeDatabaseClient,
+  timestamp: number,
+) {
+  const legacyQuestions = asRecord(await database.get(LEGACY_NEXTGEN_QA_PATH))
+  await Promise.all(Object.entries(legacyQuestions).map(async ([questionId, value]) => {
+    const record = asRecord(value)
+    if (record.selectedForNextGenSession !== true) return
+    await database.patch(
+      [...NEXTGEN_QA_PATH, 'questions', LEGACY_QA_SESSION_ID, questionId],
+      {
+        selectedForDiscussion: true,
+        selectedAt: numberValue(record.selectedAt) || timestamp,
+        selectedByUid: 'legacy-nextgen-migration',
+      },
+    )
+  }))
+  await database.patch(LEGACY_QA_MIGRATION_PATH, { discussionSelectionBackfilled: true })
+}
+
 function normalizeQuestions(sessionId: string, value: unknown) {
   return Object.entries(asRecord(value))
     .map(([id, question]) => normalizeQuestion(sessionId, id, question))
@@ -446,6 +547,9 @@ function normalizeQuestion(sessionId: string, id: string, value: unknown): NextG
     createdAt: numberValue(record.createdAt),
     createdByUid: stringValue(record.createdByUid),
     updatedAt: numberValue(record.updatedAt),
+    selectedForDiscussion: record.selectedForDiscussion === true,
+    ...(numberValue(record.selectedAt) ? { selectedAt: numberValue(record.selectedAt) } : {}),
+    ...(stringValue(record.selectedByUid) ? { selectedByUid: stringValue(record.selectedByUid) } : {}),
   }
 }
 
