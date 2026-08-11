@@ -24,7 +24,6 @@ export type BilingualTheme = z.infer<typeof bilingualThemeSchema>
 export type NextGenQuestionReview = z.infer<typeof questionReviewSchema>
 
 const PASTOR_ACTIONS = [
-  'none',
   'open_availability',
   'block_time',
   'delete_availability',
@@ -33,16 +32,20 @@ const PASTOR_ACTIONS = [
   'reject_request',
 ] as const
 
-export const pastorAgentResultSchema = z.object({
-  reply: z.string().trim().min(1).max(2_000),
-  focusDate: z.string().trim().max(10).default(''),
-  action: z.enum(PASTOR_ACTIONS).default('none'),
+const pastorActionSchema = z.object({
+  action: z.enum(PASTOR_ACTIONS),
   date: z.string().trim().max(10).default(''),
   startTime: z.string().trim().max(5).default(''),
   endTime: z.string().trim().max(5).default(''),
   targetId: z.string().trim().max(128).default(''),
   reason: z.string().trim().max(1_000).default(''),
   meetingTitle: z.string().trim().max(200).default('Meeting with Pastor'),
+})
+
+export const pastorAgentResultSchema = z.object({
+  reply: z.string().trim().min(1).max(2_000),
+  focusDates: z.array(z.string().trim().max(10)).max(14).default([]),
+  actions: z.array(pastorActionSchema).max(7).default([]),
 })
 
 export type PastorAgentResult = z.infer<typeof pastorAgentResultSchema>
@@ -126,11 +129,17 @@ export async function runPastorAgent(
     validator: pastorAgentResultSchema,
     responseSchema: objectSchema({
       reply: { type: 'string' },
-      focusDate: { type: 'string' },
-      action: { type: 'string', enum: PASTOR_ACTIONS },
-      date: { type: 'string' }, startTime: { type: 'string' }, endTime: { type: 'string' },
-      targetId: { type: 'string' }, reason: { type: 'string' }, meetingTitle: { type: 'string' },
-    }, ['reply', 'focusDate', 'action', 'date', 'startTime', 'endTime', 'targetId', 'reason', 'meetingTitle']),
+      focusDates: { type: 'array', maxItems: 14, items: { type: 'string' } },
+      actions: {
+        type: 'array',
+        maxItems: 7,
+        items: objectSchema({
+          action: { type: 'string', enum: PASTOR_ACTIONS },
+          date: { type: 'string' }, startTime: { type: 'string' }, endTime: { type: 'string' },
+          targetId: { type: 'string' }, reason: { type: 'string' }, meetingTitle: { type: 'string' },
+        }, ['action', 'date', 'startTime', 'endTime', 'targetId', 'reason', 'meetingTitle']),
+      },
+    }, ['reply', 'focusDates', 'actions']),
   })
 }
 

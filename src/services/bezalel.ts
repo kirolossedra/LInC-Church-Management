@@ -15,16 +15,20 @@ export type PastorBezalelAction =
   | 'accept_request'
   | 'reject_request';
 
-export interface PastorBezalelResult {
-  reply: string;
-  focusDate: string;
-  action: PastorBezalelAction;
+export interface PastorBezalelCalendarAction {
+  action: Exclude<PastorBezalelAction, 'none'>;
   date: string;
   startTime: string;
   endTime: string;
   targetId: string;
   reason: string;
   meetingTitle: string;
+}
+
+export interface PastorBezalelResult {
+  reply: string;
+  focusDates: string[];
+  actions: PastorBezalelCalendarAction[];
 }
 
 export interface BookingBezalelResult {

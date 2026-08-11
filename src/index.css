@@ -112,6 +112,92 @@
   box-shadow: 0 0 0 4px rgba(69, 155, 198, 0.2), 0 16px 38px rgba(36, 112, 150, 0.2) !important;
 }
 
+.bezalel-calendar-journey {
+  --bezalel-travel-x: 0px;
+  --bezalel-travel-y: 0px;
+  position: fixed;
+  z-index: 240;
+  width: 88px;
+  height: 116px;
+  pointer-events: none;
+  filter: drop-shadow(0 16px 18px rgba(40, 10, 10, 0.28));
+  will-change: transform;
+}
+
+.bezalel-calendar-travelling {
+  animation: bezalel-travel-to-day 900ms cubic-bezier(0.22, 0.82, 0.26, 1) both;
+}
+
+.bezalel-calendar-casting {
+  transform: translate3d(var(--bezalel-travel-x), var(--bezalel-travel-y), 0) scale(1.04);
+}
+
+.bezalel-calendar-character {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: bottom;
+  transform-origin: 72% 42%;
+}
+
+.bezalel-calendar-casting .bezalel-calendar-character {
+  animation: bezalel-wand-cast 680ms ease-in-out infinite;
+}
+
+.bezalel-travel-trail {
+  position: absolute;
+  left: 8px;
+  top: 55%;
+  width: 48px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(122, 202, 239, 0.7), rgba(255, 206, 72, 0.95));
+  filter: blur(5px);
+  opacity: 0;
+}
+
+.bezalel-calendar-travelling .bezalel-travel-trail {
+  animation: bezalel-travel-trail 900ms ease-out both;
+}
+
+.bezalel-wand-orbit {
+  position: absolute;
+  right: -9px;
+  top: 19px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 2px solid rgba(255, 202, 54, 0.82);
+  border-left-color: transparent;
+  border-radius: 999px;
+  color: #fff2a8;
+  opacity: 0;
+  filter: drop-shadow(0 0 9px rgba(255, 185, 25, 0.9));
+}
+
+.bezalel-calendar-casting .bezalel-wand-orbit {
+  opacity: 1;
+  animation: bezalel-wand-orbit 620ms linear infinite;
+}
+
+.bezalel-cast-ripple {
+  position: absolute;
+  right: -21px;
+  top: 7px;
+  width: 62px;
+  height: 62px;
+  border: 2px solid rgba(98, 189, 232, 0.76);
+  border-radius: 999px;
+  opacity: 0;
+}
+
+.bezalel-calendar-casting .bezalel-cast-ripple {
+  animation: bezalel-cast-ripple 1.05s ease-out infinite;
+}
+
 .people-notes-ui,
 .assessment-ui,
 .booking-ui,
@@ -224,6 +310,31 @@
   50% { outline-color: rgba(242, 169, 0, 0.8); }
 }
 
+@keyframes bezalel-travel-to-day {
+  0% { transform: translate3d(0, 0, 0) scale(0.72) rotate(0deg); opacity: 0.35; }
+  76% { transform: translate3d(var(--bezalel-travel-x), calc(var(--bezalel-travel-y) - 24px), 0) scale(1.08) rotate(3deg); opacity: 1; }
+  100% { transform: translate3d(var(--bezalel-travel-x), var(--bezalel-travel-y), 0) scale(1.04) rotate(0deg); opacity: 1; }
+}
+
+@keyframes bezalel-travel-trail {
+  0%, 100% { opacity: 0; transform: translateX(-24px) scaleX(0.45); }
+  35%, 72% { opacity: 0.9; transform: translateX(-38px) scaleX(1.3); }
+}
+
+@keyframes bezalel-wand-cast {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-7px) rotate(7deg); }
+}
+
+@keyframes bezalel-wand-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bezalel-cast-ripple {
+  0% { opacity: 0.9; transform: scale(0.3); }
+  100% { opacity: 0; transform: scale(1.45); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -242,7 +353,12 @@
   .bezalel-acting img,
   .bezalel-success img,
   .bezalel-orbit,
-  .bezalel-date-focus {
+  .bezalel-date-focus,
+  .bezalel-calendar-journey,
+  .bezalel-calendar-character,
+  .bezalel-travel-trail,
+  .bezalel-wand-orbit,
+  .bezalel-cast-ripple {
     animation: none !important;
   }
 

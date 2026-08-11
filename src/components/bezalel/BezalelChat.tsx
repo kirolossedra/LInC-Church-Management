@@ -1,10 +1,32 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, MessageCircle, Send, Sparkles, X } from 'lucide-react';
 
 import bezalelImage from '../../assets/bezalel/bezalel.png';
 import type { BezalelMessage } from '../../services/bezalel';
 
 export type BezalelActivity = 'idle' | 'thinking' | 'acting' | 'success' | 'error';
+
+export type BezalelTravelRequest = {
+  id: number;
+  targets: Array<{
+    date: string;
+    targetSelector: string;
+    ariaLabel: string;
+  }>;
+};
+
+type BezalelTravelTarget = BezalelTravelRequest['targets'][number];
+
+type BezalelJourney = {
+  id: number;
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
+  phase: 'travelling' | 'casting';
+  ariaLabel: string;
+};
 
 export default function BezalelChat({
   title,
@@ -13,6 +35,9 @@ export default function BezalelChat({
   activity,
   quickPrompts = [],
   onSend,
+  travelRequest,
+  onPrepareTravelTarget,
+  onTravelComplete,
 }: {
   title: string;
   subtitle: string;
@@ -20,14 +45,131 @@ export default function BezalelChat({
   activity: BezalelActivity;
   quickPrompts?: string[];
   onSend: (message: string) => Promise<void>;
+  travelRequest?: BezalelTravelRequest;
+  onPrepareTravelTarget?: (target: BezalelTravelTarget) => void;
+  onTravelComplete?: (requestId: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [journey, setJourney] = useState<BezalelJourney | null>(null);
+  const [journeyActive, setJourneyActive] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const launcherRef = useRef<HTMLButtonElement | null>(null);
+  const onTravelCompleteRef = useRef(onTravelComplete);
+  const onPrepareTravelTargetRef = useRef(onPrepareTravelTarget);
+
+  useEffect(() => {
+    onTravelCompleteRef.current = onTravelComplete;
+  }, [onTravelComplete]);
+
+  useEffect(() => {
+    onPrepareTravelTargetRef.current = onPrepareTravelTarget;
+  }, [onPrepareTravelTarget]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'nearest' });
   }, [messages, activity]);
+
+  useEffect(() => {
+    if (!travelRequest || travelRequest.targets.length === 0) return;
+
+    let cancelled = false;
+    let locateTimer = 0;
+    let travelTimer = 0;
+    let castTimer = 0;
+    let previousEnd: { x: number; y: number } | null = null;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+    const finishJourney = () => {
+      if (cancelled) return;
+      setJourney(null);
+      setJourneyActive(false);
+      onTravelCompleteRef.current?.(travelRequest.id);
+    };
+
+    const locateTarget = (targetIndex: number, attempt: number) => {
+      if (cancelled) return;
+      const travelTarget = travelRequest.targets[targetIndex];
+      const target = document.querySelector<HTMLElement>(travelTarget.targetSelector);
+      if (!target) {
+        if (attempt < 15) {
+          locateTimer = window.setTimeout(() => locateTarget(targetIndex, attempt + 1), 80);
+        } else {
+          const nextIndex = targetIndex + 1;
+          if (nextIndex < travelRequest.targets.length) prepareTarget(nextIndex);
+          else finishJourney();
+        }
+        return;
+      }
+
+      target.scrollIntoView?.({
+        behavior: reducedMotion ? 'auto' : 'smooth',
+        block: 'center',
+        inline: 'center',
+      });
+
+      locateTimer = window.setTimeout(() => {
+        if (cancelled) return;
+        const targetRect = target.getBoundingClientRect();
+        const launcherRect = launcherRef.current?.getBoundingClientRect();
+        const width = 88;
+        const height = 116;
+        const endX = clamp(targetRect.right - width * 0.78, 8, window.innerWidth - width - 8);
+        const endY = clamp(targetRect.bottom - height * 0.88, 8, window.innerHeight - height - 8);
+        const startX = reducedMotion
+          ? endX
+          : previousEnd?.x ?? clamp(launcherRect?.left ?? window.innerWidth - width - 24, 8, window.innerWidth - width - 8);
+        const startY = reducedMotion
+          ? endY
+          : previousEnd?.y ?? clamp(launcherRect?.top ?? window.innerHeight - height - 24, 8, window.innerHeight - height - 8);
+        previousEnd = { x: endX, y: endY };
+
+        setJourney({
+          id: travelRequest.id,
+          x: startX,
+          y: startY,
+          deltaX: endX - startX,
+          deltaY: endY - startY,
+          phase: reducedMotion ? 'casting' : 'travelling',
+          ariaLabel: travelTarget.ariaLabel,
+        });
+
+        travelTimer = window.setTimeout(() => {
+          if (cancelled) return;
+          setJourney(current => current ? { ...current, phase: 'casting' } : null);
+          castTimer = window.setTimeout(() => {
+            if (cancelled) return;
+            const nextIndex = targetIndex + 1;
+            if (nextIndex < travelRequest.targets.length) {
+              locateTimer = window.setTimeout(() => prepareTarget(nextIndex), reducedMotion ? 20 : 180);
+            } else {
+              setJourney(null);
+              finishJourney();
+            }
+          }, reducedMotion ? 600 : 1550);
+        }, reducedMotion ? 0 : 900);
+      }, reducedMotion ? 20 : 520);
+    };
+
+    const prepareTarget = (targetIndex: number) => {
+      if (cancelled) return;
+      const target = travelRequest.targets[targetIndex];
+      onPrepareTravelTargetRef.current?.(target);
+      locateTimer = window.setTimeout(() => locateTarget(targetIndex, 0), 100);
+    };
+
+    setOpen(false);
+    setJourney(null);
+    setJourneyActive(true);
+    locateTimer = window.setTimeout(() => prepareTarget(0), 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(locateTimer);
+      window.clearTimeout(travelTimer);
+      window.clearTimeout(castTimer);
+    };
+  }, [travelRequest?.id]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -75,11 +217,35 @@ export default function BezalelChat({
         </section>
       )}
 
-      <button type="button" onClick={() => setOpen(value => !value)} className={`bezalel-launcher bezalel-${activity} ms-auto flex items-center gap-2 rounded-full border border-white/20 bg-[#1b0d0d] p-2 pe-4 text-white shadow-[0_16px_45px_rgba(40,10,10,0.3)]`} aria-expanded={open}>
+      <button ref={launcherRef} type="button" onClick={() => setOpen(value => !value)} className={`bezalel-launcher bezalel-${activity} ms-auto flex items-center gap-2 rounded-full border border-white/20 bg-[#1b0d0d] p-2 pe-4 text-white shadow-[0_16px_45px_rgba(40,10,10,0.3)] transition-opacity ${journeyActive ? 'pointer-events-none opacity-0' : 'opacity-100'}`} aria-expanded={open}>
         <span className="relative grid h-14 w-14 place-items-end overflow-hidden rounded-full bg-[#dceef8]"><img src={bezalelImage} alt="" className="h-[76px] w-[62px] object-contain object-bottom" /></span>
         <span className="text-left"><strong className="block font-serif text-xl leading-none">Bezalel</strong><span className="mt-1 flex items-center gap-1 text-[10px] text-stone-300">{activity === 'idle' ? <MessageCircle size={11} /> : <Sparkles size={11} />} {activity === 'acting' ? 'Working' : activity === 'thinking' ? 'Thinking' : 'Ask me'}</span></span>
         {open && <ChevronDown size={16} />}
       </button>
+
+      {journey && createPortal(
+        <div
+          className={`bezalel-calendar-journey bezalel-calendar-${journey.phase}`}
+          style={{
+            left: journey.x,
+            top: journey.y,
+            '--bezalel-travel-x': `${journey.deltaX}px`,
+            '--bezalel-travel-y': `${journey.deltaY}px`,
+          } as CSSProperties}
+          role="status"
+          aria-label={journey.ariaLabel}
+        >
+          <span className="bezalel-travel-trail" aria-hidden="true" />
+          <img src={bezalelImage} alt="" className="bezalel-calendar-character" />
+          <span className="bezalel-wand-orbit" aria-hidden="true"><Sparkles size={18} /></span>
+          <span className="bezalel-cast-ripple" aria-hidden="true" />
+        </div>,
+        document.body,
+      )}
     </div>
   );
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 }

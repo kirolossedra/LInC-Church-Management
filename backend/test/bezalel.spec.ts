@@ -38,17 +38,19 @@ describe('Bezalel agent routes', () => {
     expect(response.status).toBe(401)
   })
 
-  it('provides a sanitized calendar to the Pastor agent and returns one validated action', async () => {
+  it('provides a sanitized calendar and preserves validated multi-day Pastor actions', async () => {
     const pastorAgent = vi.fn().mockResolvedValue({
-      reply: 'I will open booking on August 20 from 2 PM to 4 PM.',
-      focusDate: '2026-08-20',
-      action: 'open_availability',
-      date: '2026-08-20',
-      startTime: '14:00',
-      endTime: '16:00',
-      targetId: '',
-      reason: 'Office hours',
-      meetingTitle: 'Meeting with Pastor',
+      reply: 'I will open booking on August 20 and 21 from 2 PM to 4 PM.',
+      focusDates: ['2026-08-20', '2026-08-21'],
+      actions: ['2026-08-20', '2026-08-21'].map(date => ({
+        action: 'open_availability',
+        date,
+        startTime: '14:00',
+        endTime: '16:00',
+        targetId: '',
+        reason: 'Office hours',
+        meetingTitle: 'Meeting with Pastor',
+      })),
     })
     const databaseFetch = vi.fn((input: string | URL | Request) => {
       const url = String(input)
@@ -68,10 +70,14 @@ describe('Bezalel agent routes', () => {
       headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: [{ role: 'user', content: 'Open August 20 from 2 to 4 PM.' }], locale: 'en' }),
     }, bindings)
-    const body = await response.json() as { data: { action: string; date: string } }
+    const body = await response.json() as { data: { focusDates: string[]; actions: Array<{ action: string; date: string }> } }
 
     expect(response.status).toBe(200)
-    expect(body.data).toMatchObject({ action: 'open_availability', date: '2026-08-20' })
+    expect(body.data.focusDates).toEqual(['2026-08-20', '2026-08-21'])
+    expect(body.data.actions).toEqual([
+      expect.objectContaining({ action: 'open_availability', date: '2026-08-20' }),
+      expect.objectContaining({ action: 'open_availability', date: '2026-08-21' }),
+    ])
     const calendar = pastorAgent.mock.calls[0][1].calendar
     expect(JSON.stringify(calendar)).not.toContain('internalSecret')
   })

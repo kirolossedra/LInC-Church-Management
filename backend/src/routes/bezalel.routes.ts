@@ -167,17 +167,24 @@ function safeRecords(collection: RawCollection, fields: string[]) {
 }
 
 function validatePastorAction(result: PastorAgentResult): PastorAgentResult {
-  const timedAction = result.action === 'open_availability' || result.action === 'block_time'
-  const targetedAction = result.action === 'delete_availability' || result.action === 'delete_unavailability' || result.action === 'accept_request' || result.action === 'reject_request'
-  if (timedAction && (
-    !bookingDateSchema.safeParse(result.date).success ||
-    !bookingTimeSchema.safeParse(result.startTime).success ||
-    !bookingTimeSchema.safeParse(result.endTime).success
-  )) return { ...result, action: 'none' }
-  if (targetedAction && !/^[A-Za-z0-9_-]{1,128}$/.test(result.targetId)) {
-    return { ...result, action: 'none' }
+  const focusDates = [...new Set(result.focusDates)]
+    .filter(date => bookingDateSchema.safeParse(date).success)
+    .slice(0, 14)
+  const validActions = result.actions.every(action => {
+    const timedAction = action.action === 'open_availability' || action.action === 'block_time'
+    const targetedAction = action.action === 'delete_availability' || action.action === 'delete_unavailability' || action.action === 'accept_request' || action.action === 'reject_request'
+    if (timedAction) {
+      return bookingDateSchema.safeParse(action.date).success &&
+        bookingTimeSchema.safeParse(action.startTime).success &&
+        bookingTimeSchema.safeParse(action.endTime).success
+    }
+    return !targetedAction || /^[A-Za-z0-9_-]{1,128}$/.test(action.targetId)
+  })
+  return {
+    ...result,
+    focusDates,
+    actions: validActions ? result.actions : [],
   }
-  return result
 }
 
 function validatePublicBooking(result: PublicBookingAgentResult, locale: 'en' | 'ar'): PublicBookingAgentResult {
