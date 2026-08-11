@@ -1,4 +1,5 @@
 import type { BrevoBindings } from '../services/brevo.service'
+import type { GeminiBindings } from '../services/gemini.service'
 
 export type FirebaseBindings = {
   FIREBASE_PROJECT_ID: string
@@ -20,7 +21,7 @@ export type AppBindings = BrevoBindings &
   FirebaseBindings & {
     BREVO_TEST_RECIPIENT: string
     BOOKING_NOTIFICATION_EMAIL?: string
-  } & BackblazeBindings
+  } & BackblazeBindings & GeminiBindings
 
 export type AuthenticatedFirebaseUser = {
   uid: string

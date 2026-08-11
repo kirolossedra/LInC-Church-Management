@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowRight, ArrowUp, CheckCircle2, Loader2, LockKeyhole, MessageCircleQuestion, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import bezalelImage from '../../../assets/bezalel/bezalel.png';
 
 import {
   getNextGenSession,
@@ -98,6 +99,8 @@ export function NextGenQaSessionPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
+  const [questionLimit, setQuestionLimit] = useState(2);
+  const [submittedQuestionCount, setSubmittedQuestionCount] = useState(0);
 
   const loadSession = useCallback(async () => {
     setLoading(true);
@@ -107,6 +110,8 @@ export function NextGenQaSessionPage() {
       setSession(result.session);
       setQuestions(result.questions);
       setCurrentVotes(result.currentVotes);
+      setQuestionLimit(result.questionLimit);
+      setSubmittedQuestionCount(result.submittedQuestionCount);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'The QA session could not be loaded.');
     } finally {
@@ -122,7 +127,9 @@ export function NextGenQaSessionPage() {
     setBusyId('new-question');
     setError('');
     try {
-      await submitNextGenQuestion(sessionId, prompt);
+      const result = await submitNextGenQuestion(sessionId, prompt);
+      setQuestionLimit(result.questionLimit);
+      setSubmittedQuestionCount(result.submittedQuestionCount);
       setPrompt('');
       await loadSession();
     } catch (submitError) {
@@ -152,15 +159,19 @@ export function NextGenQaSessionPage() {
 
   return (
     <section className="mx-auto max-w-4xl">
-      <header className="rounded-[2.4rem] bg-[#1b0d0d] p-8 text-white md:p-11"><p className="text-xs font-black uppercase tracking-[0.3em] text-[#f2a900]">NextGen QA session</p><h1 className="mt-4 font-serif text-5xl">{session.title}</h1>{session.description && <p className="mt-5 max-w-2xl leading-7 text-stone-300">{session.description}</p>}</header>
+      <header className="rounded-[2.4rem] bg-[#1b0d0d] p-8 text-white md:p-11"><p className="text-xs font-black uppercase tracking-[0.3em] text-[#f2a900]">NextGen QA session</p><h1 className="mt-4 font-serif text-5xl">{session.title}</h1>{session.description && <p className="mt-5 max-w-2xl leading-7 text-stone-300">{session.description}</p>}<div className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-5 md:grid-cols-2"><div><p className="text-[10px] font-black uppercase tracking-widest text-[#f2a900]">Session theme</p><p className="mt-2 leading-6 text-stone-100">{session.theme.en}</p></div><div dir="rtl"><p className="text-[10px] font-black uppercase tracking-widest text-[#f2a900]">موضوع الجلسة</p><p className="mt-2 leading-6 text-stone-100">{session.theme.ar}</p></div></div></header>
       {error && <p className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 font-bold text-red-700">{error}</p>}
-      <form onSubmit={addQuestion} className="mt-7 rounded-[2rem] border border-[#a66c18]/20 bg-[#fffaf0] p-6 shadow-[0_16px_40px_rgba(70,20,18,0.06)]">
-        <label htmlFor="nextgen-question" className="text-xs font-black uppercase tracking-[0.22em] text-[#a66c18]">Add a question to this session</label>
+      <form onSubmit={addQuestion} className="relative mt-7 overflow-hidden rounded-[2rem] border border-[#a66c18]/20 bg-[#fffaf0] p-6 shadow-[0_16px_40px_rgba(70,20,18,0.06)]">
+        <img src={bezalelImage} alt="Bezalel" className={`pointer-events-none absolute -bottom-10 -right-5 hidden h-48 w-32 object-contain object-bottom opacity-20 sm:block ${busyId === 'new-question' ? 'bezalel-thinking' : ''}`} />
+        <div className="relative sm:pe-20">
+        <div className="flex flex-wrap items-center justify-between gap-2"><label htmlFor="nextgen-question" className="text-xs font-black uppercase tracking-[0.22em] text-[#a66c18]">Ask Bezalel an on-theme question</label><span className="rounded-full bg-[#efe5d5] px-3 py-1 text-xs font-black text-[#661816]">{Math.max(0, questionLimit - submittedQuestionCount)} of {questionLimit} remaining</span></div>
+        <p className="mt-2 text-sm text-stone-600">Bezalel checks the question against this session’s theme before it is published.</p>
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-          <textarea id="nextgen-question" value={prompt} onChange={event => setPrompt(event.target.value)} required maxLength={500} rows={3} placeholder="What would you like the group to discuss?" className="min-h-24 flex-1 rounded-2xl border border-stone-200 bg-white p-4 text-stone-800 outline-none transition focus:border-[#7a1717]" />
-          <button type="submit" disabled={Boolean(busyId) || !prompt.trim()} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#7a1717] px-6 py-4 font-black text-white disabled:opacity-40">
+          <textarea id="nextgen-question" value={prompt} onChange={event => setPrompt(event.target.value)} required maxLength={500} rows={3} disabled={submittedQuestionCount >= questionLimit} placeholder={submittedQuestionCount >= questionLimit ? 'You have submitted both questions for this session.' : 'What would you like the group to discuss?'} className="min-h-24 flex-1 rounded-2xl border border-stone-200 bg-white p-4 text-stone-800 outline-none transition focus:border-[#7a1717] disabled:bg-stone-100" />
+          <button type="submit" disabled={Boolean(busyId) || !prompt.trim() || submittedQuestionCount >= questionLimit} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#7a1717] px-6 py-4 font-black text-white disabled:opacity-40">
             {busyId === 'new-question' ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Submit question
           </button>
+        </div>
         </div>
       </form>
       <div className="mt-6 flex flex-wrap gap-2 rounded-2xl border border-stone-200 bg-white p-2" aria-label="Question view">

@@ -1,0 +1,159 @@
+import { z } from 'zod'
+
+import {
+  BEZALEL_BOOKING_PROMPT,
+  BEZALEL_PASTOR_BASELINE_PROMPT,
+  BEZALEL_QUESTION_REVIEW_PROMPT,
+  BEZALEL_THEME_TRANSLATION_PROMPT,
+} from './bezalel.prompts'
+import { generateGeminiJson, type GeminiBindings } from '../services/gemini.service'
+
+const bilingualThemeSchema = z.object({
+  en: z.string().trim().min(1).max(1_000),
+  ar: z.string().trim().min(1).max(1_000),
+  sourceLanguage: z.enum(['en', 'ar', 'mixed']),
+})
+
+const questionReviewSchema = z.object({
+  relevant: z.boolean(),
+  reason: z.string().trim().min(1).max(500),
+  suggestedQuestion: z.string().trim().max(500).default(''),
+})
+
+export type BilingualTheme = z.infer<typeof bilingualThemeSchema>
+export type NextGenQuestionReview = z.infer<typeof questionReviewSchema>
+
+const PASTOR_ACTIONS = [
+  'none',
+  'open_availability',
+  'block_time',
+  'delete_availability',
+  'delete_unavailability',
+  'accept_request',
+  'reject_request',
+] as const
+
+export const pastorAgentResultSchema = z.object({
+  reply: z.string().trim().min(1).max(2_000),
+  focusDate: z.string().trim().max(10).default(''),
+  action: z.enum(PASTOR_ACTIONS).default('none'),
+  date: z.string().trim().max(10).default(''),
+  startTime: z.string().trim().max(5).default(''),
+  endTime: z.string().trim().max(5).default(''),
+  targetId: z.string().trim().max(128).default(''),
+  reason: z.string().trim().max(1_000).default(''),
+  meetingTitle: z.string().trim().max(200).default('Meeting with Pastor'),
+})
+
+export type PastorAgentResult = z.infer<typeof pastorAgentResultSchema>
+
+const publicBookingAgentSchema = z.object({
+  reply: z.string().trim().min(1).max(2_000),
+  stage: z.enum(['answer', 'collect', 'ready_to_book']),
+  focusDate: z.string().trim().max(10).default(''),
+  suggestions: z.array(z.object({
+    date: z.string().trim().max(10),
+    startTime: z.string().trim().max(5),
+    endTime: z.string().trim().max(5),
+  })).max(6).default([]),
+  booking: z.object({
+    name: z.string().trim().max(100).default(''),
+    email: z.string().trim().max(254).default(''),
+    date: z.string().trim().max(10).default(''),
+    startTime: z.string().trim().max(5).default(''),
+    endTime: z.string().trim().max(5).default(''),
+    reason: z.string().trim().max(2_000).default(''),
+  }).default({ name: '', email: '', date: '', startTime: '', endTime: '', reason: '' }),
+})
+
+export type PublicBookingAgentResult = z.infer<typeof publicBookingAgentSchema>
+
+const objectSchema = (properties: Record<string, unknown>, required: string[]) => ({
+  type: 'object',
+  properties,
+  required,
+  additionalProperties: false,
+})
+
+export async function translateQaTheme(
+  bindings: GeminiBindings,
+  theme: string,
+  fetchImpl?: typeof fetch,
+) {
+  return generateGeminiJson({
+    bindings,
+    fetchImpl,
+    systemInstruction: BEZALEL_THEME_TRANSLATION_PROMPT,
+    prompt: `Theme to translate:\n${theme}`,
+    validator: bilingualThemeSchema,
+    responseSchema: objectSchema({
+      en: { type: 'string' },
+      ar: { type: 'string' },
+      sourceLanguage: { type: 'string', enum: ['en', 'ar', 'mixed'] },
+    }, ['en', 'ar', 'sourceLanguage']),
+  })
+}
+
+export async function reviewNextGenQuestion(
+  bindings: GeminiBindings,
+  input: { theme: BilingualTheme; question: string },
+  fetchImpl?: typeof fetch,
+) {
+  return generateGeminiJson({
+    bindings,
+    fetchImpl,
+    systemInstruction: BEZALEL_QUESTION_REVIEW_PROMPT,
+    prompt: `English theme: ${input.theme.en}\nArabic theme: ${input.theme.ar}\nSubmitted question: ${input.question}`,
+    validator: questionReviewSchema,
+    responseSchema: objectSchema({
+      relevant: { type: 'boolean' },
+      reason: { type: 'string' },
+      suggestedQuestion: { type: 'string' },
+    }, ['relevant', 'reason', 'suggestedQuestion']),
+  })
+}
+
+export async function runPastorAgent(
+  bindings: GeminiBindings,
+  input: { messages: Array<{ role: 'user' | 'assistant'; content: string }>; calendar: unknown; today: string },
+  fetchImpl?: typeof fetch,
+) {
+  return generateGeminiJson({
+    bindings,
+    fetchImpl,
+    systemInstruction: BEZALEL_PASTOR_BASELINE_PROMPT,
+    prompt: `Today in Toronto: ${input.today}\nCalendar snapshot: ${JSON.stringify(input.calendar)}\nConversation: ${JSON.stringify(input.messages)}`,
+    validator: pastorAgentResultSchema,
+    responseSchema: objectSchema({
+      reply: { type: 'string' },
+      focusDate: { type: 'string' },
+      action: { type: 'string', enum: PASTOR_ACTIONS },
+      date: { type: 'string' }, startTime: { type: 'string' }, endTime: { type: 'string' },
+      targetId: { type: 'string' }, reason: { type: 'string' }, meetingTitle: { type: 'string' },
+    }, ['reply', 'focusDate', 'action', 'date', 'startTime', 'endTime', 'targetId', 'reason', 'meetingTitle']),
+  })
+}
+
+export async function runPublicBookingAgent(
+  bindings: GeminiBindings,
+  input: { messages: Array<{ role: 'user' | 'assistant'; content: string }>; schedule: unknown; today: string; locale: 'en' | 'ar' },
+  fetchImpl?: typeof fetch,
+) {
+  return generateGeminiJson({
+    bindings,
+    fetchImpl,
+    systemInstruction: BEZALEL_BOOKING_PROMPT,
+    prompt: `Today in Toronto: ${input.today}\nVisitor locale: ${input.locale}\nPublic schedule: ${JSON.stringify(input.schedule)}\nConversation: ${JSON.stringify(input.messages)}`,
+    validator: publicBookingAgentSchema,
+    responseSchema: objectSchema({
+      reply: { type: 'string' },
+      stage: { type: 'string', enum: ['answer', 'collect', 'ready_to_book'] },
+      focusDate: { type: 'string' },
+      suggestions: { type: 'array', maxItems: 6, items: objectSchema({ date: { type: 'string' }, startTime: { type: 'string' }, endTime: { type: 'string' } }, ['date', 'startTime', 'endTime']) },
+      booking: objectSchema({
+        name: { type: 'string' }, email: { type: 'string' }, date: { type: 'string' },
+        startTime: { type: 'string' }, endTime: { type: 'string' }, reason: { type: 'string' },
+      }, ['name', 'email', 'date', 'startTime', 'endTime', 'reason']),
+    }, ['reply', 'stage', 'focusDate', 'suggestions', 'booking']),
+  })
+}

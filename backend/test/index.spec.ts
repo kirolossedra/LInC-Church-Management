@@ -203,10 +203,15 @@ describe('LinC backend', () => {
       nextGenPortal: {
         verifyToken: vi.fn().mockResolvedValue(firebaseUser),
         getAccessToken: vi.fn().mockResolvedValue('firebase-access-token'),
-        databaseFetch: databaseFetch as typeof fetch,
-        generateId: () => 'member-question-1',
-        now: () => 25,
-      },
+      databaseFetch: databaseFetch as typeof fetch,
+      generateId: () => 'member-question-1',
+      now: () => 25,
+      reviewQuestion: vi.fn().mockResolvedValue({
+        relevant: true,
+        reason: 'The question matches the session theme.',
+        suggestedQuestion: '',
+      }),
+    },
     })
     const response = await authenticatedApp.request(
       '/api/v1/nextgen/qa/sessions/session-1/questions',

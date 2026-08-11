@@ -10,11 +10,19 @@ export type NextGenQaSessionStatus = 'draft' | 'open' | 'closed'
 export type NextGenParticipantStatus = 'pending' | 'verified' | 'discarded'
 export type NextGenQaVoteType = 'upvote' | 'downvote'
 export type NextGenQaMemberView = 'all' | 'my-upvotes' | 'net-votes'
+export const NEXTGEN_QUESTION_LIMIT = 2
+
+export type NextGenQaTheme = {
+  en: string
+  ar: string
+  sourceLanguage: 'en' | 'ar' | 'mixed'
+}
 
 export type NextGenQaSession = {
   id: string
   title: string
   description: string
+  theme: NextGenQaTheme
   status: NextGenQaSessionStatus
   createdAt: number
   createdByUid: string
@@ -34,6 +42,10 @@ export type NextGenQaQuestion = {
   selectedForDiscussion: boolean
   selectedAt?: number
   selectedByUid?: string
+  bezalelReview?: {
+    relevant: boolean
+    reason: string
+  }
 }
 
 export type NextGenQaParticipant = {
@@ -95,6 +107,11 @@ export async function ensureLegacyQaSession({
     id: LEGACY_QA_SESSION_ID,
     title: 'QA Session 1',
     description: 'Archived questions from the previous NextGen QA page.',
+    theme: {
+      en: 'Archived NextGen questions',
+      ar: 'أسئلة الجيل القادم المؤرشفة',
+      sourceLanguage: 'en',
+    },
     status: 'closed',
     createdAt: earliestCreatedAt,
     createdByUid: 'legacy-nextgen-migration',
@@ -213,6 +230,7 @@ export async function createQaSession({
   id,
   title,
   description,
+  theme,
   status,
   userUid,
   timestamp,
@@ -221,6 +239,7 @@ export async function createQaSession({
   id: string
   title: string
   description: string
+  theme: NextGenQaTheme
   status: NextGenQaSessionStatus
   userUid: string
   timestamp: number
@@ -229,6 +248,7 @@ export async function createQaSession({
     id,
     title: title.trim(),
     description: description.trim(),
+    theme,
     status,
     createdAt: timestamp,
     createdByUid: userUid,
@@ -244,6 +264,7 @@ export async function createQaQuestion({
   id,
   prompt,
   userUid,
+  review,
   timestamp,
 }: {
   database: FirebaseRealtimeDatabaseClient
@@ -251,6 +272,7 @@ export async function createQaQuestion({
   id: string
   prompt: string
   userUid: string
+  review: { relevant: boolean; reason: string }
   timestamp: number
 }) {
   const question: NextGenQaQuestion = {
@@ -265,6 +287,7 @@ export async function createQaQuestion({
     createdByUid: userUid,
     updatedAt: timestamp,
     selectedForDiscussion: false,
+    bezalelReview: review,
   }
   await database.patch([...NEXTGEN_QA_PATH, 'questions', session.id, id], question)
   return question
@@ -328,11 +351,13 @@ export async function getMemberSessionView({
   database,
   session,
   emailVoteKey,
+  userUid,
   view = 'all',
 }: {
   database: FirebaseRealtimeDatabaseClient
   session: NextGenQaSession
   emailVoteKey: string
+  userUid?: string
   view?: NextGenQaMemberView
 }) {
   const [allQuestions, rawVotes] = await Promise.all([
@@ -361,7 +386,16 @@ export async function getMemberSessionView({
       .reduce((total, vote) => total + (vote.voteType === 'upvote' ? 1 : -1), 0)
     questions = [...questions].sort((left, right) => score(right) - score(left) || left.createdAt - right.createdAt)
   }
-  return { session, questions, currentVotes, view }
+  return {
+    session,
+    questions,
+    currentVotes,
+    view,
+    questionLimit: NEXTGEN_QUESTION_LIMIT,
+    submittedQuestionCount: userUid
+      ? allQuestions.filter(question => question.createdByUid === userUid).length
+      : 0,
+  }
 }
 
 export async function updateQuestionDiscussionSelection({
@@ -471,6 +505,7 @@ function normalizeSession(id: string, value: unknown): NextGenQaSession | null {
     id,
     title,
     description: stringValue(record.description),
+    theme: normalizeTheme(record.theme, title, stringValue(record.description)),
     status,
     createdAt: numberValue(record.createdAt),
     createdByUid: stringValue(record.createdByUid),
@@ -548,6 +583,12 @@ function normalizeQuestion(sessionId: string, id: string, value: unknown): NextG
     createdByUid: stringValue(record.createdByUid),
     updatedAt: numberValue(record.updatedAt),
     selectedForDiscussion: record.selectedForDiscussion === true,
+    ...(asRecord(record.bezalelReview).reason ? {
+      bezalelReview: {
+        relevant: asRecord(record.bezalelReview).relevant === true,
+        reason: stringValue(asRecord(record.bezalelReview).reason),
+      },
+    } : {}),
     ...(numberValue(record.selectedAt) ? { selectedAt: numberValue(record.selectedAt) } : {}),
     ...(stringValue(record.selectedByUid) ? { selectedByUid: stringValue(record.selectedByUid) } : {}),
   }
@@ -599,9 +640,21 @@ export class NextGenPortalError extends Error {
   constructor(
     public readonly code: string,
     message: string,
-    public readonly status: 404 | 409,
+    public readonly status: 404 | 409 | 422,
   ) {
     super(message)
     this.name = 'NextGenPortalError'
+  }
+}
+
+function normalizeTheme(value: unknown, title: string, description: string): NextGenQaTheme {
+  const record = asRecord(value)
+  const fallback = description || title
+  return {
+    en: stringValue(record.en) || fallback,
+    ar: stringValue(record.ar) || fallback,
+    sourceLanguage: record.sourceLanguage === 'ar' || record.sourceLanguage === 'mixed'
+      ? record.sourceLanguage
+      : 'en',
   }
 }

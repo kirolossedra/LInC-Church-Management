@@ -10,6 +10,7 @@ import {
   getPublicBookingSchedule,
 } from '../services/booking';
 import LincPageHero from '../components/linc/LincPageHero';
+import { BookingBezalelAssistant } from '../components/bezalel';
 
 const BUSINESS_START = 9;
 const BUSINESS_END = 20; // don't change this
@@ -63,6 +64,7 @@ export default function BookingCalendar() {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [bezalelFocusDate, setBezalelFocusDate] = useState('');
   const isPastDay = selectedDay
     ? isBefore(startOfDay(selectedDay), startOfDay(new Date()))
     : false;
@@ -242,6 +244,20 @@ export default function BookingCalendar() {
   const unavailableLabel = t('booking.unavailable');
   const availableShortLabel = displayLocale === 'ar' ? availableLabel : 'Avail.';
   const unavailableShortLabel = displayLocale === 'ar' ? unavailableLabel : 'Unavail.';
+
+  const focusBezalelDate = (date: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const parsedDate = new Date(`${date}T12:00:00`);
+    setCurrentDate(parsedDate);
+    setSelectedDay(parsedDate);
+    setBezalelFocusDate(date);
+    window.setTimeout(() => {
+      document.querySelector(`[data-booking-date="${date}"]`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 80);
+  };
 
   const dayPopup = (
     <AnimatePresence>
@@ -544,10 +560,13 @@ export default function BookingCalendar() {
               return (
                 <button
                   key={day.toISOString()}
+                  data-booking-date={format(day, 'yyyy-MM-dd')}
                   onClick={() => handleDayClick(day)}
                   disabled={isPast}
                   className={`min-h-[86px] sm:min-h-[112px] rounded-2xl transition-all text-center px-0.5 py-1.5 sm:p-3 flex flex-col items-center justify-start gap-1.5 sm:gap-2 font-bold ${
-                    isPast
+                    bezalelFocusDate === format(day, 'yyyy-MM-dd')
+                      ? 'bezalel-date-focus text-sky-800'
+                      : isPast
                       ? 'text-[#a07c7c] cursor-not-allowed opacity-70'
                       : isSelected
                       ? 'text-[#7a1717]'
@@ -608,6 +627,11 @@ export default function BookingCalendar() {
 
       {dayPopup}
       {bookingFormPopup}
+      <BookingBezalelAssistant
+        locale={displayLocale}
+        onFocusDate={focusBezalelDate}
+        onBooked={() => setScheduleRefresh(value => value + 1)}
+      />
     </>
   );
 }

@@ -43,6 +43,7 @@ const session: NextGenQaSession = {
   id: 'session-1',
   title: 'Session One',
   description: '',
+  theme: { en: 'Faith and service', ar: 'الإيمان والخدمة', sourceLanguage: 'en' },
   status: 'open',
   createdAt: 1,
   createdByUid: 'pastor',
@@ -96,6 +97,7 @@ describe('NextGen portal domain', () => {
       id: 'question-2',
       prompt: '  What should we discuss?  ',
       userUid: 'member-2',
+      review: { relevant: true, reason: 'The question fits the session theme.' },
       timestamp: 12,
     })
 

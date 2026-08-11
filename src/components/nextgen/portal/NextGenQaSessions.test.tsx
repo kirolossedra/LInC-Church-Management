@@ -16,6 +16,7 @@ const session = {
   id: 'session-1',
   title: 'August Questions',
   description: 'A separate QA form.',
+  theme: { en: 'Faith and service', ar: 'الإيمان والخدمة', sourceLanguage: 'en' as const },
   status: 'open' as const,
   createdAt: 1,
   updatedAt: 1,
@@ -68,6 +69,8 @@ describe('NextGen QA session pages', () => {
       }],
       currentVotes: { 'question-1': 'upvote' },
       view: 'all',
+      questionLimit: 2,
+      submittedQuestionCount: 1,
     });
     vi.mocked(submitNextGenVote).mockResolvedValue({ submitted: true, voteType: 'downvote' });
     render(
@@ -84,13 +87,16 @@ describe('NextGen QA session pages', () => {
   });
 
   it('lets members submit questions and requests server-side filtered views', async () => {
-    vi.mocked(getNextGenSession).mockResolvedValue({ session, questions: [], currentVotes: {}, view: 'all' });
+    vi.mocked(getNextGenSession).mockResolvedValue({ session, questions: [], currentVotes: {}, view: 'all', questionLimit: 2, submittedQuestionCount: 0 });
     vi.mocked(submitNextGenQuestion).mockResolvedValue({
       question: {
         id: 'question-2', sessionId: session.id, prompt: 'Can we discuss service?',
         options: [{ id: 'option-1', label: 'Upvote' }, { id: 'option-2', label: 'Downvote' }],
         createdAt: 3, selectedForDiscussion: false,
       },
+      review: { relevant: true, reason: 'On theme.', suggestedQuestion: '' },
+      questionLimit: 2,
+      submittedQuestionCount: 1,
     });
     const rendered = render(
       <MemoryRouter initialEntries={['/nextgen-activities/qa/session-1']}>

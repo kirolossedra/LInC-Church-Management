@@ -44,6 +44,10 @@ import {
   type AdminDependencies,
 } from './routes/admin.routes'
 import type { AppEnv } from './types/app'
+import {
+  createBezalelRoutes,
+  type BezalelDependencies,
+} from './routes/bezalel.routes'
 
 export type AppDependencies = {
   auth?: AuthRoutesDependencies
@@ -56,6 +60,7 @@ export type AppDependencies = {
   meetingInvitations?: MeetingInvitationsDependencies
   assessment?: AssessmentDependencies
   admin?: AdminDependencies
+  bezalel?: BezalelDependencies
 }
 
 export function createApp(
@@ -206,6 +211,11 @@ const requestSchema = z
   app.route(
     '/api/v1/booking',
     createBookingRoutes(dependencies.booking),
+  )
+
+  app.route(
+    '/api/v1/bezalel',
+    createBezalelRoutes(dependencies.bezalel),
   )
 
   app.route(

@@ -14,6 +14,7 @@ import {
   type NextGenFile,
 } from '../nextgen/nextGenFiles'
 import {
+  NEXTGEN_QUESTION_LIMIT,
   createEmailVoteKey,
   createQaQuestion,
   createQaSession,
@@ -22,11 +23,17 @@ import {
   getPastorSessionView,
   getQaSession,
   listQaSessions,
+  listQaQuestions,
   NextGenPortalError,
   recordQaVote,
   updateQuestionDiscussionSelection,
   updateParticipantStatus,
 } from '../nextgen/nextGenPortal'
+import {
+  reviewNextGenQuestion,
+  translateQaTheme,
+} from '../bezalel/bezalel.ai'
+import { GeminiServiceError } from '../services/gemini.service'
 import { requireAdminAuthority } from '../admin/adminAuthorization'
 import { createFirebaseAuthMiddleware, type FirebaseTokenVerifier } from '../security/firebaseAuth'
 import { FirebaseServiceAccountError, getFirebaseServiceAccountAccessToken } from '../security/firebaseServiceAccount'
@@ -44,9 +51,15 @@ const idSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,128}$/)
 const sessionSchema = z.object({
   title: z.string().trim().min(1).max(140),
   description: z.string().trim().max(1_000).default(''),
+  theme: z.string().trim().min(3).max(1_000),
   status: z.enum(['draft', 'open', 'closed']).default('draft'),
 }).strict()
-const sessionUpdateSchema = sessionSchema.partial().refine(value => Object.keys(value).length > 0)
+const sessionUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(140).optional(),
+  description: z.string().trim().max(1_000).optional(),
+  theme: z.string().trim().min(3).max(1_000).optional(),
+  status: z.enum(['draft', 'open', 'closed']).optional(),
+}).strict().refine(value => Object.keys(value).length > 0)
 const questionSchema = z.object({ prompt: z.string().trim().min(1).max(500) }).strict()
 const voteSchema = z.object({ voteType: z.enum(['upvote', 'downvote']) }).strict()
 const memberViewSchema = z.enum(['all', 'my-upvotes', 'net-votes']).default('all')
@@ -75,6 +88,9 @@ export type NextGenPortalDependencies = {
   getAccessToken?: (bindings: FirebaseBindings) => Promise<string>
   databaseFetch?: FirebaseDatabaseFetch
   archiveStorage?: ArchiveStorage
+  geminiFetch?: typeof fetch
+  translateTheme?: typeof translateQaTheme
+  reviewQuestion?: typeof reviewNextGenQuestion
   now?: () => number
   generateId?: () => string
 }
@@ -122,22 +138,68 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
   routes.get('/qa/sessions/:sessionId', context => withMemberSession(context, dependencies, async (database, session, emailVoteKey) => {
     const view = memberViewSchema.safeParse(context.req.query('view'))
     if (!view.success) return validationError(context)
-    return context.json({ success: true, data: await getMemberSessionView({ database, session, emailVoteKey, view: view.data }) })
+    return context.json({ success: true, data: await getMemberSessionView({
+      database,
+      session,
+      emailVoteKey,
+      userUid: context.get('firebaseUser').uid,
+      view: view.data,
+    }) })
   }))
 
   routes.post('/qa/sessions/:sessionId/questions', async context => {
     const body = questionSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
     return withMemberSession(context, dependencies, async (database, session) => {
+      const userUid = context.get('firebaseUser').uid
+      const submittedCount = (await listQaQuestions(database, session.id))
+        .filter(question => question.createdByUid === userUid)
+        .length
+      if (submittedCount >= NEXTGEN_QUESTION_LIMIT) {
+        return portalError(context, new NextGenPortalError(
+          'NEXTGEN_QUESTION_LIMIT_REACHED',
+          `You can submit up to ${NEXTGEN_QUESTION_LIMIT} questions in this QA session.`,
+          409,
+        ))
+      }
+      let review
+      try {
+        review = await (dependencies.reviewQuestion ?? reviewNextGenQuestion)(
+          context.env,
+          { theme: session.theme, question: body.data.prompt },
+          dependencies.geminiFetch,
+        )
+      } catch (error) {
+        return geminiPortalError(context, error)
+      }
+      if (!review.relevant) {
+        const suggestion = review.suggestedQuestion
+          ? ` Suggested rewrite: ${review.suggestedQuestion}`
+          : ''
+        return portalError(context, new NextGenPortalError(
+          'NEXTGEN_QUESTION_OFF_THEME',
+          `${review.reason}${suggestion}`,
+          422,
+        ))
+      }
       const question = await createQaQuestion({
         database,
         session,
         id: generateId(),
         prompt: body.data.prompt,
-        userUid: context.get('firebaseUser').uid,
+        userUid,
+        review: { relevant: true, reason: review.reason },
         timestamp: now(),
       })
-      return context.json({ success: true, data: { question } }, 201)
+      return context.json({
+        success: true,
+        data: {
+          question,
+          review,
+          questionLimit: NEXTGEN_QUESTION_LIMIT,
+          submittedQuestionCount: submittedCount + 1,
+        },
+      }, 201)
     })
   })
 
@@ -147,7 +209,12 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     if (!questionId.success || !body.success) return validationError(context)
     return withMemberSession(context, dependencies, async (database, session, emailVoteKey) => {
       try {
-        const view = await getMemberSessionView({ database, session, emailVoteKey })
+        const view = await getMemberSessionView({
+          database,
+          session,
+          emailVoteKey,
+          userUid: context.get('firebaseUser').uid,
+        })
         const question = view.questions.find(candidate => candidate.id === questionId.data)
         if (!question) throw new NextGenPortalError('NEXTGEN_QA_QUESTION_NOT_FOUND', 'The question was not found.', 404)
         const user = context.get('firebaseUser')
@@ -190,10 +257,23 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     const body = sessionSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
     return withQaManager(context, dependencies, async database => {
+      let theme
+      try {
+        theme = await (dependencies.translateTheme ?? translateQaTheme)(
+          context.env,
+          body.data.theme,
+          dependencies.geminiFetch,
+        )
+      } catch (error) {
+        return geminiPortalError(context, error)
+      }
       const session = await createQaSession({
         database,
         id: generateId(),
-        ...body.data,
+        title: body.data.title,
+        description: body.data.description,
+        status: body.data.status,
+        theme,
         userUid: context.get('firebaseUser').uid,
         timestamp: now(),
       })
@@ -208,7 +288,25 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     return withQaManager(context, dependencies, async database => {
       const session = await getQaSession(database, sessionId.data)
       if (!session) return notFound(context, 'NEXTGEN_QA_SESSION_NOT_FOUND', 'The QA session was not found.')
-      const updated = { ...session, ...body.data, updatedAt: now() }
+      let translatedTheme = session.theme
+      if (body.data.theme) {
+        try {
+          translatedTheme = await (dependencies.translateTheme ?? translateQaTheme)(
+            context.env,
+            body.data.theme,
+            dependencies.geminiFetch,
+          )
+        } catch (error) {
+          return geminiPortalError(context, error)
+        }
+      }
+      const { theme: _themeInput, ...updates } = body.data
+      const updated = {
+        ...session,
+        ...updates,
+        theme: translatedTheme,
+        updatedAt: now(),
+      }
       await database.patch(['nextGenPortal', 'qa', 'sessions', session.id], updated)
       return context.json({ success: true, data: { session: updated } })
     })
@@ -431,6 +529,15 @@ function notFound(context: Context<AppEnv>, code: string, message: string) { ret
 async function readJson(context: Context<AppEnv>) { try { return await context.req.json() } catch { return undefined } }
 function portalError(context: Context<AppEnv>, error: unknown) {
   if (error instanceof NextGenPortalError) return context.json({ success: false, error: { code: error.code, message: error.message } }, error.status)
+  throw error
+}
+function geminiPortalError(context: Context<AppEnv>, error: unknown) {
+  if (error instanceof GeminiServiceError) {
+    return context.json({
+      success: false,
+      error: { code: error.code, message: error.message },
+    }, error.status as 429 | 503)
+  }
   throw error
 }
 function fileError(context: Context<AppEnv>, error: unknown) {

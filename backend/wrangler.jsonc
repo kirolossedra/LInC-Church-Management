@@ -9,7 +9,8 @@
     "BOOKING_NOTIFICATION_EMAIL": "rev.ibrahim@lincministry.com",
     "B2_BUCKET_NAME": "linc-ministry-archives",
     "B2_S3_ENDPOINT": "https://s3.us-east-005.backblazeb2.com",
-    "B2_REGION": "us-east-005"
+    "B2_REGION": "us-east-005",
+    "GEMINI_MODEL": "gemini-2.5-flash"
   },
   // "compatibility_flags": [
   //   "nodejs_compat"

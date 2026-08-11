@@ -14,6 +14,11 @@ export interface NextGenQaSession {
   id: string;
   title: string;
   description: string;
+  theme: {
+    en: string;
+    ar: string;
+    sourceLanguage: 'en' | 'ar' | 'mixed';
+  };
   status: NextGenQaSessionStatus;
   createdAt: number;
   updatedAt: number;
@@ -30,6 +35,7 @@ export interface NextGenQaQuestion {
   createdAt: number;
   selectedForDiscussion: boolean;
   selectedAt?: number;
+  bezalelReview?: { relevant: boolean; reason: string };
 }
 
 export interface NextGenQaParticipant {
@@ -78,13 +84,20 @@ export const getNextGenSession = async (sessionId: string, view: NextGenQaMember
     questions: NextGenQaQuestion[];
     currentVotes: Record<string, NextGenQaVoteType>;
     view: NextGenQaMemberView;
+    questionLimit: number;
+    submittedQuestionCount: number;
   }>(
     `/qa/sessions/${encodeURIComponent(sessionId)}?view=${encodeURIComponent(view)}`,
     { method: 'GET' },
   );
 
 export const submitNextGenQuestion = async (sessionId: string, prompt: string) =>
-  request<{ question: NextGenQaQuestion }>(
+  request<{
+    question: NextGenQaQuestion;
+    review: { relevant: boolean; reason: string; suggestedQuestion: string };
+    questionLimit: number;
+    submittedQuestionCount: number;
+  }>(
     `/qa/sessions/${encodeURIComponent(sessionId)}/questions`,
     { method: 'POST', body: JSON.stringify({ prompt }) },
   );
@@ -98,10 +111,10 @@ export const submitNextGenVote = async (sessionId: string, questionId: string, v
 export const getPastorNextGenSessions = async () =>
   request<{ sessions: NextGenQaSession[] }>('/pastor/qa/sessions', { method: 'GET' });
 
-export const createPastorNextGenSession = async (input: { title: string; description: string; status: NextGenQaSessionStatus }) =>
+export const createPastorNextGenSession = async (input: { title: string; description: string; theme: string; status: NextGenQaSessionStatus }) =>
   request<{ session: NextGenQaSession }>('/pastor/qa/sessions', { method: 'POST', body: JSON.stringify(input) });
 
-export const updatePastorNextGenSession = async (sessionId: string, input: Partial<Pick<NextGenQaSession, 'title' | 'description' | 'status'>>) =>
+export const updatePastorNextGenSession = async (sessionId: string, input: Partial<Pick<NextGenQaSession, 'title' | 'description' | 'status'> & { theme: string }>) =>
   request<{ session: NextGenQaSession }>(`/pastor/qa/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', body: JSON.stringify(input) });
 
 export const updateNextGenQuestionDiscussionSelection = async (

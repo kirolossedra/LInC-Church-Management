@@ -5,3 +5,5 @@ B2_S3_ENDPOINT=https://s3.us-east-005.backblazeb2.com
 B2_REGION=us-east-005
 B2_APPLICATION_KEY_ID=
 B2_APPLICATION_KEY=
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash

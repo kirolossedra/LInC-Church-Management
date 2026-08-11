@@ -71,6 +71,47 @@
   animation-direction: reverse;
 }
 
+.bezalel-portrait,
+.bezalel-launcher img {
+  animation: bezalel-float 3.8s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+.bezalel-thinking,
+.bezalel-thinking img {
+  animation-duration: 1.5s;
+}
+
+.bezalel-acting img {
+  animation: bezalel-cast 850ms ease-in-out infinite;
+}
+
+.bezalel-success img {
+  animation: bezalel-success 700ms ease-out both;
+}
+
+.bezalel-orbit {
+  position: absolute;
+  right: -8px;
+  top: 2px;
+  display: grid;
+  height: 28px;
+  width: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f2a900;
+  color: #3a1d09;
+  box-shadow: 0 0 24px rgba(242, 169, 0, 0.65);
+  animation: bezalel-orbit 950ms linear infinite;
+}
+
+.bezalel-date-focus {
+  position: relative;
+  z-index: 2;
+  animation: bezalel-date-focus 1.25s ease-in-out infinite;
+  box-shadow: 0 0 0 4px rgba(69, 155, 198, 0.2), 0 16px 38px rgba(36, 112, 150, 0.2) !important;
+}
+
 .people-notes-ui,
 .assessment-ui,
 .booking-ui,
@@ -158,6 +199,31 @@
   to { transform: translateX(-50%); }
 }
 
+@keyframes bezalel-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(0.6deg); }
+}
+
+@keyframes bezalel-cast {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-5px) rotate(3deg); }
+}
+
+@keyframes bezalel-orbit {
+  to { transform: rotate(360deg) translateX(3px) rotate(-360deg); }
+}
+
+@keyframes bezalel-success {
+  0% { transform: scale(0.94); }
+  55% { transform: scale(1.06) translateY(-3px); }
+  100% { transform: scale(1); }
+}
+
+@keyframes bezalel-date-focus {
+  0%, 100% { outline-color: rgba(69, 155, 198, 0.3); }
+  50% { outline-color: rgba(242, 169, 0, 0.8); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -168,6 +234,16 @@
     flex-wrap: wrap;
     width: 100%;
     justify-content: center;
+  }
+
+  .bezalel-portrait,
+  .bezalel-launcher img,
+  .bezalel-thinking,
+  .bezalel-acting img,
+  .bezalel-success img,
+  .bezalel-orbit,
+  .bezalel-date-focus {
+    animation: none !important;
   }
 
   .linc-feature-card::before {

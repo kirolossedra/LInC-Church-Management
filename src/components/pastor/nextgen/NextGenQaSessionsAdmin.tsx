@@ -24,6 +24,7 @@ export default function NextGenQaSessionsAdmin({ expanded, onToggleExpanded }: {
   const [error, setError] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [theme, setTheme] = useState('');
 
   const loadSessions = useCallback(async () => {
     setLoading(true); setError('');
@@ -53,8 +54,8 @@ export default function NextGenQaSessionsAdmin({ expanded, onToggleExpanded }: {
   const createSession = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError('');
     try {
-      const result = await createPastorNextGenSession({ title, description, status: 'draft' });
-      setSessions(current => [result.session, ...current]); setSelectedId(result.session.id); setTitle(''); setDescription('');
+      const result = await createPastorNextGenSession({ title, description, theme, status: 'draft' });
+      setSessions(current => [result.session, ...current]); setSelectedId(result.session.id); setTitle(''); setDescription(''); setTheme('');
     } catch (createError) { setError(createError instanceof Error ? createError.message : 'Session creation failed.'); }
     finally { setBusy(false); }
   };
@@ -98,15 +99,17 @@ export default function NextGenQaSessionsAdmin({ expanded, onToggleExpanded }: {
       </button>
       {expanded && <div className="space-y-8 p-6 md:p-8">
         {error && <p className="rounded-2xl border border-red-200 bg-red-50 p-4 font-bold text-red-700">{error}</p>}
-        <form onSubmit={createSession} className="grid gap-3 rounded-3xl border border-[#7a1717]/10 bg-[#f8f2e9] p-5 md:grid-cols-[1fr_1fr_auto]">
+        <form onSubmit={createSession} className="grid gap-3 rounded-3xl border border-[#7a1717]/10 bg-[#f8f2e9] p-5 md:grid-cols-2">
           <input value={title} onChange={event => setTitle(event.target.value)} required placeholder="Session title" className="rounded-xl border border-stone-200 bg-white px-4 py-3" />
           <input value={description} onChange={event => setDescription(event.target.value)} placeholder="Short description" className="rounded-xl border border-stone-200 bg-white px-4 py-3" />
+          <textarea value={theme} onChange={event => setTheme(event.target.value)} required minLength={3} maxLength={1000} rows={3} placeholder="Required QA theme — enter English, Arabic, or both. Bezalel stores both languages." className="rounded-xl border border-stone-200 bg-white px-4 py-3 md:col-span-2" />
+          <p className="self-center text-xs leading-5 text-stone-500">Bezalel translates the theme into English and Arabic before the session is saved.</p>
           <button disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#7a1717] px-5 py-3 font-black text-white"><Plus size={17} /> New session</button>
         </form>
         {loading ? <div className="flex justify-center py-12"><Loader2 className="animate-spin" /></div> : sessions.length === 0 ? <p className="rounded-3xl border border-dashed border-stone-300 p-12 text-center text-stone-500">Create the first QA session above.</p> : <>
           <div className="flex flex-wrap gap-2">{sessions.map(session => <button key={session.id} onClick={() => setSelectedId(session.id)} className={`rounded-full border px-4 py-2 text-sm font-black ${selectedId === session.id ? 'border-[#7a1717] bg-[#7a1717] text-white' : 'border-stone-200 bg-white text-stone-600'}`}>{session.title} · {session.status}</button>)}</div>
           {detail && <div className="space-y-7">
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-stone-200 bg-white p-6"><div><h4 className="font-serif text-3xl text-[#661816]">{detail.session.title}</h4><p className="mt-2 text-sm text-stone-500">{detail.questions.length} questions · {detail.participants.length} voters</p></div><div className="flex gap-2">{(['draft', 'open', 'closed'] as const).map(status => <button key={status} disabled={busy} onClick={() => void setStatus(status)} className={`rounded-xl px-4 py-2 text-xs font-black uppercase ${detail.session.status === status ? 'bg-[#7a1717] text-white' : 'border border-stone-200 text-stone-600'}`}>{status}</button>)}</div></div>
+            <div className="rounded-3xl border border-stone-200 bg-white p-6"><div className="flex flex-wrap items-center justify-between gap-4"><div><h4 className="font-serif text-3xl text-[#661816]">{detail.session.title}</h4><p className="mt-2 text-sm text-stone-500">{detail.questions.length} questions · {detail.participants.length} voters</p></div><div className="flex gap-2">{(['draft', 'open', 'closed'] as const).map(status => <button key={status} disabled={busy} onClick={() => void setStatus(status)} className={`rounded-xl px-4 py-2 text-xs font-black uppercase ${detail.session.status === status ? 'bg-[#7a1717] text-white' : 'border border-stone-200 text-stone-600'}`}>{status}</button>)}</div></div><div className="mt-5 grid gap-3 rounded-2xl bg-[#f8f2e9] p-4 md:grid-cols-2"><div><p className="text-[10px] font-black uppercase tracking-widest text-[#a66c18]">English theme</p><p className="mt-1 text-sm leading-6 text-stone-700">{detail.session.theme.en}</p></div><div dir="rtl"><p className="text-[10px] font-black uppercase tracking-widest text-[#a66c18]">الموضوع بالعربية</p><p className="mt-1 text-sm leading-6 text-stone-700">{detail.session.theme.ar}</p></div></div></div>
             <div className="rounded-3xl border border-[#a66c18]/20 bg-[#fffaf0] p-6">
               <p className="text-xs font-black uppercase tracking-[0.2em] text-[#a66c18]">Member-led questions</p>
               <p className="mt-2 text-sm leading-6 text-stone-600">Registered NextGen members add and vote on questions. Pastor and Administrator controls here are limited to session status, voter integrity, and selecting questions for discussion.</p>

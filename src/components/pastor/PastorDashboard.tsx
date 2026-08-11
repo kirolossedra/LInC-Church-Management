@@ -38,6 +38,7 @@ import PageTitle from '../PageTitle';
 import { useI18n } from '../../i18n';
 import { downloadPastorCalendarExport } from '../../services/pastorCalendar';
 import { TutorialBuilderSection } from '../tutorial-builder';
+import { PastorBezalelAssistant } from '../bezalel';
 
 import {
   PeopleAssignmentsCalendarModal,
@@ -92,6 +93,7 @@ export default function PastorDashboard() {
   const [showNextGenQa, setShowNextGenQa] = useState(false);
   const [showCalendarActions, setShowCalendarActions] = useState(false);
   const [calendarExporting, setCalendarExporting] = useState(false);
+  const [bezalelFocusDate, setBezalelFocusDate] = useState('');
 
   const {
     participants,
@@ -114,6 +116,19 @@ export default function PastorDashboard() {
     calendarLoading,
     refreshCalendar,
   } = usePastorCalendarData();
+
+  const focusBezalelDate = (date: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const parsedDate = parseISO(date);
+    setCurrentDate(parsedDate);
+    setBezalelFocusDate(date);
+    window.setTimeout(() => {
+      document.querySelector(`[data-calendar-date="${date}"]`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 80);
+  };
 
   const {
     meetingRequests,
@@ -936,9 +951,12 @@ export default function PastorDashboard() {
               <button
                 key={day.toISOString()}
                 type="button"
+                data-calendar-date={dateStr}
                 onClick={() => setSelectedSlotDay(day)}
                 className={`pastor-day-card min-h-[92px] sm:min-h-[112px] rounded-2xl border-2 p-2 sm:p-3 text-center transition-all hover:-translate-y-0.5 hover:shadow-md font-bold ${
-                  isSelected
+                  bezalelFocusDate === dateStr
+                    ? 'bezalel-date-focus border-sky-400 bg-sky-50 text-sky-900'
+                    : isSelected
                     ? 'border-[#7a1717] bg-[#7a1717] text-white shadow-lg shadow-[#7a1717]/20'
                     : openSlotCount > 0
                     ? 'border-green-200 bg-green-50 text-green-800 hover:border-green-300'
@@ -1772,7 +1790,11 @@ export default function PastorDashboard() {
         }
       />
 
-
+      <PastorBezalelAssistant
+        locale={displayLocale}
+        onFocusDate={focusBezalelDate}
+        onCalendarChanged={refreshCalendar}
+      />
 
       </div>
     </>
