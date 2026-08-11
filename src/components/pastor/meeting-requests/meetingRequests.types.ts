@@ -6,7 +6,8 @@ import type {
 export type MeetingRequestStatus =
   | 'pending'
   | 'accepted'
-  | 'rejected';
+  | 'rejected'
+  | 'cancelled';
 
 export type MeetingRequestDecision =
   | 'accepted'
@@ -38,7 +39,7 @@ export interface MeetingRequestRejectionUpdate
   extends MeetingRequestStatusUpdate {
   status: 'rejected';
   rejectionEmailSent: boolean;
-  rejectionEmailSentUsing: 'EmailJS' | null;
+  rejectionEmailSentUsing: 'Brevo' | null;
   rejectionEmailSentAt: number | null;
   rejectionEmailSentAtISO: string | null;
 }
@@ -50,7 +51,7 @@ export interface MeetingRequestAcceptanceUpdate
   acceptedAtISO: string;
   createdMeetingId: string;
   confirmationEmailSent: boolean;
-  confirmationEmailSentUsing: 'EmailJS' | null;
+  confirmationEmailSentUsing: 'Brevo' | null;
   confirmationEmailSentAt: number | null;
   confirmationEmailSentAtISO: string | null;
 }

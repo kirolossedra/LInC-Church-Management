@@ -90,6 +90,7 @@ export interface PeopleDevelopmentMeetingSchedule {
   ordinal: PeopleDevelopmentMeetingOrdinal;
   weekday: PeopleDevelopmentMeetingWeekday;
   startTime: string;
+  durationMinutes: number;
   startDate: string;
   endDate: string;
   active: boolean;
@@ -105,6 +106,7 @@ export interface PeopleDevelopmentMeetingScheduleDraft {
   ordinal: PeopleDevelopmentMeetingOrdinal;
   weekday: PeopleDevelopmentMeetingWeekday;
   startTime: string;
+  durationMinutes: number;
   startDate: string;
   endDate: string;
   active: boolean;
@@ -115,6 +117,7 @@ export interface PeopleDevelopmentMeetingOccurrence {
   date: string;
   dateValue: Date;
   startTime: string;
+  endTime: string;
   audience: PeopleDevelopmentMeetingAudience;
   group: PeopleDevelopmentGroupId | '';
   title: string;

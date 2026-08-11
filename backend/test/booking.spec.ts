@@ -19,6 +19,16 @@ function jsonResponse(value: unknown, status = 200) {
   })
 }
 
+function reservationReadResponse(value: unknown = null) {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      etag: '"reservation-etag"',
+    },
+  })
+}
+
 function publicApiRequest(path: string, body?: unknown) {
   return new Request(`https://worker.test${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -73,7 +83,33 @@ function collectionResponse(url: string) {
       },
     })
   }
+  if (url.endsWith('/peopleDevelopment/meetingSchedules.json')) {
+    return jsonResponse(null)
+  }
+  if (url.endsWith('/calendarReservations.json')) {
+    return jsonResponse(null)
+  }
   return jsonResponse({ error: 'Unexpected URL' }, 500)
+}
+
+function writableBookingResponse(
+  input: string | URL | Request,
+  init?: RequestInit,
+) {
+  const url = String(input)
+  if (url.includes('/calendarReservations/') && init?.method === 'GET') {
+    return reservationReadResponse()
+  }
+  if (url.includes('/calendarReservations/') && init?.method === 'PUT') {
+    return jsonResponse({})
+  }
+  if (url.includes('/calendarReservations/') && init?.method === 'PATCH') {
+    return jsonResponse({})
+  }
+  if (url.endsWith('/meetingRequests.json') && init?.method === 'POST') {
+    return jsonResponse({ name: 'request-new' })
+  }
+  return collectionResponse(url)
 }
 
 function createTestApp(
@@ -129,7 +165,7 @@ describe('Public booking routes', () => {
     expect(body.data.busy).toHaveLength(3)
     expect(serialized).not.toContain('Private')
     expect(serialized).not.toContain('private@example.com')
-    expect(databaseFetch).toHaveBeenCalledTimes(4)
+    expect(databaseFetch).toHaveBeenCalledTimes(6)
 
     for (const call of databaseFetch.mock.calls) {
       const init = (call as unknown as [unknown, RequestInit])[1]
@@ -154,15 +190,7 @@ describe('Public booking routes', () => {
   })
 
   it('stores an anonymous request with server-controlled fields', async () => {
-    const databaseFetch = vi.fn(
-      (input: string | URL | Request, init?: RequestInit) => {
-        const url = String(input)
-        if (init?.method === 'POST') {
-          return Promise.resolve(jsonResponse({ name: 'request-new' }))
-        }
-        return Promise.resolve(collectionResponse(url))
-      },
-    )
+    const databaseFetch = vi.fn(writableBookingResponse)
     const sendNotification = vi.fn().mockResolvedValue({
       messageId: 'message-1',
     })
@@ -201,6 +229,11 @@ describe('Public booking routes', () => {
       createdAt: Date.parse('2026-08-03T16:00:00Z'),
       updatedAt: Date.parse('2026-08-03T16:00:00Z'),
     })
+    expect(
+      databaseFetch.mock.calls.some(
+        call => (call[1] as RequestInit)?.method === 'PUT',
+      ),
+    ).toBe(true)
     expect(sendNotification).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -284,14 +317,7 @@ describe('Public booking routes', () => {
   })
 
   it('keeps a stored request successful when notification delivery fails', async () => {
-    const databaseFetch = vi.fn(
-      (input: string | URL | Request, init?: RequestInit) =>
-        Promise.resolve(
-          init?.method === 'POST'
-            ? jsonResponse({ name: 'request-new' })
-            : collectionResponse(String(input)),
-        ),
-    )
+    const databaseFetch = vi.fn(writableBookingResponse)
     const app = createTestApp(
       databaseFetch,
       vi.fn().mockRejectedValue(new Error('Brevo unavailable')),

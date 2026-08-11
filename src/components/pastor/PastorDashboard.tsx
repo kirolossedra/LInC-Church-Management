@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   addMonths,
   format,
+  endOfMonth,
   isSameDay,
   parseISO,
   startOfMonth,
@@ -27,12 +28,15 @@ import {
   Mail,
   ShieldCheck,
   BookOpenCheck,
+  CalendarPlus,
+  Download,
 } from 'lucide-react';
 
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 
 import PageTitle from '../PageTitle';
 import { useI18n } from '../../i18n';
+import { downloadPastorCalendarExport } from '../../services/pastorCalendar';
 import { TutorialBuilderSection } from '../tutorial-builder';
 
 import {
@@ -40,6 +44,7 @@ import {
   PeopleDevelopmentMeetingSchedulesSection,
   PeopleDevelopmentSection,
   PeoplePersonalNoteModal,
+  getPeopleDevelopmentMeetingOccurrencesForMonth,
   type PeopleDevelopmentParticipant,
 } from './people-development';
 
@@ -85,6 +90,8 @@ export default function PastorDashboard() {
   const displayLocale = locale === 'ar' ? 'ar' : 'en';
   const [showTutorialBuilder, setShowTutorialBuilder] = useState(false);
   const [showNextGenQa, setShowNextGenQa] = useState(false);
+  const [showCalendarActions, setShowCalendarActions] = useState(false);
+  const [calendarExporting, setCalendarExporting] = useState(false);
 
   const {
     participants,
@@ -286,6 +293,69 @@ export default function PastorDashboard() {
     locale: displayLocale,
   });
 
+  const groupMeetingOccurrences = useMemo(
+    () => getPeopleDevelopmentMeetingOccurrencesForMonth(
+      peopleDevelopmentMeetingSchedules,
+      currentDate,
+      displayLocale,
+    ),
+    [peopleDevelopmentMeetingSchedules, currentDate, displayLocale],
+  );
+
+  const selectedDayGroupMeetings = useMemo(() => {
+    if (!selectedSlotDay) return [];
+    const date = getDateString(selectedSlotDay);
+    return groupMeetingOccurrences.filter(occurrence => occurrence.date === date);
+  }, [groupMeetingOccurrences, selectedSlotDay]);
+
+  const exportCurrentCalendarMonth = async () => {
+    setCalendarExporting(true);
+    try {
+      await downloadPastorCalendarExport(
+        format(startOfMonth(currentDate), 'yyyy-MM-dd'),
+        format(endOfMonth(currentDate), 'yyyy-MM-dd'),
+      );
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'The calendar export failed.');
+    } finally {
+      setCalendarExporting(false);
+    }
+  };
+
+  const openCalendarCreation = (
+    kind: 'meeting' | 'availability' | 'unavailability',
+  ) => {
+    const selectedDate = selectedSlotDay
+      ? getDateString(selectedSlotDay)
+      : getDateString(new Date());
+    setShowCalendarActions(false);
+    if (kind === 'meeting') {
+      setNewMeeting(previous => ({ ...previous, date: selectedDate }));
+      setEditingMeeting(null);
+      setSelectedParticipants([]);
+      setEmailSent(false);
+      setIsAddOpen(true);
+      return;
+    }
+    if (kind === 'availability') {
+      setEditingAvailability(null);
+      resetAvailabilityForm();
+      setAvailabilityForm(previous => ({
+        ...previous,
+        mode: 'single',
+        date: selectedDate,
+        startDate: selectedDate,
+        endDate: selectedDate,
+      }));
+      setShowAvailabilityModal(true);
+      return;
+    }
+    setEditingUnavailability(null);
+    resetUnavailabilityForm();
+    setUnavailabilityForm(previous => ({ ...previous, date: selectedDate }));
+    setShowUnavailabilityModal(true);
+  };
+
   const loading =
     calendarLoading ||
     meetingLoading ||
@@ -414,15 +484,16 @@ export default function PastorDashboard() {
           }
 
           .pastor-calendar-ui .pastor-days-grid {
-            gap: 10px !important;
+            gap: 5px !important;
           }
 
           .pastor-calendar-ui .pastor-day-card {
-            min-height: 0 !important;
-            aspect-ratio: 1 / 1;
-            border-radius: 9999px !important;
-            padding: 6px !important;
+            min-height: 68px !important;
+            aspect-ratio: auto;
+            border-radius: 14px !important;
+            padding: 6px 3px !important;
             display: flex !important;
+            flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
           }
@@ -432,13 +503,18 @@ export default function PastorDashboard() {
             height: auto !important;
             margin: 0 !important;
             background: transparent !important;
-            font-size: 22px !important;
+            font-size: 19px !important;
           }
 
           .pastor-calendar-ui .pastor-day-status,
           .pastor-calendar-ui .pastor-day-detail,
           .pastor-calendar-ui .pastor-day-badge {
             display: none !important;
+          }
+
+          .pastor-calendar-ui .pastor-day-markers {
+            display: flex !important;
+            min-height: 8px;
           }
 
           .pastor-calendar-ui .pastor-popup-panel {
@@ -459,7 +535,7 @@ export default function PastorDashboard() {
       <div data-tutorial-id="pastor-dashboard" className="pastor-calendar-ui min-h-screen space-y-8 py-2 md:py-6" dir={dir}>
       <PageTitle
         title={t('calendar.title')}
-        subtitle={displayLocale === 'ar' ? 'إدارة الاجتماعات والإتاحة وطلبات الحجز وإشعارات المشاركين' : 'Manage meetings, availability, booking requests, and participant notifications'}
+        subtitle={displayLocale === 'ar' ? 'إدارة الاجتماعات والإتاحة وطلبات الحجز واجتماعات المجموعات في تقويم واحد' : 'Manage meetings, availability, booking requests, and group meetings in one calendar'}
         icon={<CalendarIcon size={22} />}
       />
 
@@ -475,6 +551,16 @@ export default function PastorDashboard() {
             <button data-tutorial-id="pastor-calendar-previous-month" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft size={20} /></button>
             <button data-tutorial-id="pastor-calendar-next-month" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight size={20} /></button>
           </div>
+          <button
+            type="button"
+            onClick={() => void exportCurrentCalendarMonth()}
+            disabled={calendarExporting}
+            className="pastor-main-button flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-700 transition hover:border-[#7a1717]/40 hover:text-[#7a1717] disabled:opacity-60"
+            title={displayLocale === 'ar' ? 'تنزيل التقويم لهذا الشهر' : 'Download this month for Apple, Google, or Outlook Calendar'}
+          >
+            <Download size={17} />
+            <span className="hidden xl:inline">{calendarExporting ? (displayLocale === 'ar' ? 'جارٍ التجهيز…' : 'Preparing…') : (displayLocale === 'ar' ? 'تصدير التقويم' : 'Export')}</span>
+          </button>
           <button
             type="button"
             data-tutorial-id="pastor-people-development-toggle"
@@ -499,11 +585,10 @@ export default function PastorDashboard() {
           <button
             type="button"
             data-tutorial-id="pastor-group-meetings-toggle"
-            onClick={() =>
-              setShowPeopleDevelopmentMeetingSchedules(
-                previous => !previous,
-              )
-            }
+            onClick={() => {
+              setPeopleDevelopmentMeetingsCalendarMonth(currentDate);
+              setShowPeopleDevelopmentMeetingSchedules(true);
+            }}
             className={`pastor-main-button flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-colors text-sm border ${
               showPeopleDevelopmentMeetingSchedules
                 ? 'bg-sky-700 text-white border-sky-700'
@@ -512,9 +597,7 @@ export default function PastorDashboard() {
           >
             <CalendarIcon size={16} />
             <span>
-              {displayLocale === 'ar'
-                ? 'اجتماعات المجموعات'
-                : 'Group Meetings'}
+              {displayLocale === 'ar' ? 'اجتماعات المجموعات' : 'Group Meetings'}
             </span>
             {peopleDevelopmentMeetingSchedules.length > 0 && (
               <span
@@ -527,14 +610,7 @@ export default function PastorDashboard() {
                 {peopleDevelopmentMeetingSchedules.length}
               </span>
             )}
-            <ChevronDown
-              size={16}
-              className={`transition-transform ${
-                showPeopleDevelopmentMeetingSchedules
-                  ? 'rotate-180'
-                  : ''
-              }`}
-            />
+            <span className="text-xs font-black uppercase tracking-wider">{displayLocale === 'ar' ? 'فتح' : 'Open'}</span>
           </button>
           <button
             type="button"
@@ -577,39 +653,48 @@ export default function PastorDashboard() {
             />
           </button>
           <button
-            data-tutorial-id="pastor-add-event"
-            onClick={() => { setIsAddOpen(true); setEditingMeeting(null); setSelectedParticipants([]); setEmailSent(false); }}
-            className="pastor-main-button flex items-center gap-2 bg-[#7a1717] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#7a1717]/20 transition-all hover:scale-105 active:scale-95"
+            data-tutorial-id="pastor-add-calendar-item"
+            onClick={() => setShowCalendarActions(true)}
+            className="pastor-main-button flex items-center gap-2 bg-[#7a1717] text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-[#7a1717]/20 transition-all hover:scale-[1.02] active:scale-95"
           >
-            <Plus size={20} />
-            <span>{t('calendar.addEvent')}</span>
-          </button>
-          <button
-            data-tutorial-id="pastor-mark-available"
-            onClick={() => {
-              setShowAvailabilityModal(true);
-              setEditingAvailability(null);
-              resetAvailabilityForm();
-            }}
-            className="pastor-main-button flex items-center gap-2 bg-[#e8faee] hover:bg-[#dcf7e5] text-[#165d30] px-5 py-3 rounded-xl font-bold transition-colors border border-[#8ad0a1]"
-          >
-            <CheckCircle size={16} />
-            <span>{t('calendar.markAvailable')}</span>
-          </button>
-          <button
-            data-tutorial-id="pastor-mark-unavailable"
-            onClick={() => {
-              setShowUnavailabilityModal(true);
-              setEditingUnavailability(null);
-              resetUnavailabilityForm();
-            }}
-            className="pastor-main-button flex items-center gap-2 bg-[#fff1f1] hover:bg-[#f8dddd] text-[#7a1717] px-5 py-3 rounded-xl font-bold transition-colors border border-[#d8aaaa]"
-          >
-            <XCircle size={16} />
-            <span>{t('calendar.markUnavailable')}</span>
+            <CalendarPlus size={20} />
+            <span>{displayLocale === 'ar' ? 'إضافة إلى التقويم' : 'Add to calendar'}</span>
           </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showCalendarActions && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+            onClick={() => setShowCalendarActions(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label={displayLocale === 'ar' ? 'إضافة إلى التقويم' : 'Add to calendar'}
+          >
+            <motion.div
+              initial={{ y: 28, scale: 0.97 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 28, scale: 0.97 }}
+              onClick={event => event.stopPropagation()}
+              className="w-full max-w-xl rounded-[2rem] border border-[#ead9d0] bg-[#fffdf9] p-5 shadow-2xl sm:p-7"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div><p className="text-xs font-black uppercase tracking-[0.22em] text-[#a66c18]">{displayLocale === 'ar' ? 'إجراء واحد' : 'One calendar action'}</p><h3 className="mt-2 text-3xl font-black text-[#7a1717]">{displayLocale === 'ar' ? 'ماذا تريد أن تضيف؟' : 'What would you like to add?'}</h3></div>
+                <button type="button" onClick={() => setShowCalendarActions(false)} className="rounded-full border border-stone-200 bg-white p-2 text-stone-600"><X size={20} /></button>
+              </div>
+              <div className="mt-6 grid gap-3">
+                <button type="button" onClick={() => openCalendarCreation('meeting')} className="flex items-center gap-4 rounded-2xl border border-[#7a1717]/20 bg-[#f8eeee] p-4 text-start text-[#7a1717] transition hover:border-[#7a1717]/50"><span className="grid h-11 w-11 place-items-center rounded-xl bg-[#7a1717] text-white"><Plus size={20} /></span><span><strong className="block">{displayLocale === 'ar' ? 'اجتماع أو حدث' : 'Meeting or event'}</strong><span className="text-sm text-[#6b4b4b]">{displayLocale === 'ar' ? 'اجتماع مؤكد في التقويم' : 'A confirmed item on the calendar'}</span></span></button>
+                <button type="button" onClick={() => openCalendarCreation('availability')} className="flex items-center gap-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-start text-green-800 transition hover:border-green-400"><span className="grid h-11 w-11 place-items-center rounded-xl bg-green-700 text-white"><CheckCircle size={20} /></span><span><strong className="block">{displayLocale === 'ar' ? 'فتح وقت للحجز' : 'Open booking availability'}</strong><span className="text-sm text-green-700">{displayLocale === 'ar' ? 'السماح للزوار بطلب موعد' : 'Allow visitors to request a time'}</span></span></button>
+                <button type="button" onClick={() => openCalendarCreation('unavailability')} className="flex items-center gap-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-start text-red-800 transition hover:border-red-400"><span className="grid h-11 w-11 place-items-center rounded-xl bg-red-700 text-white"><XCircle size={20} /></span><span><strong className="block">{displayLocale === 'ar' ? 'حجب وقت' : 'Block time'}</strong><span className="text-sm text-red-700">{displayLocale === 'ar' ? 'إغلاق وقت ومنع الحجز' : 'Close time and prevent booking'}</span></span></button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {showPeopleDevelopment && (
         <PeopleDevelopmentSection
@@ -693,8 +778,21 @@ export default function PastorDashboard() {
       )}
 
       {showPeopleDevelopmentMeetingSchedules && (
-        <PeopleDevelopmentMeetingSchedulesSection
-          expanded={showPeopleDevelopmentMeetingSchedules}
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm sm:p-6"
+          onClick={() => setShowPeopleDevelopmentMeetingSchedules(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={displayLocale === 'ar' ? 'اجتماعات المجموعات' : 'Group Meetings'}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-[2rem] bg-[#fffdf9] shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          >
+          <PeopleDevelopmentMeetingSchedulesSection
+          expanded
           locale={displayLocale}
           schedules={peopleDevelopmentMeetingSchedules}
           loading={peopleDevelopmentMeetingSchedulesLoading}
@@ -703,11 +801,7 @@ export default function PastorDashboard() {
           editingId={peopleDevelopmentMeetingScheduleEditingId}
           draft={peopleDevelopmentMeetingScheduleDraft}
           month={peopleDevelopmentMeetingsCalendarMonth}
-          onToggleExpanded={() =>
-            setShowPeopleDevelopmentMeetingSchedules(
-              previous => !previous,
-            )
-          }
+          onToggleExpanded={() => setShowPeopleDevelopmentMeetingSchedules(false)}
           onMonthChange={
             setPeopleDevelopmentMeetingsCalendarMonth
           }
@@ -733,6 +827,8 @@ export default function PastorDashboard() {
             togglePeopleDevelopmentMeetingScheduleActive
           }
         />
+          </motion.div>
+        </div>
       )}
 
       {showTutorialBuilder && (
@@ -791,6 +887,10 @@ export default function PastorDashboard() {
               <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
               {t('booking.booked')}
             </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sky-700">
+              <span className="h-2.5 w-2.5 rounded-full bg-sky-600" />
+              {displayLocale === 'ar' ? 'اجتماع مجموعة' : 'Group meeting'}
+            </span>
           </div>
         </div>
 
@@ -810,6 +910,7 @@ export default function PastorDashboard() {
             const pendingRequests = getPendingRequestsForDate(meetingRequests, dateStr);
             const dayAvailability = getAvailabilityBlocksForDate(availability, dateStr);
             const dayUnavailability = getUnavailabilityBlocksForDate(unavailability, dateStr);
+            const dayGroupMeetings = groupMeetingOccurrences.filter(occurrence => occurrence.date === dateStr);
             const openSlotCount = slotBlockHours.filter(hour => getDashboardSlotStatus(day, hour) === 'available').length;
             const blockedSlotCount = slotBlockHours.filter(hour => getDashboardSlotStatus(day, hour) === 'blocked').length;
             const bookedSlotCount = slotBlockHours.filter(hour => getDashboardSlotStatus(day, hour) === 'booked').length;
@@ -863,11 +964,17 @@ export default function PastorDashboard() {
                   {statusDetail}
                 </div>
 
-                {(dayMeetings.length > 0 || pendingRequests.length > 0 || blockedSlotCount > 0 || dayUnavailability.length > 0) && (
+                <div className="pastor-day-markers mt-1 hidden items-center justify-center gap-1" aria-label={`${dayMeetings.length} meetings, ${dayGroupMeetings.length} group meetings, ${pendingRequests.length} pending requests`}>
+                  {dayMeetings.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-white' : 'bg-[#7a1717]'}`} />}
+                  {dayGroupMeetings.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-sky-200' : 'bg-sky-600'}`} />}
+                  {pendingRequests.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-amber-200' : 'bg-amber-500'}`} />}
+                </div>
+
+                {(dayMeetings.length > 0 || dayGroupMeetings.length > 0 || pendingRequests.length > 0 || blockedSlotCount > 0 || dayUnavailability.length > 0) && (
                   <div className={`pastor-day-badge mt-2 mx-auto flex w-fit items-center justify-center gap-1 rounded-full px-2 py-1 font-black ${
                     isSelected ? 'bg-white/20 text-white' : 'bg-white/80 text-[#7a1717]'
                   }`}>
-                    {dayMeetings.length + pendingRequests.length + blockedSlotCount + dayUnavailability.length}
+                    {dayMeetings.length + dayGroupMeetings.length + pendingRequests.length + blockedSlotCount + dayUnavailability.length}
                   </div>
                 )}
               </button>
@@ -909,64 +1016,14 @@ export default function PastorDashboard() {
             </div>
 
             <div className="pastor-popup-body max-h-[calc(90vh-104px)] overflow-y-auto p-6 space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const date = getDateString(selectedSlotDay);
-                    setEditingAvailability(null);
-                    setAvailabilityForm({
-                      mode: 'single',
-                      date,
-                      startDate: date,
-                      endDate: date,
-                      selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
-                      startTime: '09:00',
-                      endTime: '20:00',
-                      reason: '',
-                      allDay: true,
-                    });
-                    setShowAvailabilityModal(true);
-                  }}
-                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-green-200 bg-green-50 px-4 py-3 text-green-700 font-black hover:bg-green-100 transition-colors"
-                >
-                  <CheckCircle size={18} />
-                  {t('calendar.markAvailable')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const date = getDateString(selectedSlotDay);
-                    setEditingUnavailability(null);
-                    setUnavailabilityForm({
-                      date,
-                      startTime: '09:00',
-                      endTime: '20:00',
-                      reason: '',
-                      allDay: true,
-                    });
-                    setShowUnavailabilityModal(true);
-                  }}
-                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-red-200 bg-red-50 px-4 py-3 text-red-700 font-black hover:bg-red-100 transition-colors"
-                >
-                  <XCircle size={18} />
-                  {t('calendar.markUnavailable')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewMeeting(p => ({ ...p, date: getDateString(selectedSlotDay) }));
-                    setEditingMeeting(null);
-                    setSelectedParticipants([]);
-                    setEmailSent(false);
-                    setIsAddOpen(true);
-                  }}
-                  className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#7a1717]/20 bg-[#f8eeee] px-4 py-3 text-[#7a1717] font-black hover:bg-[#f1dddd] transition-colors"
-                >
-                  <Plus size={18} />
-                  {t('calendar.addEvent')}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowCalendarActions(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#7a1717] px-5 py-4 font-black text-white shadow-lg shadow-[#7a1717]/15 transition hover:bg-[#631313]"
+              >
+                <CalendarPlus size={19} />
+                {displayLocale === 'ar' ? 'إضافة شيء إلى هذا اليوم' : 'Add something to this day'}
+              </button>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="rounded-2xl border-2 border-green-100 bg-green-50/70 p-5">
@@ -1058,6 +1115,19 @@ export default function PastorDashboard() {
                         <div className="text-gray-500 mt-1">{timeRangeToLabel(m.startTime, m.endTime, displayLocale)}</div>
                       </button>
                     ))}
+                  </div>
+                  <div className="mt-5 border-t border-sky-100 pt-5">
+                    <h4 className="mb-3 flex items-center gap-2 font-black text-sky-700"><Users size={18} />{displayLocale === 'ar' ? 'اجتماعات المجموعات' : 'People Development group meetings'}</h4>
+                    {selectedDayGroupMeetings.length === 0 ? (
+                      <p className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 font-bold text-sky-700/70">{displayLocale === 'ar' ? 'لا توجد اجتماعات مجموعات في هذا اليوم.' : 'No group meetings on this day.'}</p>
+                    ) : (
+                      <div className="space-y-2">{selectedDayGroupMeetings.map(occurrence => (
+                        <button key={occurrence.scheduleId} type="button" onClick={() => setShowPeopleDevelopmentMeetingSchedules(true)} className="block w-full rounded-2xl border-2 border-sky-100 bg-sky-50 p-4 text-start font-black text-sky-800 transition hover:border-sky-300">
+                          <span className="block">{occurrence.title}</span>
+                          <span className="mt-1 block text-sm text-sky-700">{occurrence.startTime}–{occurrence.endTime} · {displayLocale === 'ar' ? 'متكرر شهرياً' : 'Monthly recurring'}</span>
+                        </button>
+                      ))}</div>
+                    )}
                   </div>
                 </div>
               </div>

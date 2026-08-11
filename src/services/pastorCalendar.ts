@@ -6,12 +6,15 @@ import type {
   Availability,
   Unavailability,
 } from '../components/pastor/calendar/calendar.types';
+import type { PeopleDevelopmentMeetingSchedule } from '../components/pastor/people-development/peopleDevelopment.types';
 
 export interface PastorCalendarSnapshot {
   meetings: Meeting[];
   meetingRequests: MeetingRequest[];
   availability: Availability[];
   unavailability: Unavailability[];
+  groupMeetingSchedules?: PeopleDevelopmentMeetingSchedule[];
+  timeZone?: string;
 }
 
 export interface PastorMeetingInput {
@@ -126,6 +129,40 @@ export async function decidePastorMeetingRequest(
       body: JSON.stringify({ decision, meetingTitle }),
     },
   );
+}
+
+export async function downloadPastorCalendarExport(
+  start: string,
+  end: string,
+) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Pastor login is required.');
+
+  const send = async (forceRefresh: boolean) =>
+    fetch(
+      `${BACKEND_BASE_URL}/api/v1/pastor-calendar/export.ics?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      {
+        headers: {
+          Accept: 'text/calendar',
+          Authorization: `Bearer ${await user.getIdToken(forceRefresh)}`,
+        },
+      },
+    );
+
+  let response = await send(false);
+  if (response.status === 401) response = await send(true);
+  if (!response.ok) {
+    throw new Error('The calendar export could not be created.');
+  }
+
+  const blobUrl = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = `linc-pastor-calendar-${start}-${end}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
 }
 
 async function requestPastorCalendar<T>(

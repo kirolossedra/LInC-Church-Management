@@ -370,6 +370,10 @@ function validatePeopleDevelopmentMeetingScheduleDraft(
       'Select a valid meeting time.',
     );
   }
+
+  if (!Number.isInteger(draft.durationMinutes) || draft.durationMinutes < 30 || draft.durationMinutes > 480) {
+    throw new Error('Select a meeting duration between 30 minutes and 8 hours.');
+  }
 }
 
 export async function savePeopleDevelopmentMeetingSchedule(

@@ -51,7 +51,7 @@ export interface MeetingRequest {
   startTime: string;
   endTime: string;
   reason: string;
-  status: 'pending' | 'accepted' | 'rejected';
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
   createdAt: number;
 }
 

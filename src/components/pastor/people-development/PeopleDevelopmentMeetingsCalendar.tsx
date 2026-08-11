@@ -264,6 +264,9 @@ export default function PeopleDevelopmentMeetingsCalendar({
                             {formatPeopleDevelopmentMeetingTime(
                               occurrence.startTime,
                               locale,
+                            )}–{formatPeopleDevelopmentMeetingTime(
+                              occurrence.endTime,
+                              locale,
                             )}
                           </span>
                         </>

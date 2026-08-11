@@ -24,6 +24,7 @@ function createDefaultDraft(): PeopleDevelopmentMeetingScheduleDraft {
     ordinal: 1,
     weekday: 6,
     startTime: '18:00',
+    durationMinutes: 90,
     startDate:
       getPeopleDevelopmentLocalDateKey(
         new Date(),
@@ -137,6 +138,7 @@ export default function usePeopleDevelopmentMeetingSchedules({
       ordinal: schedule.ordinal,
       weekday: schedule.weekday,
       startTime: schedule.startTime,
+      durationMinutes: schedule.durationMinutes || 90,
       startDate: schedule.startDate,
       endDate: schedule.endDate,
       active: schedule.active,

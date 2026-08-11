@@ -48,6 +48,7 @@ describe('People Development backend service', () => {
     await createPeopleDevelopmentMeetingSchedule({
       audience: 'group', group: 'teachers', ordinal: 2, weekday: 3,
       startTime: '19:00', startDate: '2026-08-01', endDate: '', active: true,
+      durationMinutes: 90,
       createdAt: 1, createdAtISO: 'client-created', updatedAt: 2, updatedAtISO: 'client-updated',
     });
     await updatePeopleDevelopmentMeetingSchedule('schedule-1', {

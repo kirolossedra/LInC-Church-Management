@@ -498,6 +498,7 @@ export function getPeopleDevelopmentMeetingOccurrencesForMonth(
         date: getPeopleDevelopmentLocalDateKey(dateValue),
         dateValue,
         startTime: schedule.startTime,
+        endTime: addMeetingMinutes(schedule.startTime, schedule.durationMinutes || 90),
         audience: schedule.audience,
         group: schedule.group,
         title: getPeopleDevelopmentMeetingScheduleTitle(
@@ -523,6 +524,12 @@ export function getPeopleDevelopmentMeetingOccurrencesForMonth(
 
       return first.startTime.localeCompare(second.startTime);
     });
+}
+
+function addMeetingMinutes(time: string, minutes: number): string {
+  const [hours, currentMinutes] = normalizePeopleDevelopmentMeetingTime(time).split(':').map(Number);
+  const total = hours * 60 + currentMinutes + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 export function getNextPeopleDevelopmentMeetingOccurrence(

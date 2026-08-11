@@ -1,6 +1,9 @@
 import { Hono, type Context } from 'hono'
 import type { z } from 'zod'
 
+import { hasCalendarConflict, normalizeRecurringGroupMeetings } from '../booking/booking.service'
+import { buildCalendarIcs, type CalendarIcsEvent } from '../calendar/calendar.ics'
+import { calendarReservationKey, calendarTemporalFields } from '../calendar/calendar.time'
 import { buildCalendarNotificationEmail } from '../emails/calendarNotification.email'
 import { normalizePastorCalendarSnapshot } from '../pastorCalendar/pastorCalendar.normalize'
 import {
@@ -10,6 +13,7 @@ import {
   pastorCalendarIdSchema,
   pastorMeetingSchema,
 } from '../schemas/pastorCalendar.schema'
+import { bookingScheduleQuerySchema } from '../schemas/booking.schema'
 import {
   createFirebaseAuthMiddleware,
   type FirebaseTokenVerifier,
@@ -31,6 +35,8 @@ const MEETINGS_PATH = ['meetings'] as const
 const REQUESTS_PATH = ['meetingRequests'] as const
 const AVAILABILITY_PATH = ['availability'] as const
 const UNAVAILABILITY_PATH = ['unavailability'] as const
+const PEOPLE_DEVELOPMENT_SCHEDULES_PATH = ['peopleDevelopment', 'meetingSchedules'] as const
+const RESERVATIONS_PATH = ['calendarReservations'] as const
 
 type RawRecord = Record<string, unknown>
 type RawCollection = Record<string, unknown> | null
@@ -61,26 +67,99 @@ export function createPastorCalendarRoutes(
 
   routes.get('/', context =>
     withDatabase(context, dependencies, async database => {
-      const [meetings, meetingRequests, availability, unavailability] =
+      const [meetings, meetingRequests, availability, unavailability, groupMeetingSchedules] =
         await Promise.all([
           database.get<RawCollection>(MEETINGS_PATH),
           database.get<RawCollection>(REQUESTS_PATH),
           database.get<RawCollection>(AVAILABILITY_PATH),
           database.get<RawCollection>(UNAVAILABILITY_PATH),
+          database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
         ])
 
       context.header('Cache-Control', 'private, no-store, max-age=0')
       return context.json({
         success: true,
-        data: normalizePastorCalendarSnapshot({
+        data: {
+          ...normalizePastorCalendarSnapshot({
           meetings,
           meetingRequests,
           availability,
           unavailability,
-        }),
+          }),
+          groupMeetingSchedules: normalizeCollectionWithIds(groupMeetingSchedules),
+          timeZone: 'America/Toronto',
+        },
       })
     }),
   )
+
+  routes.get('/export.ics', async context => {
+    const validation = bookingScheduleQuerySchema.safeParse({
+      start: context.req.query('start'),
+      end: context.req.query('end'),
+    })
+    if (!validation.success) return validationError(context, validation.error)
+
+    return withDatabase(context, dependencies, async database => {
+      const [meetings, meetingRequests, availability, unavailability, groupMeetingSchedules] =
+        await Promise.all([
+          database.get<RawCollection>(MEETINGS_PATH),
+          database.get<RawCollection>(REQUESTS_PATH),
+          database.get<RawCollection>(AVAILABILITY_PATH),
+          database.get<RawCollection>(UNAVAILABILITY_PATH),
+          database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+        ])
+      const { start, end } = validation.data
+      const events: CalendarIcsEvent[] = [
+        ...calendarCollectionEvents(meetings, start, end, (id, record) => ({
+          id: `meeting-${id}`,
+          title: stringValue(record.title) || 'Pastor meeting',
+          date: stringValue(record.date),
+          startTime: stringValue(record.startTime),
+          endTime: stringValue(record.endTime),
+          description: stringValue(record.description),
+          location: stringValue(record.location),
+        })),
+        ...calendarCollectionEvents(meetingRequests, start, end, (id, record) => ({
+          id: `request-${id}`,
+          title: `Pending booking${stringValue(record.name) ? ` — ${stringValue(record.name)}` : ''}`,
+          date: stringValue(record.date),
+          startTime: stringValue(record.startTime),
+          endTime: stringValue(record.endTime),
+          description: stringValue(record.reason),
+          status: 'TENTATIVE',
+        }), record => stringValue(record.status).toLowerCase() === 'pending'),
+        ...calendarCollectionEvents(availability, start, end, (id, record) => ({
+          id: `availability-${id}`,
+          title: 'Booking availability',
+          date: stringValue(record.date),
+          startTime: stringValue(record.startTime) || '09:00',
+          endTime: stringValue(record.endTime) || '20:00',
+        })),
+        ...calendarCollectionEvents(unavailability, start, end, (id, record) => ({
+          id: `unavailable-${id}`,
+          title: stringValue(record.reason) || 'Unavailable',
+          date: stringValue(record.date),
+          startTime: stringValue(record.startTime) || '00:00',
+          endTime: stringValue(record.endTime) || '23:59',
+        })),
+        ...normalizeRecurringGroupMeetings(groupMeetingSchedules, start, end).map((occurrence, index) => ({
+          id: `group-${occurrence.date}-${occurrence.startTime}-${index}`,
+          title: 'People Development group meeting',
+          ...occurrence,
+        })),
+      ]
+
+      return new Response(buildCalendarIcs(events), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'Content-Disposition': `attachment; filename="linc-pastor-calendar-${start}-${end}.ics"`,
+          'Cache-Control': 'private, no-store, max-age=0',
+        },
+      })
+    })
+  })
 
   routes.post('/meetings', async context => {
     const validation = pastorMeetingSchema.safeParse(
@@ -92,8 +171,26 @@ export function createPastorCalendarRoutes(
 
     return withDatabase(context, dependencies, async database => {
       const timestamp = now()
+      const [meetings, meetingRequests, unavailability, groupMeetingSchedules, reservations] = await Promise.all([
+        database.get<RawCollection>(MEETINGS_PATH),
+        database.get<RawCollection>(REQUESTS_PATH),
+        database.get<RawCollection>(UNAVAILABILITY_PATH),
+        database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+        database.get<RawCollection>(RESERVATIONS_PATH),
+      ])
+      if (hasCalendarConflict({
+        date: validation.data.date,
+        startTime: validation.data.startTime,
+        endTime: validation.data.endTime,
+        meetings,
+        meetingRequests,
+        unavailability,
+        peopleDevelopmentSchedules: groupMeetingSchedules,
+        reservations,
+      })) return calendarConflict(context)
       const result = await database.post<unknown>(MEETINGS_PATH, {
         ...validation.data,
+        ...calendarTemporalFields(validation.data.date, validation.data.startTime, validation.data.endTime),
         acknowledged: false,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -132,6 +229,31 @@ export function createPastorCalendarRoutes(
       if (!existing) return notFound(context, 'MEETING_NOT_FOUND')
 
       const timestamp = now()
+      const sourceRequestId = safeId(existing.sourceRequestId)
+      const reservationKey = safeId(existing.reservationKey)
+      const nextReservationKey = reservationKey
+        ? calendarReservationKey(validation.data.date, validation.data.startTime, validation.data.endTime)
+        : null
+      const [meetings, meetingRequests, unavailability, groupMeetingSchedules, reservations] = await Promise.all([
+        database.get<RawCollection>(MEETINGS_PATH),
+        database.get<RawCollection>(REQUESTS_PATH),
+        database.get<RawCollection>(UNAVAILABILITY_PATH),
+        database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+        database.get<RawCollection>(RESERVATIONS_PATH),
+      ])
+      if (hasCalendarConflict({
+        date: validation.data.date,
+        startTime: validation.data.startTime,
+        endTime: validation.data.endTime,
+        meetings,
+        meetingRequests,
+        unavailability,
+        peopleDevelopmentSchedules: groupMeetingSchedules,
+        reservations,
+        excludeMeetingId: meetingId,
+        excludeRequestId: sourceRequestId || undefined,
+        excludeReservationKey: reservationKey || undefined,
+      })) return calendarConflict(context)
       const detailsChanged =
         stringValue(existing.date) !== validation.data.date ||
         stringValue(existing.startTime) !== validation.data.startTime ||
@@ -139,8 +261,31 @@ export function createPastorCalendarRoutes(
         stringValue(existing.location) !== validation.data.location ||
         stringValue(existing.meetLink) !== validation.data.meetLink
 
+      const reservationMoved = Boolean(
+        reservationKey && nextReservationKey && reservationKey !== nextReservationKey,
+      )
+      if (reservationMoved && nextReservationKey) {
+        const reserved = await database.putIfAbsent(
+          [...RESERVATIONS_PATH, nextReservationKey],
+          {
+            date: validation.data.date,
+            startTime: validation.data.startTime,
+            endTime: validation.data.endTime,
+            status: 'accepted',
+            meetingId,
+            requestId: sourceRequestId || null,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            ...calendarTemporalFields(validation.data.date, validation.data.startTime, validation.data.endTime),
+          },
+        )
+        if (!reserved) return calendarConflict(context)
+      }
+
       const meetingChanges: RawRecord = {
         ...validation.data,
+        ...calendarTemporalFields(validation.data.date, validation.data.startTime, validation.data.endTime),
+        ...(reservationMoved ? { reservationKey: nextReservationKey } : {}),
         updatedAt: timestamp,
         updatedBy: actor(context),
         ...(detailsChanged
@@ -155,7 +300,6 @@ export function createPastorCalendarRoutes(
         `meetings/${meetingId}`,
         meetingChanges,
       )
-      const sourceRequestId = safeId(existing.sourceRequestId)
       if (sourceRequestId) {
         Object.assign(
           rootChanges,
@@ -163,13 +307,31 @@ export function createPastorCalendarRoutes(
             date: validation.data.date,
             startTime: validation.data.startTime,
             endTime: validation.data.endTime,
+            ...calendarTemporalFields(validation.data.date, validation.data.startTime, validation.data.endTime),
+            ...(reservationMoved ? { reservationKey: nextReservationKey } : {}),
             updatedAt: timestamp,
           }),
         )
       }
 
-      await database.patch([], rootChanges)
-      return context.json({ success: true, data: { updated: true } })
+      if (reservationMoved && reservationKey) {
+        rootChanges[`calendarReservations/${reservationKey}/status`] = 'released'
+        rootChanges[`calendarReservations/${reservationKey}/releasedAt`] = timestamp
+        rootChanges[`calendarReservations/${reservationKey}/updatedAt`] = timestamp
+      }
+
+      try {
+        await database.patch([], rootChanges)
+      } catch (error) {
+        if (reservationMoved && nextReservationKey) {
+          await database.delete([...RESERVATIONS_PATH, nextReservationKey])
+        }
+        throw error
+      }
+      const notificationSent = detailsChanged
+        ? await notifyRequester(context, dependencies, 'reschedule', { ...existing, ...meetingChanges })
+        : false
+      return context.json({ success: true, data: { updated: true, notificationSent } })
     })
   })
 
@@ -184,7 +346,23 @@ export function createPastorCalendarRoutes(
       ])
       if (!meeting) return notFound(context, 'MEETING_NOT_FOUND')
 
-      await database.delete([...MEETINGS_PATH, meetingId])
+      const timestamp = now()
+      const sourceRequestId = safeId(meeting.sourceRequestId)
+      const reservationKey = safeId(meeting.reservationKey)
+      const rootChanges: Record<string, unknown> = {
+        [`meetings/${meetingId}`]: null,
+      }
+      if (sourceRequestId) {
+        rootChanges[`meetingRequests/${sourceRequestId}/status`] = 'cancelled'
+        rootChanges[`meetingRequests/${sourceRequestId}/cancelledAt`] = timestamp
+        rootChanges[`meetingRequests/${sourceRequestId}/updatedAt`] = timestamp
+        rootChanges[`meetingRequests/${sourceRequestId}/updatedBy`] = actor(context)
+      }
+      if (reservationKey) {
+        rootChanges[`calendarReservations/${reservationKey}/status`] = 'released'
+        rootChanges[`calendarReservations/${reservationKey}/releasedAt`] = timestamp
+      }
+      await database.patch([], rootChanges)
       const notificationSent = await notifyRequester(
         context,
         dependencies,
@@ -248,12 +426,18 @@ export function createPastorCalendarRoutes(
         }
 
         const timestamp = now()
+        const reservationKey = safeId(request.reservationKey)
         if (validation.data.decision === 'rejected') {
-          await database.patch([...REQUESTS_PATH, requestId], {
-            status: 'rejected',
-            updatedAt: timestamp,
-            updatedBy: actor(context),
-          })
+          const rejectionChanges: Record<string, unknown> = {
+            [`meetingRequests/${requestId}/status`]: 'rejected',
+            [`meetingRequests/${requestId}/updatedAt`]: timestamp,
+            [`meetingRequests/${requestId}/updatedBy`]: actor(context),
+          }
+          if (reservationKey) {
+            rejectionChanges[`calendarReservations/${reservationKey}/status`] = 'rejected'
+            rejectionChanges[`calendarReservations/${reservationKey}/releasedAt`] = timestamp
+          }
+          await database.patch([], rejectionChanges)
           const notificationSent = await notifyRequester(
             context,
             dependencies,
@@ -282,6 +466,26 @@ export function createPastorCalendarRoutes(
           )
         }
 
+        const [meetings, meetingRequests, unavailability, groupMeetingSchedules, reservations] = await Promise.all([
+          database.get<RawCollection>(MEETINGS_PATH),
+          database.get<RawCollection>(REQUESTS_PATH),
+          database.get<RawCollection>(UNAVAILABILITY_PATH),
+          database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+          database.get<RawCollection>(RESERVATIONS_PATH),
+        ])
+        if (hasCalendarConflict({
+          date: stringValue(request.date),
+          startTime: stringValue(request.startTime),
+          endTime: stringValue(request.endTime),
+          meetings,
+          meetingRequests,
+          unavailability,
+          peopleDevelopmentSchedules: groupMeetingSchedules,
+          reservations,
+          excludeRequestId: requestId,
+          excludeReservationKey: reservationKey || undefined,
+        })) return calendarConflict(context)
+
         const requesterLocale = localeValue(request.requesterLocale)
         const meeting = {
           title: validation.data.meetingTitle,
@@ -301,6 +505,8 @@ export function createPastorCalendarRoutes(
             stringValue(request.requesterLanguage) ||
             (requesterLocale === 'ar' ? 'Arabic' : 'English'),
           sourceRequestId: requestId,
+          reservationKey,
+          ...calendarTemporalFields(stringValue(request.date), stringValue(request.startTime), stringValue(request.endTime)),
           acknowledged: true,
           acknowledgedAt: timestamp,
           acknowledgedEmail: stringValue(request.email),
@@ -309,14 +515,20 @@ export function createPastorCalendarRoutes(
           updatedBy: actor(context),
         }
 
-        await database.patch([], {
+        const acceptanceChanges: Record<string, unknown> = {
           [`meetings/${meetingId}`]: meeting,
           [`meetingRequests/${requestId}/status`]: 'accepted',
           [`meetingRequests/${requestId}/createdMeetingId`]: meetingId,
           [`meetingRequests/${requestId}/acceptedAt`]: timestamp,
           [`meetingRequests/${requestId}/updatedAt`]: timestamp,
           [`meetingRequests/${requestId}/updatedBy`]: actor(context),
-        })
+        }
+        if (reservationKey) {
+          acceptanceChanges[`calendarReservations/${reservationKey}/status`] = 'accepted'
+          acceptanceChanges[`calendarReservations/${reservationKey}/meetingId`] = meetingId
+          acceptanceChanges[`calendarReservations/${reservationKey}/updatedAt`] = timestamp
+        }
+        await database.patch([], acceptanceChanges)
 
         const notificationSent = await notifyRequester(
           context,
@@ -369,8 +581,26 @@ function addBlockRoutes({
     }
     return withDatabase(context, dependencies, async database => {
       const timestamp = now()
+      if (resource === 'unavailability') {
+        const [meetings, meetingRequests, unavailability, groupMeetingSchedules, reservations] = await Promise.all([
+          database.get<RawCollection>(MEETINGS_PATH),
+          database.get<RawCollection>(REQUESTS_PATH),
+          database.get<RawCollection>(UNAVAILABILITY_PATH),
+          database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+          database.get<RawCollection>(RESERVATIONS_PATH),
+        ])
+        if (hasCalendarConflict({
+          ...validation.data,
+          meetings,
+          meetingRequests,
+          unavailability,
+          peopleDevelopmentSchedules: groupMeetingSchedules,
+          reservations,
+        })) return calendarConflict(context)
+      }
       const result = await database.post<unknown>(path, {
         ...validation.data,
+        ...calendarTemporalFields(validation.data.date, validation.data.startTime, validation.data.endTime),
         createdAt: timestamp,
         updatedAt: timestamp,
         updatedBy: actor(context),
@@ -399,8 +629,27 @@ function addBlockRoutes({
       return validationError(context, validation.error)
     }
     return withDatabase(context, dependencies, async database => {
+      if (resource === 'unavailability') {
+        const [meetings, meetingRequests, unavailability, groupMeetingSchedules, reservations] = await Promise.all([
+          database.get<RawCollection>(MEETINGS_PATH),
+          database.get<RawCollection>(REQUESTS_PATH),
+          database.get<RawCollection>(UNAVAILABILITY_PATH),
+          database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+          database.get<RawCollection>(RESERVATIONS_PATH),
+        ])
+        if (hasCalendarConflict({
+          ...validation.data,
+          meetings,
+          meetingRequests,
+          unavailability,
+          peopleDevelopmentSchedules: groupMeetingSchedules,
+          reservations,
+          excludeUnavailabilityId: blockId,
+        })) return calendarConflict(context)
+      }
       await database.patch([...path, blockId], {
         ...validation.data,
+        ...calendarTemporalFields(validation.data.date, validation.data.startTime, validation.data.endTime),
         updatedAt: now(),
         updatedBy: actor(context),
       })
@@ -421,7 +670,7 @@ function addBlockRoutes({
 async function notifyRequester(
   context: Context<AppEnv>,
   dependencies: PastorCalendarDependencies,
-  kind: 'confirmation' | 'rejection' | 'cancellation',
+  kind: 'confirmation' | 'rejection' | 'cancellation' | 'reschedule',
   record: RawRecord,
 ) {
   const recipientEmail =
@@ -579,6 +828,46 @@ function notFound(context: Context<AppEnv>, code: string) {
     },
     404,
   )
+}
+
+function calendarConflict(context: Context<AppEnv>) {
+  return context.json(
+    {
+      success: false,
+      error: {
+        code: 'CALENDAR_CONFLICT',
+        message: 'This time overlaps another meeting, booking request, group meeting, or blocked period.',
+      },
+    },
+    409,
+  )
+}
+
+function normalizeCollectionWithIds(collection: RawCollection) {
+  if (!collection || typeof collection !== 'object') return []
+  return Object.entries(collection).flatMap(([id, value]) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    return [{ id, ...(value as RawRecord) }]
+  })
+}
+
+function calendarCollectionEvents(
+  collection: RawCollection,
+  start: string,
+  end: string,
+  map: (id: string, record: RawRecord) => CalendarIcsEvent,
+  include: (record: RawRecord) => boolean = () => true,
+) {
+  if (!collection || typeof collection !== 'object') return []
+  return Object.entries(collection).flatMap(([id, value]) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    const record = value as RawRecord
+    const date = stringValue(record.date)
+    if (!include(record) || date < start || date > end) return []
+    const event = map(id, record)
+    if (!event.date || !event.startTime || !event.endTime) return []
+    return [event]
+  })
 }
 
 function actor(context: Context<AppEnv>) {

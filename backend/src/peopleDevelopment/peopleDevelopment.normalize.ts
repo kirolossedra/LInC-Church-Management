@@ -123,6 +123,7 @@ export function normalizeSchedules(value: unknown) {
       ordinal: schedule.ordinal === 'last' ? 'last' as const : Math.min(4, Math.max(1, numberValue(schedule.ordinal))) as 1 | 2 | 3 | 4,
       weekday: Math.min(6, Math.max(0, numberValue(schedule.weekday))) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
       startTime: String(schedule.startTime || '19:00').trim(),
+      durationMinutes: Math.min(480, Math.max(30, numberValue(schedule.durationMinutes) || 90)),
       startDate: String(schedule.startDate || '').trim(),
       endDate: String(schedule.endDate || '').trim(),
       active: schedule.active !== false,

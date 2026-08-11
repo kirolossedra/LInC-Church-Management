@@ -162,6 +162,7 @@ export async function createPeopleDevelopmentMeetingSchedule(input: CreatePeople
       audience: input.audience, group: input.group,
       ordinal: input.ordinal, weekday: input.weekday,
       startTime: input.startTime, startDate: input.startDate,
+      durationMinutes: input.durationMinutes,
       endDate: input.endDate, active: input.active,
     }),
   });
@@ -171,7 +172,7 @@ export async function updatePeopleDevelopmentMeetingSchedule(id: string, updates
   const allowedUpdates = Object.fromEntries(
     Object.entries(updates).filter(([key]) => [
       'audience', 'group', 'ordinal', 'weekday',
-      'startTime', 'startDate', 'endDate', 'active',
+      'startTime', 'durationMinutes', 'startDate', 'endDate', 'active',
     ].includes(key)),
   );
   await mutate(`/schedules/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(allowedUpdates) });

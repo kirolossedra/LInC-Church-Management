@@ -154,12 +154,17 @@ describe('Pastor Calendar routes', () => {
       'requestA',
       'requestB',
     ])
-    expect(databaseFetch).toHaveBeenCalledTimes(4)
+    expect(databaseFetch).toHaveBeenCalledTimes(5)
   })
 
   it('creates a meeting with backend-controlled audit fields', async () => {
-    const databaseFetch = vi.fn().mockResolvedValue(
-      jsonResponse({ name: 'meeting-new' }),
+    const databaseFetch = vi.fn(
+      (_input: string | URL | Request, init?: RequestInit) =>
+        Promise.resolve(
+          init?.method === 'POST'
+            ? jsonResponse({ name: 'meeting-new' })
+            : jsonResponse(null),
+        ),
     )
     const app = createTestApp(databaseFetch)
 
@@ -170,7 +175,11 @@ describe('Pastor Calendar routes', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(requestBody(databaseFetch.mock.calls[0])).toMatchObject({
+    const postCall = databaseFetch.mock.calls.find(
+      call => (call[1] as RequestInit)?.method === 'POST',
+    )
+    expect(postCall).toBeDefined()
+    expect(requestBody(postCall!)).toMatchObject({
       title: 'Counselling meeting',
       acknowledged: false,
       createdAt: 1_777_777_777_000,
@@ -179,15 +188,56 @@ describe('Pastor Calendar routes', () => {
     })
   })
 
+  it('exports confirmed, pending, and recurring calendar items as ICS', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('/meetings.json')) {
+        return Promise.resolve(jsonResponse({
+          meetingOne: { title: 'Confirmed conversation', date: '2026-08-15', startTime: '10:00', endTime: '11:00' },
+        }))
+      }
+      if (url.includes('/meetingRequests.json')) {
+        return Promise.resolve(jsonResponse({
+          requestOne: { name: 'Visitor', status: 'pending', date: '2026-08-16', startTime: '12:00', endTime: '12:30' },
+        }))
+      }
+      if (url.includes('/peopleDevelopment/meetingSchedules.json')) {
+        return Promise.resolve(jsonResponse({
+          scheduleOne: { active: true, ordinal: 3, weekday: 1, startTime: '18:00', startDate: '2026-01-01', endDate: '' },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(databaseFetch)
+
+    const response = await app.request(
+      apiRequest('/api/v1/pastor-calendar/export.ics?start=2026-08-01&end=2026-08-31'),
+      undefined,
+      mockBindings,
+    )
+    const calendar = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('text/calendar')
+    expect(calendar).toContain('SUMMARY:Confirmed conversation')
+    expect(calendar).toContain('SUMMARY:Pending booking — Visitor')
+    expect(calendar).toContain('SUMMARY:People Development group meeting')
+  })
+
   it('updates a meeting and its source request in one root patch', async () => {
-    const databaseFetch = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({
-        ...validMeeting,
-        sourceRequestId: 'request-1',
-        acknowledged: true,
-      }))
-      .mockResolvedValueOnce(jsonResponse({}))
+    const databaseFetch = vi.fn(
+      (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/meetings/meeting-1.json') && init?.method === 'GET') {
+          return Promise.resolve(jsonResponse({
+            ...validMeeting,
+            sourceRequestId: 'request-1',
+            acknowledged: true,
+          }))
+        }
+        return Promise.resolve(jsonResponse(init?.method === 'GET' ? null : {}))
+      },
+    )
     const app = createTestApp(databaseFetch)
 
     const response = await app.request(
@@ -199,7 +249,11 @@ describe('Pastor Calendar routes', () => {
       undefined,
       mockBindings,
     )
-    const patchBody = requestBody(databaseFetch.mock.calls[1])
+    const patchCall = databaseFetch.mock.calls.find(
+      call => (call[1] as RequestInit)?.method === 'PATCH',
+    )
+    expect(patchCall).toBeDefined()
+    const patchBody = requestBody(patchCall!)
 
     expect(response.status).toBe(200)
     expect(patchBody).toMatchObject({
@@ -208,6 +262,52 @@ describe('Pastor Calendar routes', () => {
       'meetings/meeting-1/acknowledgedAt': null,
       'meetingRequests/request-1/startTime': '11:00',
       'meetingRequests/request-1/endTime': '12:00',
+    })
+  })
+
+  it('moves the atomic reservation when an accepted meeting is rescheduled', async () => {
+    const databaseFetch = vi.fn(
+      (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/meetings/meeting-1.json') && init?.method === 'GET') {
+          return Promise.resolve(jsonResponse({
+            ...validMeeting,
+            sourceRequestId: 'request-1',
+            reservationKey: '2026-08-15_1000_1100',
+          }))
+        }
+        if (url.includes('/calendarReservations/2026-08-15_1200_1300.json') && init?.method === 'GET') {
+          return Promise.resolve(new Response('null', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', etag: '"new-slot"' },
+          }))
+        }
+        return Promise.resolve(jsonResponse(init?.method === 'GET' ? null : {}))
+      },
+    )
+    const app = createTestApp(databaseFetch)
+
+    const response = await app.request(
+      apiRequest('/api/v1/pastor-calendar/meetings/meeting-1', 'PATCH', {
+        ...validMeeting,
+        startTime: '12:00',
+        endTime: '13:00',
+      }),
+      undefined,
+      mockBindings,
+    )
+    const rootPatchCall = databaseFetch.mock.calls.find(
+      call => (call[1] as RequestInit)?.method === 'PATCH' && /\/\.json(?:\?|$)/.test(String(call[0])),
+    )
+    expect(rootPatchCall).toBeDefined()
+    const changes = requestBody(rootPatchCall!)
+
+    expect(response.status).toBe(200)
+    expect(databaseFetch.mock.calls.some(call => (call[1] as RequestInit)?.method === 'PUT')).toBe(true)
+    expect(changes).toMatchObject({
+      'meetings/meeting-1/reservationKey': '2026-08-15_1200_1300',
+      'meetingRequests/request-1/reservationKey': '2026-08-15_1200_1300',
+      'calendarReservations/2026-08-15_1000_1100/status': 'released',
     })
   })
 
@@ -238,20 +338,24 @@ describe('Pastor Calendar routes', () => {
   })
 
   it('accepts a request with an atomic meeting/request update', async () => {
-    const databaseFetch = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({
-        name: 'Visitor',
-        email: 'visitor@example.com',
-        date: '2026-08-25',
-        startTime: '10:00',
-        endTime: '10:30',
-        reason: 'Conversation',
-        requesterLocale: 'en',
-        status: 'pending',
-      }))
-      .mockResolvedValueOnce(jsonResponse({}))
-      .mockResolvedValueOnce(jsonResponse({}))
+    const databaseFetch = vi.fn(
+      (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/meetingRequests/request-1.json') && init?.method === 'GET') {
+          return Promise.resolve(jsonResponse({
+            name: 'Visitor',
+            email: 'visitor@example.com',
+            date: '2026-08-25',
+            startTime: '10:00',
+            endTime: '10:30',
+            reason: 'Conversation',
+            requesterLocale: 'en',
+            status: 'pending',
+          }))
+        }
+        return Promise.resolve(jsonResponse(init?.method === 'GET' ? null : {}))
+      },
+    )
     const sendNotification = vi.fn().mockResolvedValue({
       messageId: 'confirmation-1',
     })
@@ -269,7 +373,14 @@ describe('Pastor Calendar routes', () => {
     const body = (await response.json()) as {
       data: { meetingId: string; notificationSent: boolean }
     }
-    const atomicUpdate = requestBody(databaseFetch.mock.calls[1])
+    const rootPatchCall = databaseFetch.mock.calls.find(
+      call => {
+        const url = String(call[0])
+        return (call[1] as RequestInit)?.method === 'PATCH' && /\/\.json(?:\?|$)/.test(url)
+      },
+    )
+    expect(rootPatchCall).toBeDefined()
+    const atomicUpdate = requestBody(rootPatchCall!)
 
     expect(response.status).toBe(200)
     expect(body.data).toMatchObject({

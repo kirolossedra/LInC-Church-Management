@@ -345,6 +345,23 @@ export default function PeopleDevelopmentMeetingSchedulesSection({
 
               <label className="space-y-2">
                 <span className="text-sm font-black text-[#7a1717]">
+                  {isArabic ? 'مدة الاجتماع بالدقائق' : 'Duration (minutes)'}
+                </span>
+
+                <input
+                  type="number"
+                  min={30}
+                  max={480}
+                  step={15}
+                  required
+                  value={draft.durationMinutes}
+                  onChange={event => onDraftChange('durationMinutes', Number(event.target.value))}
+                  className="w-full rounded-xl border-2 border-[#ead9d0] bg-white px-3 py-3 text-[#2b1717] outline-none focus:border-[#7a1717]"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-black text-[#7a1717]">
                   {isArabic ? 'يبدأ من' : 'Effective From'}
                 </span>
 
@@ -622,7 +639,7 @@ export default function PeopleDevelopmentMeetingSchedulesSection({
                               {formatPeopleDevelopmentMeetingTime(
                                 schedule.startTime,
                                 locale,
-                              )}
+                              )} · {schedule.durationMinutes || 90} {isArabic ? 'دقيقة' : 'minutes'}
                             </div>
 
                             <div className="flex items-center gap-2">

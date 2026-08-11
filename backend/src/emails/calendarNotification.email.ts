@@ -2,6 +2,7 @@ export type CalendarNotificationKind =
   | 'confirmation'
   | 'rejection'
   | 'cancellation'
+  | 'reschedule'
 
 export type CalendarNotificationInput = {
   kind: CalendarNotificationKind
@@ -18,31 +19,18 @@ export function buildCalendarNotificationEmail(
   input: CalendarNotificationInput,
 ) {
   const isArabic = input.locale === 'ar'
-  const copy = isArabic
-    ? arabicCopy(input.kind)
-    : englishCopy(input.kind)
+  const copy = isArabic ? arabicCopy(input.kind) : englishCopy(input.kind)
   const greeting = input.name
     ? `${copy.greeting} ${input.name},`
     : `${copy.greeting},`
   const detailLines = [
     `${copy.date}: ${input.date}`,
     `${copy.time}: ${input.startTime} - ${input.endTime}`,
-    input.location
-      ? `${copy.location}: ${input.location}`
-      : '',
-    input.meetLink
-      ? `${copy.link}: ${input.meetLink}`
-      : '',
+    input.location ? `${copy.location}: ${input.location}` : '',
+    input.meetLink ? `${copy.link}: ${input.meetLink}` : '',
   ].filter(Boolean)
 
-  const textContent = [
-    greeting,
-    '',
-    copy.message,
-    '',
-    ...detailLines,
-  ].join('\n')
-
+  const textContent = [greeting, '', copy.message, '', ...detailLines].join('\n')
   const htmlContent = `
     <html>
       <body dir="${isArabic ? 'rtl' : 'ltr'}" style="font-family:Arial,sans-serif;color:#222">
@@ -54,11 +42,7 @@ export function buildCalendarNotificationEmail(
     </html>
   `
 
-  return {
-    subject: copy.subject,
-    textContent,
-    htmlContent,
-  }
+  return { subject: copy.subject, textContent, htmlContent }
 }
 
 function englishCopy(kind: CalendarNotificationKind) {
@@ -80,6 +64,17 @@ function englishCopy(kind: CalendarNotificationKind) {
       message: 'Unfortunately, your meeting request could not be accepted.',
       date: 'Requested date',
       time: 'Requested time',
+      location: 'Location',
+      link: 'Meeting link',
+    }
+  }
+  if (kind === 'reschedule') {
+    return {
+      subject: 'Your meeting details were updated',
+      greeting: 'Hello',
+      message: 'The date, time, or meeting details for your meeting with Pastor were updated.',
+      date: 'New date',
+      time: 'New time',
       location: 'Location',
       link: 'Meeting link',
     }
@@ -114,6 +109,17 @@ function arabicCopy(kind: CalendarNotificationKind) {
       message: 'للأسف، تعذر قبول طلب الاجتماع.',
       date: 'التاريخ المطلوب',
       time: 'الوقت المطلوب',
+      location: 'المكان',
+      link: 'رابط الاجتماع',
+    }
+  }
+  if (kind === 'reschedule') {
+    return {
+      subject: 'تم تحديث تفاصيل اجتماعك',
+      greeting: 'مرحباً',
+      message: 'تم تحديث تاريخ أو وقت أو تفاصيل اجتماعك مع القس.',
+      date: 'التاريخ الجديد',
+      time: 'الوقت الجديد',
       location: 'المكان',
       link: 'رابط الاجتماع',
     }

@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono'
 import type { z } from 'zod'
+import { calendarReservationKey, calendarTemporalFields } from '../calendar/calendar.time'
 
 import {
   buildPublicBookingSchedule,
@@ -31,6 +32,8 @@ const AVAILABILITY_PATH = ['availability'] as const
 const UNAVAILABILITY_PATH = ['unavailability'] as const
 const MEETINGS_PATH = ['meetings'] as const
 const MEETING_REQUESTS_PATH = ['meetingRequests'] as const
+const PEOPLE_DEVELOPMENT_SCHEDULES_PATH = ['peopleDevelopment', 'meetingSchedules'] as const
+const RESERVATIONS_PATH = ['calendarReservations'] as const
 
 type RawCollection = Record<string, unknown> | null
 
@@ -63,12 +66,14 @@ export function createBookingRoutes(
     }
 
     return withDatabase(context, dependencies, async database => {
-      const [availability, unavailability, meetings, meetingRequests] =
+      const [availability, unavailability, meetings, meetingRequests, peopleDevelopmentSchedules, reservations] =
         await Promise.all([
           database.get<RawCollection>(AVAILABILITY_PATH),
           database.get<RawCollection>(UNAVAILABILITY_PATH),
           database.get<RawCollection>(MEETINGS_PATH),
           database.get<RawCollection>(MEETING_REQUESTS_PATH),
+          database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+          database.get<RawCollection>(RESERVATIONS_PATH),
         ])
 
       context.header('Cache-Control', 'public, max-age=15')
@@ -79,6 +84,8 @@ export function createBookingRoutes(
           unavailability,
           meetings,
           meetingRequests,
+          peopleDevelopmentSchedules,
+          reservations,
           start: validation.data.start,
           end: validation.data.end,
         }),
@@ -112,12 +119,14 @@ export function createBookingRoutes(
     }
 
     return withDatabase(context, dependencies, async database => {
-      const [availability, unavailability, meetings, meetingRequests] =
+      const [availability, unavailability, meetings, meetingRequests, peopleDevelopmentSchedules, reservations] =
         await Promise.all([
           database.get<RawCollection>(AVAILABILITY_PATH),
           database.get<RawCollection>(UNAVAILABILITY_PATH),
           database.get<RawCollection>(MEETINGS_PATH),
           database.get<RawCollection>(MEETING_REQUESTS_PATH),
+          database.get<RawCollection>(PEOPLE_DEVELOPMENT_SCHEDULES_PATH),
+          database.get<RawCollection>(RESERVATIONS_PATH),
         ])
 
       if (
@@ -129,6 +138,8 @@ export function createBookingRoutes(
           unavailability,
           meetings,
           meetingRequests,
+          peopleDevelopmentSchedules,
+          reservations,
         })
       ) {
         return context.json(
@@ -142,6 +153,24 @@ export function createBookingRoutes(
           },
           409,
         )
+      }
+
+      const reservationKey = calendarReservationKey(request.date, request.startTime, request.endTime)
+      const reservationPath = [...RESERVATIONS_PATH, reservationKey]
+      const reservationCreated = await database.putIfAbsent(reservationPath, {
+        date: request.date,
+        startTime: request.startTime,
+        endTime: request.endTime,
+        status: 'held',
+        createdAt: timestamp,
+        expiresAt: timestamp + 10 * 60_000,
+        ...calendarTemporalFields(request.date, request.startTime, request.endTime),
+      })
+      if (!reservationCreated) {
+        return context.json({
+          success: false,
+          error: { code: 'BOOKING_SLOT_UNAVAILABLE', message: 'The selected time was just reserved by another request.' },
+        }, 409)
       }
 
       const storedRequest = {
@@ -159,21 +188,33 @@ export function createBookingRoutes(
         createdAt: timestamp,
         createdAtISO: new Date(timestamp).toISOString(),
         updatedAt: timestamp,
+        reservationKey,
+        ...calendarTemporalFields(request.date, request.startTime, request.endTime),
       }
 
-      const postResult = await database.post<unknown>(
-        MEETING_REQUESTS_PATH,
-        storedRequest,
-      )
+      let postResult: unknown
+      try {
+        postResult = await database.post<unknown>(MEETING_REQUESTS_PATH, storedRequest)
+      } catch (error) {
+        await database.delete(reservationPath)
+        throw error
+      }
       const parsedPushResult =
         firebasePushResponseSchema.safeParse(postResult)
 
       if (!parsedPushResult.success) {
+        await database.delete(reservationPath)
         throw new FirebaseRealtimeDatabaseError(
           502,
           'Firebase did not return a booking request ID.',
         )
       }
+      await database.patch(reservationPath, {
+        requestId: parsedPushResult.data.name,
+        status: 'pending',
+        expiresAt: null,
+        updatedAt: timestamp,
+      })
 
       const notificationSent = await notifyPastor(
         context,
