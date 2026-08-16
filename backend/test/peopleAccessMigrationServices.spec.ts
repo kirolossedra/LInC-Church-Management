@@ -16,11 +16,13 @@ describe('People Access migration services', () => {
     const created = buildPeopleAccessInvitation({
       fullName: 'Person One',
       email: 'person@example.com',
+      locale: 'en',
       temporaryPassword: 'Cedar-Bridge-482!',
     })
     const linked = buildPeopleAccessInvitation({
       fullName: 'Person Two',
       email: 'linked@example.com',
+      locale: 'en',
     })
     expect(created.textContent).toContain('Temporary password: Cedar-Bridge-482!')
     expect(created.textContent).toContain('https://lincministry.com/group-notes')
@@ -32,9 +34,24 @@ describe('People Access migration services', () => {
     const invitation = buildPeopleAccessInvitation({
       fullName: '<script>alert(1)</script>',
       email: 'person@example.com',
+      locale: 'en',
       temporaryPassword: 'Cedar-Bridge-482!',
     })
     expect(invitation.htmlContent).not.toContain('<script>')
     expect(invitation.htmlContent).toContain('&lt;script&gt;')
+  })
+
+  it('renders Arabic invitations as RTL while isolating credentials as LTR', () => {
+    const invitation = buildPeopleAccessInvitation({
+      fullName: 'شخص عربي',
+      email: 'arabic@example.com',
+      locale: 'ar',
+      temporaryPassword: 'Cedar-Bridge-482!',
+    })
+    expect(invitation.subject).toContain('بيانات الدخول')
+    expect(invitation.htmlContent).toContain('<html lang="ar" dir="rtl">')
+    expect(invitation.htmlContent).toContain('كلمة المرور المؤقتة')
+    expect(invitation.htmlContent).toContain('dir="ltr"')
+    expect(invitation.textContent).toContain('كلمة المرور المؤقتة: Cedar-Bridge-482!')
   })
 })

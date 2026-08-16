@@ -182,6 +182,7 @@ describe('Administrator routes', () => {
       expect(firebaseWriteAlreadyHappened).toBe(true)
       expect(invitation).toMatchObject({
         email: 'person@example.com',
+        locale: 'en',
         temporaryPassword: 'Cedar-River-482!',
       })
       return { messageId: 'brevo-message-1' }
@@ -197,13 +198,64 @@ describe('Administrator routes', () => {
     const linkWrite = databaseFetch.mock.calls.find(call => String(call[0]).endsWith('/peopleDevelopment/members/member-1.json'))
     const payload = JSON.parse(String((linkWrite?.[1] as RequestInit).body))
     expect(payload).toMatchObject({ firebaseUid: 'firebase-person-uid', authMigration: { status: 'firebase_ready', method: 'created' } })
-    const migrationWrites = databaseFetch.mock.calls
-      .filter(call => String(call[0]).endsWith('/peopleDevelopment/members/member-1/authMigration.json'))
+    const completionWrite = databaseFetch.mock.calls
+      .filter(call => String(call[0]).endsWith('/peopleDevelopment/members/member-1.json'))
       .map(call => JSON.parse(String((call[1] as RequestInit).body)))
-    expect(migrationWrites).toEqual(expect.arrayContaining([
-      expect.objectContaining({ status: 'complete', invitationStatus: 'sent', invitationMessageId: 'brevo-message-1' }),
-    ]))
+      .find(write => write.authMigration?.status === 'complete')
+    expect(completionWrite).toMatchObject({
+      authLocale: 'en',
+      authMigration: { status: 'complete', invitationStatus: 'sent', invitationMessageId: 'brevo-message-1' },
+    })
     expect(sendInvitation).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves Arabic from the source assessment and sends an Arabic invitation', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          uid: administrator.uid, email: administrator.email, role: 'administrator', status: 'active',
+          authority: { managePeopleAccess: true },
+        }))
+      }
+      if (url.endsWith('/peopleDevelopment/members.json')) {
+        return Promise.resolve(jsonResponse({
+          'member-ar': {
+            fullName: 'شخص عربي', email: 'arabic@example.com', sourcePath: 'form', sourceKeys: ['response-ar'],
+          },
+        }))
+      }
+      if (url.endsWith('/form.json')) {
+        return Promise.resolve(jsonResponse({
+          'response-ar': { interfaceLanguageUsed: 'Arabic' },
+        }))
+      }
+      if (init?.method === 'PATCH') return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse(null))
+    })
+    const identityFetch = vi.fn((input: string | URL | Request) => {
+      if (String(input).includes('accounts:lookup')) return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse({ localId: 'firebase-ar-uid', email: 'arabic@example.com', displayName: 'شخص عربي' }))
+    })
+    const sendInvitation = vi.fn().mockResolvedValue({ messageId: 'arabic-message' })
+    const app = createTestApp(databaseFetch, administrator, identityFetch as typeof fetch, {
+      sendPeopleAccessInvitation: sendInvitation,
+    })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/people-access/migrate', 'POST', { memberKeys: ['member-ar'] },
+    ), undefined, bindings)
+    expect(response.status).toBe(200)
+    expect(sendInvitation).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      fullName: 'شخص عربي',
+      email: 'arabic@example.com',
+      locale: 'ar',
+      temporaryPassword: 'Cedar-River-482!',
+    }))
+    const persisted = databaseFetch.mock.calls
+      .filter(call => String(call[0]).endsWith('/peopleDevelopment/members/member-ar.json'))
+      .map(call => JSON.parse(String((call[1] as RequestInit).body)))
+      .find(write => write.authMigration?.status === 'complete')
+    expect(persisted).toMatchObject({ authLocale: 'ar' })
   })
 
   it('reports missing email data, accepts a short legacy identifier, and never returns identifiers', async () => {
@@ -275,6 +327,7 @@ describe('Administrator routes', () => {
     expect(identityFetch.mock.calls.some(call => String(call[0]).includes('accounts:signUp'))).toBe(false)
     expect(sendInvitation).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       email: 'person@example.com',
+      locale: 'en',
       temporaryPassword: 'Cedar-River-482!',
     }))
   })

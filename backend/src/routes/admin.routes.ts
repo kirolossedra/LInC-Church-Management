@@ -185,10 +185,16 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
   routes.get('/people-access', context => withPeopleAccessAuthority(
     context,
     dependencies,
-    async database => context.json({
-      success: true,
-      data: { people: peopleAccessRows(await database.get(['peopleDevelopment', 'members'])).map(publicPeopleAccessRow) },
-    }),
+    async database => {
+      const [members, assessmentResponses] = await Promise.all([
+        database.get(['peopleDevelopment', 'members']),
+        database.get(['form']),
+      ])
+      return context.json({
+        success: true,
+        data: { people: peopleAccessRows(members, assessmentResponses).map(publicPeopleAccessRow) },
+      })
+    },
   ))
 
   routes.patch('/people-access/:memberKey/email', async context => {
@@ -217,8 +223,12 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const body = peopleAccessMigrationSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
     return withPeopleAccessAuthority(context, dependencies, async database => {
-      const rawMembers = recordValue(await database.get<unknown>(['peopleDevelopment', 'members'])) || {}
-      const people = peopleAccessRows(rawMembers)
+      const [membersValue, assessmentResponses] = await Promise.all([
+        database.get<unknown>(['peopleDevelopment', 'members']),
+        database.get<unknown>(['form']),
+      ])
+      const rawMembers = recordValue(membersValue) || {}
+      const people = peopleAccessRows(rawMembers, assessmentResponses)
       const requestedKeys = body.data.memberKeys ? new Set(body.data.memberKeys) : null
       const selected = people.filter(person => !requestedKeys || requestedKeys.has(person.memberKey))
       const getAccessToken = dependencies.getAccessToken ?? (bindings => getFirebaseServiceAccountAccessToken(bindings))
@@ -284,6 +294,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
             const timestamp = now()
             await database.patch(['peopleDevelopment', 'members', person.memberKey], {
               authEmail: person.authEmail,
+              authLocale: person.authLocale,
               firebaseUid,
               authMigration: {
                 status: 'firebase_ready',
@@ -329,20 +340,24 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
           const emailResult = await sendInvitation(context.env, {
             fullName: person.fullName,
             email: person.authEmail,
+            locale: person.authLocale,
             ...(temporaryPassword ? { temporaryPassword } : {}),
           })
           const timestamp = now()
-          await database.patch(['peopleDevelopment', 'members', person.memberKey, 'authMigration'], {
-            status: 'complete',
-            method: migrationMethod || 'linked_existing',
-            invitationStatus: 'sent',
-            invitationSentAt: timestamp,
-            invitationMessageId: emailResult.messageId,
-            completedAt: timestamp,
-            errorCode: null,
-            errorMessage: null,
-            updatedAt: timestamp,
-            updatedByUid: administratorUid,
+          await database.patch(['peopleDevelopment', 'members', person.memberKey], {
+            authLocale: person.authLocale,
+            authMigration: {
+              status: 'complete',
+              method: migrationMethod || 'linked_existing',
+              invitationStatus: 'sent',
+              invitationSentAt: timestamp,
+              invitationMessageId: emailResult.messageId,
+              completedAt: timestamp,
+              errorCode: null,
+              errorMessage: null,
+              updatedAt: timestamp,
+              updatedByUid: administratorUid,
+            },
           })
           results.push({
             memberKey: person.memberKey,
@@ -352,14 +367,17 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
               : 'Existing Firebase account linked; access email sent.',
           })
         } catch {
-          await database.patch(['peopleDevelopment', 'members', person.memberKey, 'authMigration'], {
-            status: 'email_failed',
-            method: migrationMethod || 'linked_existing',
-            invitationStatus: 'failed',
-            errorCode: 'PEOPLE_ACCESS_EMAIL_FAILED',
-            errorMessage: 'Firebase access is ready, but the access email could not be sent.',
-            updatedAt: now(),
-            updatedByUid: administratorUid,
+          await database.patch(['peopleDevelopment', 'members', person.memberKey], {
+            authLocale: person.authLocale,
+            authMigration: {
+              status: 'email_failed',
+              method: migrationMethod || 'linked_existing',
+              invitationStatus: 'failed',
+              errorCode: 'PEOPLE_ACCESS_EMAIL_FAILED',
+              errorMessage: 'Firebase access is ready, but the access email could not be sent.',
+              updatedAt: now(),
+              updatedByUid: administratorUid,
+            },
           })
           results.push({
             memberKey: person.memberKey,
@@ -701,7 +719,8 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
 
-function peopleAccessRows(value: unknown) {
+function peopleAccessRows(value: unknown, assessmentResponsesValue: unknown) {
+  const assessmentResponses = recordValue(assessmentResponsesValue) || {}
   return Object.entries(recordValue(value) || {}).map(([memberKey, raw]) => {
     const member = recordValue(raw) || {}
     const fullName = typeof member.fullName === 'string' ? member.fullName.trim() : ''
@@ -714,6 +733,7 @@ function peopleAccessRows(value: unknown) {
     const migrationMethod = migration.method === 'created' || migration.method === 'linked_existing'
       ? migration.method
       : ''
+    const authLocale = peopleAccessLocale(member, assessmentResponses)
     let status = 'ready'
     let problem = ''
     if ((migrationStatus === 'complete' || invitationStatus === 'sent') && firebaseUid) status = 'complete'
@@ -733,8 +753,42 @@ function peopleAccessRows(value: unknown) {
       status = 'firebase_failed'
       problem = typeof migration.errorMessage === 'string' ? migration.errorMessage : 'The last Firebase registration attempt failed.'
     }
-    return { memberKey, fullName, sourceEmail, authEmail, firebaseUid, migrationMethod, status, problem }
+    return { memberKey, fullName, sourceEmail, authEmail, firebaseUid, migrationMethod, authLocale, status, problem }
   }).sort((a, b) => a.fullName.localeCompare(b.fullName))
+}
+
+function peopleAccessLocale(
+  member: Record<string, unknown>,
+  assessmentResponses: Record<string, unknown>,
+): 'en' | 'ar' {
+  const memberLocale = normalizePeopleAccessLocale(
+    member.authLocale ?? member.preferredLanguage ?? member.interfaceLanguageUsed ?? member.language ?? member.locale,
+  )
+  if (memberLocale) return memberLocale
+
+  const sourcePath = typeof member.sourcePath === 'string' ? member.sourcePath.trim() : 'form'
+  const sourceKeys = Array.isArray(member.sourceKeys)
+    ? member.sourceKeys.filter((key): key is string => typeof key === 'string' && Boolean(key.trim()))
+    : []
+  if (sourcePath === 'form') {
+    for (const sourceKey of sourceKeys) {
+      const source = recordValue(assessmentResponses[sourceKey])
+      if (!source) continue
+      const sourceLocale = normalizePeopleAccessLocale(
+        source.interfaceLanguageUsed ?? source.preferredLanguage ?? source.language ?? source.locale,
+      )
+      if (sourceLocale) return sourceLocale
+    }
+  }
+  return 'en'
+}
+
+function normalizePeopleAccessLocale(value: unknown): 'en' | 'ar' | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'ar' || normalized === 'arabic' || normalized.startsWith('ar-') || normalized === 'العربية') return 'ar'
+  if (normalized === 'en' || normalized === 'english' || normalized.startsWith('en-')) return 'en'
+  return null
 }
 
 function publicPeopleAccessRow(person: ReturnType<typeof peopleAccessRows>[number]) {
