@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createApp } from '../src/index'
+import type { AdminDependencies } from '../src/routes/admin.routes'
 import type { ArchiveStorage } from '../src/services/backblazeArchive.service'
 import type { AuthenticatedFirebaseUser } from '../src/types/app'
 
@@ -45,6 +46,7 @@ function createTestApp(
   fetchMock: ReturnType<typeof vi.fn>,
   user: AuthenticatedFirebaseUser = administrator,
   identityFetch?: typeof fetch,
+  adminOverrides: Partial<AdminDependencies> = {},
 ) {
   return createApp({
     admin: {
@@ -53,6 +55,9 @@ function createTestApp(
       databaseFetch: fetchMock as unknown as typeof fetch,
       now: () => 1_777_777_777_000,
       identityFetch,
+      generateTemporaryPassword: () => 'Cedar-River-482!',
+      sendPeopleAccessInvitation: vi.fn().mockResolvedValue({ messageId: 'brevo-message-1' }),
+      ...adminOverrides,
     },
   })
 }
@@ -143,7 +148,7 @@ describe('Administrator routes', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('bulk registers an eligible person and stores the Firebase UID linkage', async () => {
+  it('creates Firebase with a memorable password, persists its UID, then sends the access email', async () => {
     const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
@@ -160,23 +165,48 @@ describe('Administrator routes', () => {
       if (init?.method === 'PATCH') return Promise.resolve(jsonResponse({}))
       return Promise.resolve(jsonResponse(null))
     })
-    const identityFetch = vi.fn((input: string | URL | Request) => {
+    const identityFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('accounts:lookup')) return Promise.resolve(jsonResponse({}))
+      const payload = JSON.parse(String(init?.body)) as { password: string }
+      expect(payload.password).toBe('Cedar-River-482!')
+      expect(payload.password).not.toBe('PERSON-1')
       return Promise.resolve(jsonResponse({ localId: 'firebase-person-uid', email: 'person@example.com', displayName: 'Person One' }))
     })
-    const app = createTestApp(databaseFetch, administrator, identityFetch as typeof fetch)
+    const sendInvitation = vi.fn(async (_bindings, invitation) => {
+      const firebaseWriteAlreadyHappened = databaseFetch.mock.calls.some(call => {
+        if (!String(call[0]).endsWith('/peopleDevelopment/members/member-1.json')) return false
+        const payload = JSON.parse(String((call[1] as RequestInit).body)) as { firebaseUid?: string }
+        return payload.firebaseUid === 'firebase-person-uid'
+      })
+      expect(firebaseWriteAlreadyHappened).toBe(true)
+      expect(invitation).toMatchObject({
+        email: 'person@example.com',
+        temporaryPassword: 'Cedar-River-482!',
+      })
+      return { messageId: 'brevo-message-1' }
+    })
+    const app = createTestApp(databaseFetch, administrator, identityFetch as typeof fetch, {
+      sendPeopleAccessInvitation: sendInvitation,
+    })
     const response = await app.request(authenticatedRequest(
       '/api/v1/admin/people-access/migrate', 'POST', {},
     ), undefined, bindings)
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ data: { summary: { registered: 1 } } })
+    expect(await response.json()).toMatchObject({ data: { summary: { complete: 1 } } })
     const linkWrite = databaseFetch.mock.calls.find(call => String(call[0]).endsWith('/peopleDevelopment/members/member-1.json'))
     const payload = JSON.parse(String((linkWrite?.[1] as RequestInit).body))
-    expect(payload).toMatchObject({ firebaseUid: 'firebase-person-uid', authMigration: { status: 'registered', method: 'created' } })
+    expect(payload).toMatchObject({ firebaseUid: 'firebase-person-uid', authMigration: { status: 'firebase_ready', method: 'created' } })
+    const migrationWrites = databaseFetch.mock.calls
+      .filter(call => String(call[0]).endsWith('/peopleDevelopment/members/member-1/authMigration.json'))
+      .map(call => JSON.parse(String((call[1] as RequestInit).body)))
+    expect(migrationWrites).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'complete', invitationStatus: 'sent', invitationMessageId: 'brevo-message-1' }),
+    ]))
+    expect(sendInvitation).toHaveBeenCalledTimes(1)
   })
 
-  it('reports missing migration data without returning the identifier password', async () => {
+  it('reports missing email data, accepts a short legacy identifier, and never returns identifiers', async () => {
     const databaseFetch = vi.fn((input: string | URL | Request) => {
       const url = String(input)
       if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
@@ -199,9 +229,86 @@ describe('Administrator routes', () => {
     expect(response.status).toBe(200)
     expect(body.data.people).toEqual(expect.arrayContaining([
       expect.objectContaining({ memberKey: 'missing', status: 'missing_email' }),
-      expect.objectContaining({ memberKey: 'short', status: 'invalid_password' }),
+      expect.objectContaining({ memberKey: 'short', status: 'ready' }),
     ]))
     expect(body.data.people.every(person => !('identifier' in person))).toBe(true)
+  })
+
+  it('retries email on the same Firebase UID without creating the account again', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          uid: administrator.uid, email: administrator.email, role: 'administrator', status: 'active',
+          authority: { managePeopleAccess: true },
+        }))
+      }
+      if (url.endsWith('/peopleDevelopment/members.json')) {
+        return Promise.resolve(jsonResponse({
+          'member-1': {
+            fullName: 'Person One',
+            email: 'person@example.com',
+            firebaseUid: 'firebase-person-uid',
+            authMigration: { status: 'email_failed', method: 'created', invitationStatus: 'failed' },
+          },
+        }))
+      }
+      if (init?.method === 'PATCH') return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse(null))
+    })
+    const identityFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      expect(String(input)).toContain('accounts:update')
+      const payload = JSON.parse(String(init?.body)) as { localId: string; password: string }
+      expect(payload).toMatchObject({ localId: 'firebase-person-uid', password: 'Cedar-River-482!' })
+      return Promise.resolve(jsonResponse({ localId: 'firebase-person-uid' }))
+    })
+    const sendInvitation = vi.fn().mockRejectedValue(new Error('email unavailable'))
+    const app = createTestApp(databaseFetch, administrator, identityFetch as typeof fetch, {
+      sendPeopleAccessInvitation: sendInvitation,
+    })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/people-access/migrate', 'POST', { memberKeys: ['member-1'] },
+    ), undefined, bindings)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data: { summary: { email_failed: 1 } } })
+    expect(identityFetch).toHaveBeenCalledTimes(1)
+    expect(identityFetch.mock.calls.some(call => String(call[0]).includes('accounts:signUp'))).toBe(false)
+    expect(sendInvitation).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      email: 'person@example.com',
+      temporaryPassword: 'Cedar-River-482!',
+    }))
+  })
+
+  it('does not rerun Firebase or email after both migration steps are complete', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          uid: administrator.uid, email: administrator.email, role: 'administrator', status: 'active',
+          authority: { managePeopleAccess: true },
+        }))
+      }
+      if (url.endsWith('/peopleDevelopment/members.json')) {
+        return Promise.resolve(jsonResponse({
+          'member-1': {
+            fullName: 'Person One', email: 'person@example.com', firebaseUid: 'firebase-person-uid',
+            authMigration: { status: 'complete', method: 'created', invitationStatus: 'sent' },
+          },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const identityFetch = vi.fn()
+    const sendInvitation = vi.fn()
+    const app = createTestApp(databaseFetch, administrator, identityFetch as unknown as typeof fetch, {
+      sendPeopleAccessInvitation: sendInvitation,
+    })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/people-access/migrate', 'POST', { memberKeys: ['member-1'] },
+    ), undefined, bindings)
+    expect(await response.json()).toMatchObject({ data: { summary: { already_complete: 1 } } })
+    expect(identityFetch).not.toHaveBeenCalled()
+    expect(sendInvitation).not.toHaveBeenCalled()
   })
 
   it('denies LInC Archives to an administrator without archive authority', async () => {

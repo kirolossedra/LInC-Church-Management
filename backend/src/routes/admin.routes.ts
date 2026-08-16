@@ -37,6 +37,12 @@ import {
   type FirebaseIdentityFetch,
 } from '../services/firebaseIdentityToolkit.service'
 import {
+  sendPeopleAccessInvitation,
+  type PeopleAccessInvitationInput,
+} from '../services/peopleAccessInvitation.service'
+import { generateMemorableTemporaryPassword } from '../services/peopleAccessPassword.service'
+import type { BrevoEmailResult } from '../services/brevo.service'
+import {
   ArchiveStorageError,
   createBackblazeArchiveStorage,
   type ArchiveStorage,
@@ -86,6 +92,11 @@ export type AdminDependencies = {
   generateId?: () => string
   archiveStorage?: ArchiveStorage
   identityFetch?: FirebaseIdentityFetch
+  generateTemporaryPassword?: () => string
+  sendPeopleAccessInvitation?: (
+    bindings: AppEnv['Bindings'],
+    input: PeopleAccessInvitationInput,
+  ) => Promise<BrevoEmailResult>
 }
 
 export function createAdminRoutes(dependencies: AdminDependencies = {}) {
@@ -226,64 +237,135 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         people.filter(person => person.firebaseUid).map(person => [person.firebaseUid, person.memberKey]),
       )
       const results: Array<{ memberKey: string; status: string; message: string }> = []
+      const generateTemporaryPassword = dependencies.generateTemporaryPassword ?? generateMemorableTemporaryPassword
+      const sendInvitation = dependencies.sendPeopleAccessInvitation ?? sendPeopleAccessInvitation
+      const administratorUid = context.get('firebaseUser').uid
 
       for (const person of selected) {
-        if (person.firebaseUid) {
-          results.push({ memberKey: person.memberKey, status: 'already_registered', message: 'Already linked.' })
+        if (person.status === 'complete') {
+          results.push({ memberKey: person.memberKey, status: 'already_complete', message: 'Firebase access and its email are already complete.' })
           continue
         }
-        if (person.status !== 'ready' && person.status !== 'failed') {
+        if (person.status === 'missing_email' || person.status === 'invalid_email') {
           results.push({ memberKey: person.memberKey, status: person.status, message: person.problem })
           continue
         }
 
+        let firebaseUid = person.firebaseUid
+        let migrationMethod = person.migrationMethod
+        let temporaryPassword: string | undefined
+        let justProvisioned = false
+
         try {
-          let firebaseUser = await identity.findByEmail(person.authEmail)
-          let migrationStatus = 'linked_existing'
-          if (firebaseUser) {
-            const owner = claimedUids.get(firebaseUser.localId)
-            if (owner && owner !== person.memberKey) {
-              throw new FirebaseIdentityError(
-                'FIREBASE_UID_CONFLICT',
-                'That Firebase account is already linked to another person.',
-                409,
-              )
+          if (!firebaseUid) {
+            let firebaseUser = await identity.findByEmail(person.authEmail)
+            migrationMethod = 'linked_existing'
+            if (firebaseUser) {
+              const owner = claimedUids.get(firebaseUser.localId)
+              if (owner && owner !== person.memberKey) {
+                throw new FirebaseIdentityError(
+                  'FIREBASE_UID_CONFLICT',
+                  'That Firebase account is already linked to another person.',
+                  409,
+                )
+              }
+            } else {
+              temporaryPassword = generateTemporaryPassword()
+              firebaseUser = await identity.createUser({
+                email: person.authEmail,
+                password: temporaryPassword,
+                displayName: person.fullName,
+              })
+              migrationMethod = 'created'
             }
-          } else {
-            firebaseUser = await identity.createUser({
-              email: person.authEmail,
-              password: person.identifier,
-              displayName: person.fullName,
+
+            firebaseUid = firebaseUser.localId
+            justProvisioned = true
+            const timestamp = now()
+            await database.patch(['peopleDevelopment', 'members', person.memberKey], {
+              authEmail: person.authEmail,
+              firebaseUid,
+              authMigration: {
+                status: 'firebase_ready',
+                method: migrationMethod,
+                firebaseProvisionedAt: timestamp,
+                invitationStatus: 'pending',
+                updatedAt: timestamp,
+                updatedByUid: administratorUid,
+              },
             })
-            migrationStatus = 'created'
+            claimedUids.set(firebaseUid, person.memberKey)
+          } else if (migrationMethod === 'created') {
+            temporaryPassword = generateTemporaryPassword()
+            await identity.updatePassword(firebaseUid, temporaryPassword)
           }
 
           const timestamp = now()
-          await database.patch(['peopleDevelopment', 'members', person.memberKey], {
-            authEmail: person.authEmail,
-            firebaseUid: firebaseUser.localId,
-            authMigration: {
-              status: 'registered',
-              method: migrationStatus,
-              registeredAt: timestamp,
-              updatedAt: timestamp,
-              updatedByUid: context.get('firebaseUser').uid,
-            },
+          await database.patch(['peopleDevelopment', 'members', person.memberKey, 'authMigration'], {
+            status: 'firebase_ready',
+            method: migrationMethod || 'linked_existing',
+            invitationStatus: 'pending',
+            errorCode: null,
+            errorMessage: null,
+            updatedAt: timestamp,
+            updatedByUid: administratorUid,
           })
-          claimedUids.set(firebaseUser.localId, person.memberKey)
-          results.push({ memberKey: person.memberKey, status: 'registered', message: migrationStatus === 'created' ? 'Firebase account created.' : 'Existing Firebase account linked.' })
         } catch (error) {
           const normalized = error instanceof FirebaseIdentityError
             ? error
             : new FirebaseIdentityError('PEOPLE_ACCESS_REGISTRATION_FAILED', 'Firebase registration failed.', 502)
           await database.patch(['peopleDevelopment', 'members', person.memberKey, 'authMigration'], {
-            status: 'failed',
+            status: 'firebase_failed',
             errorCode: normalized.code,
             errorMessage: normalized.message,
             updatedAt: now(),
-            updatedByUid: context.get('firebaseUser').uid,
+            updatedByUid: administratorUid,
           })
-          results.push({ memberKey: person.memberKey, status: 'failed', message: normalized.message })
+          results.push({ memberKey: person.memberKey, status: 'firebase_failed', message: normalized.message })
+          continue
+        }
+
+        try {
+          const emailResult = await sendInvitation(context.env, {
+            fullName: person.fullName,
+            email: person.authEmail,
+            ...(temporaryPassword ? { temporaryPassword } : {}),
+          })
+          const timestamp = now()
+          await database.patch(['peopleDevelopment', 'members', person.memberKey, 'authMigration'], {
+            status: 'complete',
+            method: migrationMethod || 'linked_existing',
+            invitationStatus: 'sent',
+            invitationSentAt: timestamp,
+            invitationMessageId: emailResult.messageId,
+            completedAt: timestamp,
+            errorCode: null,
+            errorMessage: null,
+            updatedAt: timestamp,
+            updatedByUid: administratorUid,
+          })
+          results.push({
+            memberKey: person.memberKey,
+            status: 'complete',
+            message: migrationMethod === 'created'
+              ? `${justProvisioned ? 'Firebase account created' : 'Existing Firebase account kept and temporary password refreshed'}; access email sent.`
+              : 'Existing Firebase account linked; access email sent.',
+          })
+        } catch {
+          await database.patch(['peopleDevelopment', 'members', person.memberKey, 'authMigration'], {
+            status: 'email_failed',
+            method: migrationMethod || 'linked_existing',
+            invitationStatus: 'failed',
+            errorCode: 'PEOPLE_ACCESS_EMAIL_FAILED',
+            errorMessage: 'Firebase access is ready, but the access email could not be sent.',
+            updatedAt: now(),
+            updatedByUid: administratorUid,
+          })
+          results.push({
+            memberKey: person.memberKey,
+            status: 'email_failed',
+            message: 'Firebase access is ready, but the access email could not be sent.',
+          })
         }
       }
 
@@ -622,23 +704,36 @@ function recordValue(value: unknown): Record<string, unknown> | null {
 function peopleAccessRows(value: unknown) {
   return Object.entries(recordValue(value) || {}).map(([memberKey, raw]) => {
     const member = recordValue(raw) || {}
-    const identifier = typeof member.identifier === 'string' ? member.identifier.trim() : ''
     const fullName = typeof member.fullName === 'string' ? member.fullName.trim() : ''
     const sourceEmail = typeof member.email === 'string' ? member.email.trim().toLowerCase() : ''
     const authEmail = typeof member.authEmail === 'string' ? member.authEmail.trim().toLowerCase() : sourceEmail
     const firebaseUid = typeof member.firebaseUid === 'string' ? member.firebaseUid.trim() : ''
     const migration = recordValue(member.authMigration) || {}
+    const migrationStatus = typeof migration.status === 'string' ? migration.status : ''
+    const invitationStatus = typeof migration.invitationStatus === 'string' ? migration.invitationStatus : ''
+    const migrationMethod = migration.method === 'created' || migration.method === 'linked_existing'
+      ? migration.method
+      : ''
     let status = 'ready'
     let problem = ''
-    if (firebaseUid) status = 'registered'
+    if ((migrationStatus === 'complete' || invitationStatus === 'sent') && firebaseUid) status = 'complete'
     else if (!authEmail) { status = 'missing_email'; problem = 'A Firebase login email is missing.' }
     else if (!peopleAccessEmailSchema.safeParse(authEmail).success) { status = 'invalid_email'; problem = 'The Firebase login email is invalid.' }
-    else if (identifier.length < 6) { status = 'invalid_password'; problem = 'The personal identifier is shorter than Firebase’s six-character password minimum.' }
-    else if (migration.status === 'failed') {
-      status = 'failed'
-      problem = typeof migration.errorMessage === 'string' ? migration.errorMessage : 'The last registration attempt failed.'
+    else if (firebaseUid) {
+      if (migrationStatus === 'email_failed' || invitationStatus === 'failed') {
+        status = 'email_failed'
+        problem = typeof migration.errorMessage === 'string'
+          ? migration.errorMessage
+          : 'Firebase access is ready, but its email needs to be retried.'
+      } else {
+        status = 'firebase_ready'
+        problem = 'Firebase access is ready. The access email still needs to be sent.'
+      }
+    } else if (migrationStatus === 'firebase_failed' || migrationStatus === 'failed') {
+      status = 'firebase_failed'
+      problem = typeof migration.errorMessage === 'string' ? migration.errorMessage : 'The last Firebase registration attempt failed.'
     }
-    return { memberKey, fullName, sourceEmail, authEmail, identifier, firebaseUid, status, problem }
+    return { memberKey, fullName, sourceEmail, authEmail, firebaseUid, migrationMethod, status, problem }
   }).sort((a, b) => a.fullName.localeCompare(b.fullName))
 }
 

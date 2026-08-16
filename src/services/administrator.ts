@@ -13,7 +13,7 @@ export interface PeopleAccessPerson {
   sourceEmail: string;
   authEmail: string;
   firebaseUid: string;
-  status: 'ready' | 'registered' | 'missing_email' | 'invalid_email' | 'invalid_password' | 'failed';
+  status: 'ready' | 'complete' | 'firebase_ready' | 'email_failed' | 'firebase_failed' | 'missing_email' | 'invalid_email';
   problem: string;
 }
 

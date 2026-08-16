@@ -40,7 +40,7 @@ export function createFirebaseIdentityToolkitClient({
     )
   }
 
-  const call = async (method: 'lookup' | 'signUp', body: Record<string, unknown>) => {
+  const call = async (method: 'lookup' | 'signUp' | 'update', body: Record<string, unknown>) => {
     let response: Response
     try {
       response = await fetchImpl(`${IDENTITY_TOOLKIT_URL}:${method}?key=${encodeURIComponent(apiKey)}`, {
@@ -99,6 +99,21 @@ export function createFirebaseIdentityToolkitClient({
       })
       return normalizeUser(payload)
     },
+
+    async updatePassword(localId: string, password: string): Promise<void> {
+      const payload = await call('update', {
+        localId,
+        password,
+        returnSecureToken: false,
+      })
+      if (payload.localId !== localId) {
+        throw new FirebaseIdentityError(
+          'FIREBASE_IDENTITY_INVALID_RESPONSE',
+          'Firebase Authentication returned an invalid account response.',
+          502,
+        )
+      }
+    },
   }
 }
 
@@ -120,7 +135,7 @@ function identityErrorMessage(code: string) {
   const messages: Record<string, string> = {
     EMAIL_EXISTS: 'That email already belongs to another Firebase account.',
     INVALID_EMAIL: 'The email address is invalid.',
-    WEAK_PASSWORD: 'The personal identifier is not a valid Firebase password.',
+    WEAK_PASSWORD: 'Firebase rejected the generated temporary password.',
     OPERATION_NOT_ALLOWED: 'Firebase email and password authentication is disabled.',
     INSUFFICIENT_PERMISSION: 'The Firebase service account cannot manage Authentication users.',
     PERMISSION_DENIED: 'The Firebase service account cannot manage Authentication users.',
