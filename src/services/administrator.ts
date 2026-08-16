@@ -1,6 +1,7 @@
 import { auth } from '../firebase';
 import type { AdminAccount, AdminAuthority } from '../components/admin/admin.types';
 import type { ArchiveFile, ArchiveFolder } from '../components/admin/archives/archives.types';
+import type { AttendancePerson, AttendancePersonForm } from '../components/admin/attendance/attendance.types';
 
 const BACKEND_BASE_URL = (
   import.meta.env.VITE_BACKEND_BASE_URL ||
@@ -41,6 +42,31 @@ export async function suspendAdministrator(uid: string) {
   return requestAdmin<{ suspended: true }>(
     `/users/${encodeURIComponent(uid)}/suspend`,
     { method: 'PATCH' },
+  );
+}
+
+export async function getAttendancePeople() {
+  return requestAdmin<{ people: AttendancePerson[] }>('/attendance/people', { method: 'GET' });
+}
+
+export async function createAttendancePerson(person: AttendancePersonForm) {
+  return requestAdmin<{ person: AttendancePerson }>(
+    '/attendance/people',
+    { method: 'POST', body: JSON.stringify(person) },
+  );
+}
+
+export async function updateAttendancePerson(personId: string, person: AttendancePersonForm) {
+  return requestAdmin<{ person: AttendancePerson }>(
+    `/attendance/people/${encodeURIComponent(personId)}`,
+    { method: 'PATCH', body: JSON.stringify(person) },
+  );
+}
+
+export async function updateAttendanceDate(personId: string, dateKey: string, attended: boolean) {
+  return requestAdmin<{ person: AttendancePerson }>(
+    `/attendance/people/${encodeURIComponent(personId)}/attendance`,
+    { method: 'PATCH', body: JSON.stringify({ dateKey, attended }) },
   );
 }
 

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { onValue, push, ref, set, update } from 'firebase/database';
-import { database } from '../../../firebase';
 import { useI18n } from '../../../i18n';
+import {
+  createAttendancePerson,
+  getAttendancePeople,
+  updateAttendanceDate,
+  updateAttendancePerson,
+} from '../../../services/administrator';
 import { MAX_IMAGE_SIZE_BYTES } from '../admin.constants';
 import { fileToDataUrl } from '../admin.utils';
 import { getAttendanceText } from './attendance.copy';
@@ -17,8 +21,6 @@ import {
   EMPTY_PERSON_FORM,
   formatDateKey,
   getAttendanceDays,
-  normalizePerson,
-  toggleAttendanceDate,
 } from './attendance.utils';
 
 export default function useAttendanceManagement() {
@@ -153,36 +155,22 @@ export default function useAttendanceManagement() {
   } = analytics;
 
   useEffect(() => {
-    const peopleRef = ref(database, 'attendance/people/');
-
-    const unsubscribe = onValue(
-      peopleRef,
-      snapshot => {
-        const rawPeople = snapshot.val() as Record<string, unknown> | null;
-
-        const loadedPeople = Object.entries(rawPeople || {})
-          .map(([firebaseId, value]) => normalizePerson(firebaseId, value))
-          .filter(person => (
-            person.firstName ||
-            person.lastName ||
-            person.arabicFirstName ||
-            person.arabicLastName ||
-            person.email ||
-            person.phoneNumber
-          ));
-
+    let active = true;
+    void getAttendancePeople()
+      .then(({ people: loadedPeople }) => {
+        if (!active) return;
         setPeople(loadedPeople);
         setPeopleError('');
-        setIsLoadingPeople(false);
-      },
-      error => {
+      })
+      .catch(error => {
+        if (!active) return;
         console.error('Failed to load attendance people:', error);
-        setPeopleError(text.failedLoadPeople);
-        setIsLoadingPeople(false);
-      }
-    );
-
-    return () => unsubscribe();
+        setPeopleError(error instanceof Error ? error.message : text.failedLoadPeople);
+      })
+      .finally(() => {
+        if (active) setIsLoadingPeople(false);
+      });
+    return () => { active = false; };
   }, [text.failedLoadPeople]);
 
   const stopPersonCameraStream = useCallback(() => {
@@ -378,11 +366,6 @@ export default function useAttendanceManagement() {
     setIsSavingPerson(true);
 
     try {
-      const now = Date.now();
-      const existingPerson = selectedPersonId
-        ? people.find(person => person.firebaseId === selectedPersonId)
-        : null;
-
       const payload = {
         firstName: cleanedFirstName,
         lastName: cleanedLastName,
@@ -391,22 +374,21 @@ export default function useAttendanceManagement() {
         phoneNumber: cleanedPhoneNumber,
         email: cleanedEmail,
         photoBase64: personForm.photoBase64,
-        daysOfAttendance: existingPerson?.daysOfAttendance || '',
-        createdAt: existingPerson?.createdAt || now,
-        updatedAt: now,
       };
 
-      if (selectedPersonId) {
-        await set(ref(database, `attendance/people/${selectedPersonId}`), payload);
-      } else {
-        await push(ref(database, 'attendance/people/'), payload);
-      }
+      const { person: savedPerson } = selectedPersonId
+        ? await updateAttendancePerson(selectedPersonId, payload)
+        : await createAttendancePerson(payload);
+
+      setPeople(current => selectedPersonId
+        ? current.map(person => person.firebaseId === savedPerson.firebaseId ? savedPerson : person)
+        : [...current, savedPerson]);
 
       showNotice('success', text.savedSuccessfully);
       resetPersonForm();
     } catch (err) {
       console.error('Failed to save attendance person:', err);
-      showNotice('error', text.failedSavePerson);
+      showNotice('error', err instanceof Error ? err.message : text.failedSavePerson);
     } finally {
       setIsSavingPerson(false);
     }
@@ -441,19 +423,18 @@ export default function useAttendanceManagement() {
     setIsSavingAttendanceForId(person.firebaseId);
 
     try {
-      const now = Date.now();
       const wasAttended = hasPersonAttendedSelectedDate(person);
-      const updatedDaysOfAttendance = toggleAttendanceDate(person.daysOfAttendance, selectedAttendanceDate);
-
-      await update(ref(database, `attendance/people/${person.firebaseId}`), {
-        daysOfAttendance: updatedDaysOfAttendance,
-        updatedAt: now,
-      });
+      const { person: savedPerson } = await updateAttendanceDate(
+        person.firebaseId,
+        selectedAttendanceDate,
+        !wasAttended,
+      );
+      setPeople(current => current.map(item => item.firebaseId === savedPerson.firebaseId ? savedPerson : item));
 
       showNotice('success', wasAttended ? text.removedAttendance : text.savedAttendance);
     } catch (err) {
       console.error('Failed to save attendance:', err);
-      showNotice('error', text.failedSaveAttendance);
+      showNotice('error', err instanceof Error ? err.message : text.failedSaveAttendance);
     } finally {
       setIsSavingAttendanceForId('');
     }

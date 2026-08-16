@@ -74,6 +74,23 @@ const archiveFolderSchema = z.object({
   parentId: archiveFolderIdSchema.nullable().default(null),
 }).strict()
 const archiveFileIdSchema = archiveFolderIdSchema
+const attendancePersonIdSchema = uidSchema
+const attendancePersonSchema = z.object({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
+  arabicFirstName: z.string().trim().max(80).default(''),
+  arabicLastName: z.string().trim().max(80).default(''),
+  phoneNumber: z.string().trim().max(50).default(''),
+  email: z.union([z.literal(''), z.string().trim().toLowerCase().email().max(254)]).default(''),
+  photoBase64: z.string().max(4_100_000).refine(
+    value => value === '' || /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/i.test(value),
+    'The attendance photo must be a Base64 image data URL.',
+  ).default(''),
+}).strict()
+const attendanceUpdateSchema = z.object({
+  dateKey: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isSundayDateKey),
+  attended: z.boolean(),
+}).strict()
 const archiveUploadSchema = z.object({
   name: z.string().trim().min(1).max(255).refine(
     value => value !== '.' && value !== '..' && !hasInvalidArchiveNameCharacter(value),
@@ -179,6 +196,78 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         status: 'suspended', authority: EMPTY_ADMIN_AUTHORITY, updatedAt: now(),
       })
       return context.json({ success: true, data: { suspended: true } })
+    })
+  })
+
+  routes.get('/attendance/people', context => withAttendanceAuthority(
+    context,
+    dependencies,
+    async database => {
+      const value = await database.get<unknown>(['attendance', 'people'])
+      return context.json({ success: true, data: { people: attendancePeople(value) } })
+    },
+  ))
+
+  routes.post('/attendance/people', async context => {
+    const body = attendancePersonSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withAttendanceAuthority(context, dependencies, async database => {
+      const personId = generateId()
+      const timestamp = now()
+      const person = {
+        firebaseId: personId,
+        ...body.data,
+        daysOfAttendance: '',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      await database.patch(['attendance', 'people', personId], attendanceStoredPerson(person))
+      return context.json({ success: true, data: { person } }, 201)
+    })
+  })
+
+  routes.patch('/attendance/people/:personId', async context => {
+    const personId = attendancePersonIdSchema.safeParse(context.req.param('personId'))
+    const body = attendancePersonSchema.safeParse(await readJson(context))
+    if (!personId.success || !body.success) return validationError(context)
+    return withAttendanceAuthority(context, dependencies, async database => {
+      const existing = normalizeAttendancePerson(
+        personId.data,
+        await database.get<unknown>(['attendance', 'people', personId.data]),
+      )
+      if (!existing) return attendancePersonNotFound(context)
+      const person = { ...existing, ...body.data, updatedAt: now() }
+      await database.patch(['attendance', 'people', personId.data], {
+        ...body.data,
+        updatedAt: person.updatedAt,
+      })
+      return context.json({ success: true, data: { person } })
+    })
+  })
+
+  routes.patch('/attendance/people/:personId/attendance', async context => {
+    const personId = attendancePersonIdSchema.safeParse(context.req.param('personId'))
+    const body = attendanceUpdateSchema.safeParse(await readJson(context))
+    if (!personId.success || !body.success) return validationError(context)
+    return withAttendanceAuthority(context, dependencies, async database => {
+      const existing = normalizeAttendancePerson(
+        personId.data,
+        await database.get<unknown>(['attendance', 'people', personId.data]),
+      )
+      if (!existing) return attendancePersonNotFound(context)
+      const dates = new Set(attendanceDates(existing.daysOfAttendance))
+      if (body.data.attended) dates.add(body.data.dateKey)
+      else dates.delete(body.data.dateKey)
+      const person = {
+        ...existing,
+        daysOfAttendance: [...dates].sort().join(', '),
+        updatedAt: now(),
+      }
+      await database.patch(['attendance', 'people', personId.data], {
+        daysOfAttendance: person.daysOfAttendance,
+        updatedAt: person.updatedAt,
+      })
+      return context.json({ success: true, data: { person } })
     })
   })
 
@@ -630,6 +719,27 @@ async function withArchiveAuthority(
   })
 }
 
+async function withAttendanceAuthority(
+  context: Context<AppEnv>,
+  dependencies: AdminDependencies,
+  operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>,
+) {
+  return withDatabase(context, dependencies, async database => {
+    context.header('Cache-Control', 'private, no-store, max-age=0')
+    const { allowed } = await requireAdminAuthority(database, context.get('firebaseUser'), 'manageAttendance')
+    if (!allowed) {
+      return context.json({
+        success: false,
+        error: {
+          code: 'ADMIN_ATTENDANCE_ACCESS_REQUIRED',
+          message: 'Attendance administrator authority is required.',
+        },
+      }, 403)
+    }
+    return operation(database)
+  })
+}
+
 async function withPeopleAccessAuthority(
   context: Context<AppEnv>,
   dependencies: AdminDependencies,
@@ -702,6 +812,77 @@ function notFound(context: Context<AppEnv>) {
 
 function peopleAccessNotFound(context: Context<AppEnv>) {
   return context.json({ success: false, error: { code: 'PEOPLE_ACCESS_NOT_FOUND', message: 'The People Development member was not found.' } }, 404)
+}
+
+function attendancePersonNotFound(context: Context<AppEnv>) {
+  return context.json({
+    success: false,
+    error: { code: 'ATTENDANCE_PERSON_NOT_FOUND', message: 'The attendance person was not found.' },
+  }, 404)
+}
+
+type AttendancePersonRecord = {
+  firebaseId: string
+  firstName: string
+  lastName: string
+  arabicFirstName: string
+  arabicLastName: string
+  phoneNumber: string
+  email: string
+  photoBase64: string
+  daysOfAttendance: string
+  createdAt: number
+  updatedAt: number
+}
+
+function attendancePeople(value: unknown): AttendancePersonRecord[] {
+  return Object.entries(recordValue(value) || {})
+    .map(([personId, person]) => normalizeAttendancePerson(personId, person))
+    .filter((person): person is AttendancePersonRecord => person !== null)
+}
+
+function normalizeAttendancePerson(personId: string, value: unknown): AttendancePersonRecord | null {
+  const person = recordValue(value)
+  if (!person) return null
+  const normalized = {
+    firebaseId: personId,
+    firstName: stringValue(person.firstName),
+    lastName: stringValue(person.lastName),
+    arabicFirstName: stringValue(person.arabicFirstName),
+    arabicLastName: stringValue(person.arabicLastName),
+    phoneNumber: stringValue(person.phoneNumber),
+    email: stringValue(person.email).toLowerCase(),
+    photoBase64: stringValue(person.photoBase64),
+    daysOfAttendance: attendanceDates(stringValue(person.daysOfAttendance)).join(', '),
+    createdAt: finiteNumber(person.createdAt),
+    updatedAt: finiteNumber(person.updatedAt),
+  }
+  return normalized.firstName || normalized.lastName || normalized.email || normalized.phoneNumber
+    ? normalized
+    : null
+}
+
+function attendanceStoredPerson(person: AttendancePersonRecord) {
+  const { firebaseId: _firebaseId, ...stored } = person
+  void _firebaseId
+  return stored
+}
+
+function attendanceDates(value: string) {
+  return [...new Set(value.split(',').map(date => date.trim()).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort()
+}
+
+function isSundayDateKey(value: string) {
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value && date.getUTCDay() === 0
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 function peopleAccessConfigurationError(context: Context<AppEnv>, error: unknown) {

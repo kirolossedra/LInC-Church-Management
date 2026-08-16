@@ -743,4 +743,157 @@ describe('Administrator routes', () => {
       String(call[0]).endsWith('/administration/archives/files/file-1.json')
     )).toBe(true)
   })
+
+  it('denies attendance access without manageAttendance authority', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      email: administrator.email,
+      role: 'administrator',
+      status: 'active',
+      authority: { manageAttendance: false },
+    }))
+    const app = createTestApp(fetchMock)
+    const response = await app.request(
+      authenticatedRequest('/api/v1/admin/attendance/people'),
+      undefined,
+      bindings,
+    )
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({
+      error: { code: 'ADMIN_ATTENDANCE_ACCESS_REQUIRED' },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists attendance people for an authorized administrator', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageAttendance: true },
+        }))
+      }
+      if (url.endsWith('/attendance/people.json')) {
+        return Promise.resolve(jsonResponse({
+          'person-1': {
+            firstName: 'Ada',
+            lastName: 'Lovelace',
+            email: 'ADA@EXAMPLE.COM',
+            daysOfAttendance: '2026-05-10, 2026-05-10',
+            createdAt: 10,
+            updatedAt: 11,
+          },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(fetchMock)
+    const response = await app.request(
+      authenticatedRequest('/api/v1/admin/attendance/people'),
+      undefined,
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        people: [{
+          firebaseId: 'person-1',
+          firstName: 'Ada',
+          email: 'ada@example.com',
+          daysOfAttendance: '2026-05-10',
+        }],
+      },
+    })
+  })
+
+  it('creates attendance people through the service-account database client', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageAttendance: true },
+        }))
+      }
+      if (init?.method === 'PATCH' && url.endsWith('/attendance/people/person-1.json')) {
+        return Promise.resolve(jsonResponse({}))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(fetchMock, administrator, undefined, { generateId: () => 'person-1' })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/attendance/people',
+      'POST',
+      {
+        firstName: ' Ada ',
+        lastName: ' Lovelace ',
+        arabicFirstName: '',
+        arabicLastName: '',
+        phoneNumber: ' 555-0100 ',
+        email: 'ADA@EXAMPLE.COM',
+        photoBase64: '',
+      },
+    ), undefined, bindings)
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({
+      data: { person: { firebaseId: 'person-1', firstName: 'Ada', email: 'ada@example.com', daysOfAttendance: '' } },
+    })
+    const write = fetchMock.mock.calls.find(call => String(call[0]).endsWith('/attendance/people/person-1.json'))
+    expect(JSON.parse(String((write?.[1] as RequestInit).body))).toMatchObject({
+      firstName: 'Ada',
+      daysOfAttendance: '',
+      createdAt: 1_777_777_777_000,
+    })
+  })
+
+  it('adds and removes only valid Sunday attendance dates', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageAttendance: true },
+        }))
+      }
+      if (url.endsWith('/attendance/people/person-1.json') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(jsonResponse({
+          firstName: 'Ada', lastName: 'Lovelace', daysOfAttendance: '2026-05-10', createdAt: 10, updatedAt: 11,
+        }))
+      }
+      if (url.endsWith('/attendance/people/person-1.json') && init?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse({}))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(fetchMock)
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/attendance/people/person-1/attendance',
+      'PATCH',
+      { dateKey: '2026-05-17', attended: true },
+    ), undefined, bindings)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: { person: { daysOfAttendance: '2026-05-10, 2026-05-17' } },
+    })
+    const write = fetchMock.mock.calls.find(call =>
+      String(call[0]).endsWith('/attendance/people/person-1.json') &&
+      (call[1] as RequestInit | undefined)?.method === 'PATCH'
+    )
+    expect(JSON.parse(String((write?.[1] as RequestInit).body))).toMatchObject({
+      daysOfAttendance: '2026-05-10, 2026-05-17',
+    })
+
+    const invalidResponse = await app.request(authenticatedRequest(
+      '/api/v1/admin/attendance/people/person-1/attendance',
+      'PATCH',
+      { dateKey: '2026-05-18', attended: true },
+    ), undefined, bindings)
+    expect(invalidResponse.status).toBe(400)
+  })
 })
