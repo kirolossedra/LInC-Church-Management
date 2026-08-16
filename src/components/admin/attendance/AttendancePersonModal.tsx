@@ -1,138 +1,47 @@
-import { X } from 'lucide-react';
+import { UserRound, X } from 'lucide-react';
+
 import AttendancePersonEditor from './AttendancePersonEditor';
 import type { AttendanceController } from './useAttendanceManagement';
 
 export default function AttendancePersonModal({ controller }: { controller: AttendanceController }) {
   const { selectedPersonId, isSavingPerson, isPersonEditModalOpen, personEditModalRef, text, closePersonEditor } = controller;
 
+  if (!isPersonEditModalOpen) return null;
+
   return (
-    <>
-        {isPersonEditModalOpen && (
-          <div
-            className="attendance-person-edit-overlay"
-            role="presentation"
-            onMouseDown={event => {
-              if (
-                event.target === event.currentTarget &&
-                !isSavingPerson
-              ) {
-                closePersonEditor();
-              }
-            }}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 10000,
-              padding: '24px',
-              background: 'rgba(28, 12, 12, 0.62)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              display: 'grid',
-              placeItems: 'center',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              ref={personEditModalRef}
-              className="attendance-person-edit-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="attendance-person-edit-title"
-              tabIndex={-1}
-              onMouseDown={event => event.stopPropagation()}
-              style={{
-                width: 'min(920px, 100%)',
-                maxHeight: 'calc(100dvh - 48px)',
-                overflow: 'hidden',
-                borderRadius: '28px',
-                background: 'white',
-                boxShadow: '0 28px 90px rgba(0, 0, 0, 0.38)',
-                border: '1px solid rgba(255, 255, 255, 0.38)',
-                display: 'flex',
-                flexDirection: 'column',
-                outline: 'none',
-              }}
-            >
-              <div
-                className="attendance-person-edit-modal-header"
-                style={{
-                  flex: '0 0 auto',
-                  padding: '22px 24px',
-                  borderBottom: '1px solid #eee',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '16px',
-                  background: '#fffafa',
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <h2
-                    id="attendance-person-edit-title"
-                    style={{
-                      margin: '0 0 5px',
-                      color: '#8b1e1e',
-                      fontSize: '24px',
-                      fontWeight: 900,
-                    }}
-                  >
-                    {selectedPersonId ? text.editPerson : text.addPerson}
-                  </h2>
-                  <p
-                    style={{
-                      margin: 0,
-                      color: '#666',
-                      fontSize: '14px',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {selectedPersonId
-                      ? text.editPersonDescription
-                      : text.addPersonDescription}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={closePersonEditor}
-                  disabled={isSavingPerson}
-                  aria-label={text.close}
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    flex: '0 0 44px',
-                    border: 'none',
-                    borderRadius: '50%',
-                    background: '#f5f4f0',
-                    color: '#641414',
-                    cursor: isSavingPerson ? 'not-allowed' : 'pointer',
-                    opacity: isSavingPerson ? 0.55 : 1,
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <X size={22} />
-                </button>
-              </div>
-
-              <div
-                className="attendance-person-edit-modal-body"
-                style={{
-                  flex: '1 1 auto',
-                  minHeight: 0,
-                  overflowY: 'auto',
-                  overscrollBehavior: 'contain',
-                  padding: '24px',
-                }}
-              >
-                <AttendancePersonEditor controller={controller} />
-              </div>
+    <div
+      className="fixed inset-0 z-[10000] grid place-items-center overflow-hidden bg-[#160909]/70 p-2 backdrop-blur-md sm:p-6"
+      role="presentation"
+      onMouseDown={event => {
+        if (event.target === event.currentTarget && !isSavingPerson) closePersonEditor();
+      }}
+    >
+      <section
+        ref={personEditModalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="attendance-person-edit-title"
+        tabIndex={-1}
+        onMouseDown={event => event.stopPropagation()}
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[1.75rem] border border-white/20 bg-white shadow-2xl outline-none sm:max-h-[calc(100dvh-3rem)]"
+      >
+        <header className="flex shrink-0 items-center justify-between gap-4 bg-[#1d0e0e] px-4 py-4 text-white sm:px-6 sm:py-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10"><UserRound size={21} /></span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300">LINC One</p>
+              <h2 id="attendance-person-edit-title" className="truncate font-serif text-xl font-semibold sm:text-2xl">
+                {selectedPersonId ? text.editPerson : text.addPerson}
+              </h2>
+              <p className="mt-0.5 hidden text-xs text-white/60 sm:block">{selectedPersonId ? text.editPersonDescription : text.addPersonDescription}</p>
             </div>
           </div>
-        )}
-
-
-    </>
+          <button type="button" onClick={closePersonEditor} disabled={isSavingPerson} aria-label={text.close} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/15 bg-white/5 transition hover:bg-white/10 disabled:opacity-50"><X size={20} /></button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <AttendancePersonEditor controller={controller} />
+        </div>
+      </section>
+    </div>
   );
 }
-

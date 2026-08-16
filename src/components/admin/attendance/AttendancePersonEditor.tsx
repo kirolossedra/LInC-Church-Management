@@ -1,633 +1,115 @@
-import { Camera, ImagePlus, Loader2, RefreshCw, Save, Trash2, UserPlus, X } from 'lucide-react';
+import { Camera, ImagePlus, Loader2, RefreshCw, Save, Trash2, UserRound, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+
+import type { AttendancePersonForm } from './attendance.types';
 import type { AttendanceController } from './useAttendanceManagement';
 
 export default function AttendancePersonEditor({ controller }: { controller: AttendanceController }) {
-  const { selectedPersonId, personForm, setPersonForm, isSavingPerson, isReadingPersonPhoto, isPersonCameraOpen, isStartingPersonCamera, personCameraError, personPhotoInputRef, personCameraCaptureInputRef, personCameraVideoRef, text, closePersonEditor, handlePersonPhotoSelected, openPersonCamera, closePersonCamera, switchPersonCamera, capturePersonPhotoFromLiveCamera, removePersonPhoto, handleSavePerson } = controller;
+  const {
+    selectedPersonId,
+    personForm,
+    setPersonForm,
+    isSavingPerson,
+    isReadingPersonPhoto,
+    isPersonCameraOpen,
+    isStartingPersonCamera,
+    personCameraError,
+    personPhotoInputRef,
+    personCameraCaptureInputRef,
+    personCameraVideoRef,
+    text,
+    closePersonEditor,
+    handlePersonPhotoSelected,
+    openPersonCamera,
+    closePersonCamera,
+    switchPersonCamera,
+    capturePersonPhotoFromLiveCamera,
+    removePersonPhoto,
+    handleSavePerson,
+  } = controller;
+
+  const updateField = (field: keyof AttendancePersonForm, value: string) => {
+    setPersonForm(previous => ({ ...previous, [field]: value }));
+  };
 
   return (
-    <>
-(
-    <>
-            <div
-              className="attendance-photo-editor"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '22px',
-                marginBottom: '28px',
-                padding: '20px',
-                borderRadius: '22px',
-                border: '1px solid rgba(139, 30, 30, 0.12)',
-                background: '#fffafa',
-              }}
-            >
-              <div
-                className="attendance-photo-preview"
-                style={{
-                  width: '150px',
-                  height: '150px',
-                  flex: '0 0 150px',
-                  overflow: 'hidden',
-                  borderRadius: '24px',
-                  border: personForm.photoBase64
-                    ? '2px solid rgba(139, 30, 30, 0.22)'
-                    : '2px dashed rgba(139, 30, 30, 0.24)',
-                  background: personForm.photoBase64 ? '#f5f4f0' : '#f8eeee',
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
-                {personForm.photoBase64 ? (
-                  <img
-                    src={personForm.photoBase64}
-                    alt={text.personPhoto}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      display: 'block',
-                    }}
-                  />
-                ) : (
-                  <UserPlus size={42} color="#8b1e1e" />
-                )}
-              </div>
+    <div className="space-y-6">
+      <div className="grid gap-5 rounded-[1.6rem] border border-[#7a1b1b]/10 bg-[#faf6f0] p-4 sm:grid-cols-[160px_1fr] sm:p-5">
+        <div className="mx-auto h-40 w-40 overflow-hidden rounded-[1.5rem] border border-[#7a1b1b]/15 bg-white shadow-sm">
+          {personForm.photoBase64 ? (
+            <img src={personForm.photoBase64} alt={text.personPhoto} className="h-full w-full object-cover" />
+          ) : (
+            <span className="grid h-full w-full place-items-center text-[#8d211d]"><UserRound size={48} /></span>
+          )}
+        </div>
+        <div className="min-w-0 text-center sm:text-start">
+          <h3 className="font-serif text-2xl font-semibold text-[#641414]">{text.personPhoto}</h3>
+          <p className="mt-1 text-sm leading-6 text-stone-500">{text.photoDescription}</p>
+          <input ref={personPhotoInputRef} type="file" accept="image/*" onChange={handlePersonPhotoSelected} className="hidden" />
+          <input ref={personCameraCaptureInputRef} type="file" accept="image/*" capture="environment" onChange={handlePersonPhotoSelected} className="hidden" />
+          <div className="mt-4 flex flex-wrap justify-center gap-2 sm:justify-start">
+            <ActionButton onClick={() => personPhotoInputRef.current?.click()} disabled={isReadingPersonPhoto} icon={isReadingPersonPhoto ? <Loader2 className="animate-spin" /> : <ImagePlus />} label={isReadingPersonPhoto ? text.readingPhoto : personForm.photoBase64 ? text.replacePhoto : text.selectPhoto} primary />
+            <ActionButton onClick={() => personCameraCaptureInputRef.current?.click()} disabled={isReadingPersonPhoto} icon={<Camera />} label={text.takePhoto} />
+            <ActionButton onClick={openPersonCamera} disabled={isReadingPersonPhoto} icon={<Camera />} label={text.openLiveCamera} />
+            {personForm.photoBase64 && <ActionButton onClick={removePersonPhoto} disabled={isReadingPersonPhoto} icon={<Trash2 />} label={text.removePhoto} danger />}
+          </div>
+          {personCameraError && !isPersonCameraOpen && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{personCameraError}</p>}
+        </div>
+      </div>
 
-              <div style={{ flex: 1 }}>
-                <h3
-                  style={{
-                    margin: '0 0 8px',
-                    color: '#641414',
-                    fontSize: '18px',
-                    fontWeight: 800,
-                  }}
-                >
-                  {text.personPhoto}
-                </h3>
+      {isPersonCameraOpen && (
+        <div className="overflow-hidden rounded-[1.6rem] bg-[#171010] p-3 text-white sm:p-4">
+          <div className="relative grid min-h-56 place-items-center overflow-hidden rounded-2xl bg-black">
+            <video ref={personCameraVideoRef} autoPlay muted playsInline className="max-h-[55vh] w-full object-contain" />
+            {isStartingPersonCamera && <span className="absolute inset-0 grid place-items-center bg-black/60"><Loader2 size={34} className="animate-spin" /></span>}
+          </div>
+          {personCameraError && <p className="mt-3 rounded-xl bg-red-500/15 px-3 py-2 text-xs font-bold text-red-200">{personCameraError}</p>}
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <button type="button" onClick={capturePersonPhotoFromLiveCamera} disabled={isStartingPersonCamera || Boolean(personCameraError)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-extrabold text-[#641414] disabled:opacity-50"><Camera size={17} />{text.capturePhoto}</button>
+            <button type="button" onClick={switchPersonCamera} disabled={isStartingPersonCamera} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 px-4 text-sm font-bold disabled:opacity-50"><RefreshCw size={17} />{text.switchCamera}</button>
+            <button type="button" onClick={closePersonCamera} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 px-4 text-sm font-bold"><X size={17} />{text.closeCamera}</button>
+          </div>
+        </div>
+      )}
 
-                <p
-                  style={{
-                    margin: '0 0 14px',
-                    color: '#666',
-                    fontSize: '14px',
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {text.photoDescription}
-                </p>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <FieldGroup title={text.englishNameSection}>
+          <Field label={text.firstName} value={personForm.firstName} onChange={value => updateField('firstName', value)} required />
+          <Field label={text.lastName} value={personForm.lastName} onChange={value => updateField('lastName', value)} required />
+        </FieldGroup>
+        <FieldGroup title={text.arabicNameSection} rtl>
+          <Field label={text.arabicFirstName} value={personForm.arabicFirstName} onChange={value => updateField('arabicFirstName', value)} rtl />
+          <Field label={text.arabicLastName} value={personForm.arabicLastName} onChange={value => updateField('arabicLastName', value)} rtl />
+        </FieldGroup>
+      </div>
 
-                <input
-                  ref={personPhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePersonPhotoSelected}
-                  style={{ display: 'none' }}
-                />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={text.phoneNumber} value={personForm.phoneNumber} onChange={value => updateField('phoneNumber', value)} type="tel" />
+        <Field label={text.email} value={personForm.email} onChange={value => updateField('email', value)} type="email" />
+      </div>
 
-                <input
-                  ref={personCameraCaptureInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handlePersonPhotoSelected}
-                  style={{ display: 'none' }}
-                />
+      <p className="rounded-2xl bg-[#f5ece4] px-4 py-3 text-xs font-semibold leading-5 text-[#641414]">{text.daysOfAttendance}: {text.daysStoredOnly}</p>
 
-                <div
-                  className="attendance-camera-actions"
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '10px',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => personPhotoInputRef.current?.click()}
-                    disabled={isReadingPersonPhoto}
-                    style={{
-                      minHeight: '44px',
-                      border: 'none',
-                      borderRadius: '999px',
-                      background: '#8b1e1e',
-                      color: 'white',
-                      padding: '0 18px',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
-                      opacity: isReadingPersonPhoto ? 0.65 : 1,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    {isReadingPersonPhoto ? (
-                      <Loader2 size={17} className="animate-spin" />
-                    ) : (
-                      <ImagePlus size={17} />
-                    )}
-                    {isReadingPersonPhoto
-                      ? text.readingPhoto
-                      : personForm.photoBase64
-                        ? text.replacePhoto
-                        : text.selectPhoto}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => personCameraCaptureInputRef.current?.click()}
-                    disabled={isReadingPersonPhoto}
-                    style={{
-                      minHeight: '44px',
-                      border: '2px solid #8b1e1e',
-                      borderRadius: '999px',
-                      background: 'white',
-                      color: '#8b1e1e',
-                      padding: '0 18px',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <Camera size={17} />
-                    {text.takePhoto}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={openPersonCamera}
-                    disabled={isReadingPersonPhoto}
-                    style={{
-                      minHeight: '44px',
-                      border: '1px solid rgba(139, 30, 30, 0.20)',
-                      borderRadius: '999px',
-                      background: '#fff7f7',
-                      color: '#641414',
-                      padding: '0 18px',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <Camera size={17} />
-                    {text.openLiveCamera}
-                  </button>
-
-                  {personForm.photoBase64 && (
-                    <button
-                      type="button"
-                      onClick={removePersonPhoto}
-                      disabled={isReadingPersonPhoto}
-                      style={{
-                        minHeight: '44px',
-                        border: '1px solid #fecaca',
-                        borderRadius: '999px',
-                        background: '#fff1f2',
-                        color: '#b91c1c',
-                        padding: '0 18px',
-                        fontSize: '14px',
-                        fontWeight: 800,
-                        cursor: isReadingPersonPhoto ? 'not-allowed' : 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                      }}
-                    >
-                      <Trash2 size={17} />
-                      {text.removePhoto}
-                    </button>
-                  )}
-                </div>
-
-                {personCameraError && !isPersonCameraOpen && (
-                  <div
-                    style={{
-                      marginTop: '12px',
-                      padding: '12px 14px',
-                      borderRadius: '14px',
-                      background: '#fff1f2',
-                      color: '#b91c1c',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {personCameraError}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {isPersonCameraOpen && (
-              <div
-                className="attendance-live-camera"
-                style={{
-                  marginBottom: '28px',
-                  padding: '18px',
-                  borderRadius: '22px',
-                  background: '#181818',
-                  color: 'white',
-                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.22)',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'relative',
-                    overflow: 'hidden',
-                    borderRadius: '18px',
-                    background: '#050505',
-                    minHeight: '220px',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <video
-                    ref={personCameraVideoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    style={{
-                      width: '100%',
-                      maxHeight: '58vh',
-                      objectFit: 'contain',
-                      display: 'block',
-                    }}
-                  />
-
-                  {isStartingPersonCamera && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'grid',
-                        placeItems: 'center',
-                        background: 'rgba(0, 0, 0, 0.56)',
-                      }}
-                    >
-                      <Loader2 size={34} className="animate-spin" />
-                    </div>
-                  )}
-                </div>
-
-                {personCameraError && (
-                  <div
-                    style={{
-                      marginTop: '12px',
-                      padding: '12px 14px',
-                      borderRadius: '14px',
-                      background: 'rgba(185, 28, 28, 0.22)',
-                      color: '#fecaca',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {personCameraError}
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    marginTop: '14px',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={capturePersonPhotoFromLiveCamera}
-                    disabled={isStartingPersonCamera || !!personCameraError}
-                    style={{
-                      minHeight: '46px',
-                      border: 'none',
-                      borderRadius: '999px',
-                      background: 'white',
-                      color: '#641414',
-                      padding: '0 20px',
-                      fontSize: '14px',
-                      fontWeight: 900,
-                      cursor:
-                        isStartingPersonCamera || !!personCameraError
-                          ? 'not-allowed'
-                          : 'pointer',
-                      opacity:
-                        isStartingPersonCamera || !!personCameraError ? 0.55 : 1,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <Camera size={18} />
-                    {text.capturePhoto}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={switchPersonCamera}
-                    disabled={isStartingPersonCamera}
-                    style={{
-                      minHeight: '46px',
-                      border: '1px solid rgba(255, 255, 255, 0.38)',
-                      borderRadius: '999px',
-                      background: 'transparent',
-                      color: 'white',
-                      padding: '0 18px',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      cursor: isStartingPersonCamera ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <RefreshCw size={17} />
-                    {text.switchCamera}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={closePersonCamera}
-                    style={{
-                      minHeight: '46px',
-                      border: '1px solid rgba(255, 255, 255, 0.38)',
-                      borderRadius: '999px',
-                      background: 'transparent',
-                      color: 'white',
-                      padding: '0 18px',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                    <X size={17} />
-                    {text.closeCamera}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <h3
-              style={{
-                margin: '0 0 16px',
-                color: '#641414',
-                fontSize: '18px',
-                fontWeight: 800,
-              }}
-            >
-              {text.englishNameSection}
-            </h3>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
-                gap: '16px',
-                marginBottom: '24px',
-              }}
-            >
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
-                  {text.firstName}
-                </label>
-                <input
-                  type="text"
-                  value={personForm.firstName}
-                  onChange={e => setPersonForm(prev => ({ ...prev, firstName: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '14px 16px',
-                    borderRadius: '16px',
-                    border: '1px solid #e5e0da',
-                    outline: 'none',
-                    fontSize: '16px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
-                  {text.lastName}
-                </label>
-                <input
-                  type="text"
-                  value={personForm.lastName}
-                  onChange={e => setPersonForm(prev => ({ ...prev, lastName: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '14px 16px',
-                    borderRadius: '16px',
-                    border: '1px solid #e5e0da',
-                    outline: 'none',
-                    fontSize: '16px',
-                  }}
-                />
-              </div>
-            </div>
-
-            <h3
-              style={{
-                margin: '0 0 16px',
-                color: '#641414',
-                fontSize: '18px',
-                fontWeight: 800,
-              }}
-            >
-              {text.arabicNameSection}
-            </h3>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
-                gap: '16px',
-                marginBottom: '24px',
-              }}
-            >
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
-                  {text.arabicFirstName}
-                </label>
-                <input
-                  type="text"
-                  value={personForm.arabicFirstName}
-                  onChange={e => setPersonForm(prev => ({ ...prev, arabicFirstName: e.target.value }))}
-                  dir="rtl"
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '14px 16px',
-                    borderRadius: '16px',
-                    border: '1px solid #e5e0da',
-                    outline: 'none',
-                    fontSize: '16px',
-                    textAlign: 'right',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
-                  {text.arabicLastName}
-                </label>
-                <input
-                  type="text"
-                  value={personForm.arabicLastName}
-                  onChange={e => setPersonForm(prev => ({ ...prev, arabicLastName: e.target.value }))}
-                  dir="rtl"
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '14px 16px',
-                    borderRadius: '16px',
-                    border: '1px solid #e5e0da',
-                    outline: 'none',
-                    fontSize: '16px',
-                    textAlign: 'right',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
-                gap: '16px',
-              }}
-            >
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
-                  {text.phoneNumber}
-                </label>
-                <input
-                  type="tel"
-                  value={personForm.phoneNumber}
-                  onChange={e => setPersonForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '14px 16px',
-                    borderRadius: '16px',
-                    border: '1px solid #e5e0da',
-                    outline: 'none',
-                    fontSize: '16px',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#777', fontWeight: 800, fontSize: '13px' }}>
-                  {text.email}
-                </label>
-                <input
-                  type="email"
-                  value={personForm.email}
-                  onChange={e => setPersonForm(prev => ({ ...prev, email: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '14px 16px',
-                    borderRadius: '16px',
-                    border: '1px solid #e5e0da',
-                    outline: 'none',
-                    fontSize: '16px',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: '16px',
-                padding: '14px 16px',
-                borderRadius: '16px',
-                background: '#f8eeee',
-                color: '#641414',
-                fontWeight: 700,
-                fontSize: '14px',
-              }}
-            >
-              {text.daysOfAttendance}: {text.daysStoredOnly}
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                marginTop: '22px',
-              }}
-            >
-              <button
-                type="button"
-                onClick={handleSavePerson}
-                disabled={isSavingPerson}
-                style={{
-                  width: '100%',
-                  minHeight: '54px',
-                  border: 'none',
-                  borderRadius: '999px',
-                  background: '#8b1e1e',
-                  color: 'white',
-                  fontSize: '17px',
-                  fontWeight: 800,
-                  cursor: isSavingPerson ? 'not-allowed' : 'pointer',
-                  opacity: isSavingPerson ? 0.65 : 1,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  boxShadow: '0 8px 24px rgba(139, 30, 30, 0.22)',
-                }}
-              >
-                {isSavingPerson ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                {isSavingPerson
-                  ? text.saving
-                  : selectedPersonId
-                    ? text.updatePerson
-                    : text.savePerson}
-              </button>
-
-              <button
-                type="button"
-                onClick={closePersonEditor}
-                style={{
-                  width: '100%',
-                  minHeight: '50px',
-                  border: '2px solid #8b1e1e',
-                  borderRadius: '999px',
-                  background: 'white',
-                  color: '#8b1e1e',
-                  fontSize: '16px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
-              >
-                {text.close}
-              </button>
-            </div>
-    </>
-  )
-    </>
+      <div className="flex flex-col-reverse gap-2 border-t border-stone-100 pt-5 sm:flex-row sm:justify-end">
+        <button type="button" onClick={closePersonEditor} disabled={isSavingPerson} className="min-h-12 rounded-xl border border-[#7a1b1b]/15 px-5 text-sm font-extrabold text-[#7a1b1b] disabled:opacity-50">{text.close}</button>
+        <button type="button" onClick={() => void handleSavePerson()} disabled={isSavingPerson} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#831f1c] px-6 text-sm font-extrabold text-white shadow-lg disabled:opacity-50">
+          {isSavingPerson ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+          {isSavingPerson ? text.saving : selectedPersonId ? text.updatePerson : text.savePerson}
+        </button>
+      </div>
+    </div>
   );
+}
+
+function FieldGroup({ title, children, rtl = false }: { title: string; children: ReactNode; rtl?: boolean }) {
+  return <fieldset dir={rtl ? 'rtl' : undefined} className="grid gap-3 rounded-2xl border border-stone-100 bg-white p-4"><legend className="px-2 font-serif text-lg font-semibold text-[#641414]">{title}</legend>{children}</fieldset>;
+}
+
+function Field({ label, value, onChange, type = 'text', rtl = false, required = false }: { label: string; value: string; onChange: (value: string) => void; type?: string; rtl?: boolean; required?: boolean }) {
+  return <label className="block"><span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-stone-500">{label}{required ? ' *' : ''}</span><input dir={rtl ? 'rtl' : undefined} type={type} value={value} onChange={event => onChange(event.target.value)} className="min-h-12 w-full rounded-xl border border-stone-200 bg-[#fcfaf7] px-3 text-sm outline-none transition focus:border-[#7a1b1b]/40 focus:ring-4 focus:ring-[#7a1b1b]/5" /></label>;
+}
+
+function ActionButton({ onClick, disabled, icon, label, primary = false, danger = false }: { onClick: () => void; disabled: boolean; icon: ReactNode; label: string; primary?: boolean; danger?: boolean }) {
+  const color = danger ? 'border-red-200 bg-red-50 text-red-700' : primary ? 'border-[#831f1c] bg-[#831f1c] text-white' : 'border-[#7a1b1b]/15 bg-white text-[#7a1b1b]';
+  return <button type="button" onClick={onClick} disabled={disabled} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-extrabold disabled:opacity-50 ${color}`}>{icon && <span className="[&>svg]:h-4 [&>svg]:w-4">{icon}</span>}{label}</button>;
 }

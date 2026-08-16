@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { onValue, push, ref, set } from 'firebase/database';
+import { onValue, push, ref, set, update } from 'firebase/database';
 import { database } from '../../../firebase';
 import { useI18n } from '../../../i18n';
 import { MAX_IMAGE_SIZE_BYTES } from '../admin.constants';
@@ -14,17 +14,19 @@ import type {
 } from './attendance.types';
 import {
   buildCalendarDays,
-  buildDaysOfAttendance,
   EMPTY_PERSON_FORM,
+  formatDateKey,
   getAttendanceDays,
   normalizePerson,
+  toggleAttendanceDate,
 } from './attendance.utils';
 
 export default function useAttendanceManagement() {
-const { dir, locale } = useI18n();
+  const { dir, locale } = useI18n();
   const isArabic = locale === 'ar';
 
-  const [activePanel, setActivePanel] = useState<'menu' | 'people' | 'attendance' | 'analysis'>('menu');
+  const [activePanel, setActivePanel] = useState<'people' | 'attendance' | 'analysis'>('attendance');
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
 
   const [people, setPeople] = useState<AttendancePerson[]>([]);
   const [isLoadingPeople, setIsLoadingPeople] = useState(true);
@@ -48,8 +50,8 @@ const { dir, locale } = useI18n();
   const personEditModalRef = useRef<HTMLDivElement>(null);
   const isSavingPersonRef = useRef(false);
 
-  const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date());
-  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState('');
+  const [calendarMonthDate, setCalendarMonthDate] = useState(latestSunday);
+  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(() => formatDateKey(latestSunday()));
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
   const [isSavingAttendanceForId, setIsSavingAttendanceForId] = useState('');
   const [analysisSearchTerm, setAnalysisSearchTerm] = useState('');
@@ -67,6 +69,16 @@ const { dir, locale } = useI18n();
   });
 
   const calendarDays = useMemo(() => buildCalendarDays(calendarMonthDate), [calendarMonthDate]);
+
+  const showNotice = useCallback((tone: 'success' | 'error', message: string) => {
+    setNotice({ tone, message });
+  }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const sortedPeople = useMemo(() => {
     return [...people].sort((a, b) => {
@@ -239,12 +251,12 @@ const { dir, locale } = useI18n();
     if (!selectedFile) return;
 
     if (!selectedFile.type.startsWith('image/')) {
-      alert(text.invalidPhotoType);
+      showNotice('error', text.invalidPhotoType);
       return;
     }
 
     if (selectedFile.size > MAX_IMAGE_SIZE_BYTES) {
-      alert(text.photoTooLarge);
+      showNotice('error', text.photoTooLarge);
       return;
     }
 
@@ -259,7 +271,7 @@ const { dir, locale } = useI18n();
       }));
     } catch (error) {
       console.error('Failed to read attendance person photo:', error);
-      alert(text.failedReadPhoto);
+      showNotice('error', text.failedReadPhoto);
     } finally {
       setIsReadingPersonPhoto(false);
     }
@@ -359,7 +371,7 @@ const { dir, locale } = useI18n();
     const cleanedEmail = personForm.email.trim();
 
     if (!cleanedFirstName || !cleanedLastName) {
-      alert(text.missingRequired);
+      showNotice('error', text.missingRequired);
       return;
     }
 
@@ -390,11 +402,11 @@ const { dir, locale } = useI18n();
         await push(ref(database, 'attendance/people/'), payload);
       }
 
-      alert(text.savedSuccessfully);
+      showNotice('success', text.savedSuccessfully);
       resetPersonForm();
     } catch (err) {
       console.error('Failed to save attendance person:', err);
-      alert(text.failedSavePerson);
+      showNotice('error', text.failedSavePerson);
     } finally {
       setIsSavingPerson(false);
     }
@@ -420,37 +432,28 @@ const { dir, locale } = useI18n();
     return getAttendanceDays(person.daysOfAttendance).includes(selectedAttendanceDate);
   };
 
-  const handleMarkAttendance = async (person: AttendancePerson) => {
+  const handleToggleAttendance = async (person: AttendancePerson) => {
     if (!selectedAttendanceDate) {
-      alert(text.selectSundayBeforeMarking);
+      showNotice('error', text.selectSundayBeforeMarking);
       return;
     }
-
-    if (hasPersonAttendedSelectedDate(person)) return;
 
     setIsSavingAttendanceForId(person.firebaseId);
 
     try {
       const now = Date.now();
-      const updatedDaysOfAttendance = buildDaysOfAttendance(person.daysOfAttendance, selectedAttendanceDate);
+      const wasAttended = hasPersonAttendedSelectedDate(person);
+      const updatedDaysOfAttendance = toggleAttendanceDate(person.daysOfAttendance, selectedAttendanceDate);
 
-      await set(ref(database, `attendance/people/${person.firebaseId}`), {
-        firstName: person.firstName,
-        lastName: person.lastName,
-        arabicFirstName: person.arabicFirstName,
-        arabicLastName: person.arabicLastName,
-        phoneNumber: person.phoneNumber,
-        email: person.email,
-        photoBase64: person.photoBase64,
+      await update(ref(database, `attendance/people/${person.firebaseId}`), {
         daysOfAttendance: updatedDaysOfAttendance,
-        createdAt: person.createdAt || now,
         updatedAt: now,
       });
 
-      alert(text.savedAttendance);
+      showNotice('success', wasAttended ? text.removedAttendance : text.savedAttendance);
     } catch (err) {
       console.error('Failed to save attendance:', err);
-      alert(text.failedSaveAttendance);
+      showNotice('error', text.failedSaveAttendance);
     } finally {
       setIsSavingAttendanceForId('');
     }
@@ -565,6 +568,8 @@ const { dir, locale } = useI18n();
     isArabic,
     activePanel,
     setActivePanel,
+    notice,
+    dismissNotice: () => setNotice(null),
     people,
     isLoadingPeople,
     peopleError,
@@ -629,8 +634,15 @@ const { dir, locale } = useI18n();
     moveCalendarMonth,
     handleSelectAttendanceDate,
     hasPersonAttendedSelectedDate,
-    handleMarkAttendance,
+    handleToggleAttendance,
   };
 }
 
 export type AttendanceController = ReturnType<typeof useAttendanceManagement>;
+
+function latestSunday() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - date.getDay());
+  return date;
+}

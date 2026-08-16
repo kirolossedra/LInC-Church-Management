@@ -1,383 +1,93 @@
-import { BarChart3, Loader2, Search } from 'lucide-react';
+import { BarChart3, CalendarRange, Loader2, Search, TrendingUp, UserRoundSearch, UsersRound } from 'lucide-react';
+import type { ReactNode } from 'react';
+
 import AttendanceAnalysisCharts from './AttendanceAnalysisCharts';
 import type { AttendanceController } from './useAttendanceManagement';
 
 export default function AttendanceAnalysisPanel({ controller }: { controller: AttendanceController }) {
-  const { dir, activePanel, setActivePanel, people, isLoadingPeople, peopleError, analysisSearchTerm, setAnalysisSearchTerm, setSelectedAnalysisPersonId, text, analysisStartDateKey, sundayDateKeysSinceStart, filteredPersonAttendanceAnalysis, averageAttendancePerSunday } = controller;
+  const {
+    activePanel,
+    people,
+    isLoadingPeople,
+    peopleError,
+    analysisSearchTerm,
+    setAnalysisSearchTerm,
+    setSelectedAnalysisPersonId,
+    text,
+    analysisStartDateKey,
+    sundayDateKeysSinceStart,
+    filteredPersonAttendanceAnalysis,
+    averageAttendancePerSunday,
+  } = controller;
+
+  if (activePanel !== 'analysis') return null;
 
   return (
-    <>
-        {activePanel === 'analysis' && (
-          <section
-            style={{
-              marginTop: '28px',
-              background: 'white',
-              borderRadius: '28px',
-              padding: '32px',
-              boxShadow: '0 12px 35px rgba(139, 30, 30, 0.10)',
-              border: '1px solid rgba(139, 30, 30, 0.10)',
-            }}
-          >
-            <div
-              className="attendance-section-header"
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: '16px',
-                marginBottom: '28px',
-              }}
-            >
-              <div>
-                <h2
-                  style={{
-                    margin: '0 0 8px',
-                    color: '#8b1e1e',
-                    fontSize: '26px',
-                    fontWeight: 800,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                  }}
-                >
-                  <BarChart3 size={28} />
-                  {text.analysisTitle}
-                </h2>
-                <p
-                  style={{
-                    margin: 0,
-                    color: '#666',
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {text.analysisDescription}
-                </p>
-              </div>
+    <section className="space-y-6">
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#9f6810]">{text.distributionAnalytics}</p>
+        <h3 className="mt-1 font-serif text-3xl font-semibold text-[#641414] sm:text-4xl">{text.analysisTitle}</h3>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{text.analysisDescription}</p>
+      </div>
 
-              <button
-                type="button"
-                onClick={() => setActivePanel('menu')}
-                style={{
-                  border: 'none',
-                  borderRadius: '999px',
-                  background: '#f5f4f0',
-                  color: '#641414',
-                  padding: '12px 18px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {text.backToMenu}
-              </button>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <InsightCard icon={<CalendarRange />} label={text.analysisStartDate} value={analysisStartDateKey} />
+        <InsightCard icon={<BarChart3 />} label={text.totalSundays} value={sundayDateKeysSinceStart.length} />
+        <InsightCard icon={<UsersRound />} label={text.totalPeople} value={people.length} />
+        <InsightCard icon={<TrendingUp />} label={text.averageAttendance} value={averageAttendancePerSunday} accent />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.28fr)]">
+        <div className="rounded-[1.8rem] border border-[#7a1b1b]/10 bg-white p-4 shadow-[0_12px_35px_rgba(61,24,17,0.07)] sm:p-5">
+          <div className="mb-4">
+            <h4 className="font-serif text-2xl font-semibold text-[#641414]">{text.personalAnalysis}</h4>
+            <p className="mt-1 text-xs leading-5 text-stone-500">{text.viewFullStats}</p>
+          </div>
+          <label className="relative mb-3 block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8d211d] rtl:left-auto rtl:right-3" size={17} />
+            <input type="search" value={analysisSearchTerm} onChange={event => setAnalysisSearchTerm(event.target.value)} placeholder={text.analysisSearchPlaceholder} className="min-h-12 w-full rounded-xl border border-[#7a1b1b]/10 bg-[#faf7f2] px-10 text-sm outline-none focus:border-[#7a1b1b]/35" />
+          </label>
+
+          {isLoadingPeople && <CompactState icon={<Loader2 className="animate-spin" />} message={text.loadingPeople} />}
+          {peopleError && <CompactState tone="error" message={peopleError} />}
+          {!isLoadingPeople && !peopleError && filteredPersonAttendanceAnalysis.length === 0 && <CompactState icon={<UserRoundSearch />} message={people.length ? text.noAnalysisResults : text.noPeople} />}
+
+          {!isLoadingPeople && !peopleError && filteredPersonAttendanceAnalysis.length > 0 && (
+            <div className="max-h-[34rem] space-y-2 overflow-y-auto pe-1">
+              {filteredPersonAttendanceAnalysis.map(item => (
+                <button key={item.person.firebaseId} type="button" onClick={() => setSelectedAnalysisPersonId(item.person.firebaseId)} className="group flex w-full items-center gap-3 rounded-2xl border border-stone-100 p-3 text-start transition hover:border-[#7a1b1b]/20 hover:bg-[#faf4ed]">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#f3e6dd] font-serif font-bold text-[#7a1b1b]">{`${item.person.firstName[0] || ''}${item.person.lastName[0] || ''}`.toUpperCase() || '—'}</span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm text-[#541616]">{item.person.firstName} {item.person.lastName}</strong>
+                    <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide text-stone-400">{item.attendanceCount} {text.attendedLabel}</span>
+                  </span>
+                  <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full bg-stone-100 text-xs font-black text-[#7a1b1b]">
+                    {item.attendanceRate}%
+                  </span>
+                </button>
+              ))}
             </div>
+          )}
+        </div>
 
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))',
-                gap: '14px',
-                marginBottom: '26px',
-              }}
-            >
-              <div
-                style={{
-                  background: '#f8eeee',
-                  borderRadius: '20px',
-                  padding: '18px',
-                  border: '1px solid rgba(139, 30, 30, 0.10)',
-                }}
-              >
-                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                  {text.analysisStartDate}
-                </div>
-                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
-                  {analysisStartDateKey}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: '#f8eeee',
-                  borderRadius: '20px',
-                  padding: '18px',
-                  border: '1px solid rgba(139, 30, 30, 0.10)',
-                }}
-              >
-                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                  {text.totalSundays}
-                </div>
-                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
-                  {sundayDateKeysSinceStart.length}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: '#f8eeee',
-                  borderRadius: '20px',
-                  padding: '18px',
-                  border: '1px solid rgba(139, 30, 30, 0.10)',
-                }}
-              >
-                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                  {text.totalPeople}
-                </div>
-                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
-                  {people.length}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: '#f8eeee',
-                  borderRadius: '20px',
-                  padding: '18px',
-                  border: '1px solid rgba(139, 30, 30, 0.10)',
-                }}
-              >
-                <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                  {text.averageAttendance}
-                </div>
-                <div style={{ color: '#8b1e1e', fontSize: '22px', fontWeight: 900 }}>
-                  {averageAttendancePerSunday}
-                </div>
-              </div>
-            </div>
-
-            <div
-              style={{
-                position: 'relative',
-                marginBottom: '24px',
-              }}
-            >
-              <Search
-                size={18}
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  left: dir === 'rtl' ? 'auto' : '16px',
-                  right: dir === 'rtl' ? '16px' : 'auto',
-                  color: '#8b1e1e',
-                }}
-              />
-              <input
-                type="text"
-                value={analysisSearchTerm}
-                onChange={e => setAnalysisSearchTerm(e.target.value)}
-                placeholder={text.analysisSearchPlaceholder}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  padding: dir === 'rtl' ? '14px 46px 14px 16px' : '14px 16px 14px 46px',
-                  borderRadius: '999px',
-                  border: '1px solid #e5e0da',
-                  outline: 'none',
-                  fontSize: '15px',
-                }}
-              />
-            </div>
-
-            {isLoadingPeople && (
-              <div
-                style={{
-                  padding: '18px',
-                  borderRadius: '18px',
-                  background: '#f5f4f0',
-                  color: '#666',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-              >
-                <Loader2 size={18} className="animate-spin" />
-                {text.loadingPeople}
-              </div>
-            )}
-
-            {peopleError && (
-              <div
-                style={{
-                  padding: '18px',
-                  borderRadius: '18px',
-                  background: '#fee2e2',
-                  color: '#991b1b',
-                  fontWeight: 800,
-                }}
-              >
-                {peopleError}
-              </div>
-            )}
-
-            {!isLoadingPeople && !peopleError && people.length === 0 && (
-              <div
-                style={{
-                  padding: '20px',
-                  borderRadius: '18px',
-                  background: '#f5f4f0',
-                  color: '#666',
-                  textAlign: 'center',
-                  marginBottom: '24px',
-                }}
-              >
-                {text.noPeople}
-              </div>
-            )}
-
-            {!isLoadingPeople && !peopleError && people.length > 0 && filteredPersonAttendanceAnalysis.length === 0 && (
-              <div
-                style={{
-                  padding: '20px',
-                  borderRadius: '18px',
-                  background: '#f5f4f0',
-                  color: '#666',
-                  textAlign: 'center',
-                  marginBottom: '24px',
-                }}
-              >
-                {text.noAnalysisResults}
-              </div>
-            )}
-
-            {!isLoadingPeople && !peopleError && filteredPersonAttendanceAnalysis.length > 0 && (
-              <div
-                style={{
-                  display: 'grid',
-                  gap: '12px',
-                  marginBottom: '30px',
-                }}
-              >
-                {filteredPersonAttendanceAnalysis.map(item => (
-                  <button
-                    key={item.person.firebaseId}
-                    type="button"
-                    className="attendance-person-grid-row"
-                    onClick={() => setSelectedAnalysisPersonId(item.person.firebaseId)}
-                    style={{
-                      width: '100%',
-                      border: '1px solid #eee',
-                      borderRadius: '18px',
-                      padding: '16px',
-                      background: 'white',
-                      display: 'grid',
-                      gridTemplateColumns: 'minmax(0, 1fr) auto',
-                      gap: '16px',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      textAlign: 'inherit',
-                    }}
-                  >
-                    <div style={{ textAlign: dir === 'rtl' ? 'right' : 'left' }}>
-                      <div
-                        style={{
-                          color: '#641414',
-                          fontSize: '17px',
-                          fontWeight: 800,
-                          marginBottom: '6px',
-                        }}
-                      >
-                        {item.person.firstName} {item.person.lastName}
-                      </div>
-
-                      {(item.person.arabicFirstName || item.person.arabicLastName) && (
-                        <div
-                          dir="rtl"
-                          style={{
-                            color: '#8b1e1e',
-                            fontSize: '16px',
-                            fontWeight: 800,
-                            marginBottom: '6px',
-                            textAlign: 'right',
-                          }}
-                        >
-                          {item.person.arabicFirstName} {item.person.arabicLastName}
-                        </div>
-                      )}
-
-                      <div
-                        style={{
-                          color: '#777',
-                          fontSize: '14px',
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        {item.person.phoneNumber || '—'} · {item.person.email || '—'}
-                      </div>
-
-                      <div
-                        style={{
-                          color: '#8b1e1e',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          marginTop: '6px',
-                        }}
-                      >
-                        {text.daysOfAttendance}: {item.attendedDates.join(', ') || '—'}
-                      </div>
-                    </div>
-
-                    <div
-                      className="attendance-analysis-stat-card"
-                      style={{
-                        minWidth: '150px',
-                        borderRadius: '18px',
-                        background: '#f8eeee',
-                        padding: '14px',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <div
-                        style={{
-                          color: '#777',
-                          fontSize: '12px',
-                          fontWeight: 900,
-                          marginBottom: '6px',
-                        }}
-                      >
-                        {text.attendanceCount}
-                      </div>
-                      <div
-                        style={{
-                          color: '#8b1e1e',
-                          fontSize: '28px',
-                          fontWeight: 900,
-                        }}
-                      >
-                        {item.attendanceCount}
-                      </div>
-                      <div
-                        style={{
-                          color: '#641414',
-                          fontSize: '13px',
-                          fontWeight: 800,
-                          marginTop: '4px',
-                        }}
-                      >
-                        {text.attendanceRate}: {item.attendanceRate}%
-                      </div>
-                      <div
-                        style={{
-                          marginTop: '8px',
-                          color: '#8b1e1e',
-                          fontSize: '12px',
-                          fontWeight: 900,
-                        }}
-                      >
-                        {text.viewFullStats}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <AttendanceAnalysisCharts controller={controller} />
-          </section>
-        )}
-
-
-
-    </>
+        <div className="min-w-0 overflow-hidden rounded-[1.8rem] border border-[#7a1b1b]/10 bg-white p-4 shadow-[0_12px_35px_rgba(61,24,17,0.07)] sm:p-6">
+          <AttendanceAnalysisCharts controller={controller} />
+        </div>
+      </div>
+    </section>
   );
+}
+
+function InsightCard({ icon, label, value, accent = false }: { icon: ReactNode; label: string; value: string | number; accent?: boolean }) {
+  return (
+    <div className={`rounded-2xl border p-4 sm:p-5 ${accent ? 'border-[#f2a900]/40 bg-[#fff5d9]' : 'border-[#7a1b1b]/10 bg-white'}`}>
+      <span className={`mb-4 grid h-9 w-9 place-items-center rounded-xl ${accent ? 'bg-[#f2a900] text-[#4a2710]' : 'bg-[#f3e6dd] text-[#8d211d]'}`}>{icon}</span>
+      <strong className="block truncate text-xl font-black text-[#641414] sm:text-2xl">{value}</strong>
+      <span className="mt-1 block text-[9px] font-extrabold uppercase tracking-wider text-stone-400 sm:text-[10px]">{label}</span>
+    </div>
+  );
+}
+
+function CompactState({ message, icon, tone = 'neutral' }: { message: string; icon?: ReactNode; tone?: 'neutral' | 'error' }) {
+  return <div className={`grid min-h-32 place-items-center rounded-2xl border border-dashed p-4 text-center text-xs font-semibold ${tone === 'error' ? 'border-red-200 bg-red-50 text-red-800' : 'border-stone-200 bg-stone-50 text-stone-500'}`}><div>{icon && <span className="mx-auto mb-2 grid h-9 w-9 place-items-center rounded-full bg-[#f3e6dd] text-[#8d211d]">{icon}</span>}{message}</div></div>;
 }

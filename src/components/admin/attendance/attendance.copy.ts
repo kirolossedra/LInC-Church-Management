@@ -12,10 +12,10 @@ export function getAttendanceText(isArabic: boolean) {
       : 'Incorrect passcode. Please try again.',
     proceed: isArabic ? 'متابعة' : 'Proceed',
 
-    pageTitle: isArabic ? 'صفحة الحضور' : 'Attendance Page',
+    pageTitle: isArabic ? 'صفحة الحضور' : 'Attendance Studio',
     pageDescription: isArabic
       ? 'اختر الإجراء الذي تريد تنفيذه.'
-      : 'Choose the action you want to perform.',
+      : 'Record Sundays, manage people, and understand attendance at a glance.',
     addModifyPerson: isArabic ? 'إدارة الأشخاص' : 'Manage People',
     takeAttendance: isArabic ? 'تسجيل الحضور' : 'Take Attendance',
 
@@ -112,11 +112,13 @@ export function getAttendanceText(isArabic: boolean) {
       : 'Search for a person to mark attendance...',
     attended: isArabic ? 'حضر' : 'Attended',
     markAttended: isArabic ? 'تسجيل الحضور' : 'Mark Attended',
+    removeAttendance: isArabic ? 'إلغاء تسجيل الحضور' : 'Remove Attendance',
     alreadyAttended: isArabic ? 'مسجل بالفعل لهذا اليوم' : 'Already marked for this day',
     selectSundayBeforeMarking: isArabic
       ? 'اختر يوم الأحد قبل تسجيل الحضور.'
       : 'Select a Sunday before marking attendance.',
     savedAttendance: isArabic ? 'تم تسجيل الحضور.' : 'Attendance saved.',
+    removedAttendance: isArabic ? 'تم إلغاء تسجيل الحضور.' : 'Attendance removed.',
     failedSaveAttendance: isArabic
       ? 'فشل تسجيل الحضور في قاعدة البيانات.'
       : 'Failed to save attendance to the database.',
@@ -172,4 +174,3 @@ export function getAttendanceText(isArabic: boolean) {
 }
 
 export type AttendanceText = ReturnType<typeof getAttendanceText>;
-

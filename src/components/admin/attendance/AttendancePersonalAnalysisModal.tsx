@@ -1,378 +1,77 @@
-import { X } from 'lucide-react';
+import { CalendarCheck2, CalendarX2, Percent, TrendingUp, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+
 import type { AttendanceController } from './useAttendanceManagement';
 
 export default function AttendancePersonalAnalysisModal({ controller }: { controller: AttendanceController }) {
-  const { setSelectedAnalysisPersonId, text, sundayDateKeysSinceStart, selectedPersonAttendanceAnalysis, selectedPersonMissedDates, selectedPersonTimeline } = controller;
+  const { setSelectedAnalysisPersonId, text, sundayDateKeysSinceStart, selectedPersonAttendanceAnalysis: analysis, selectedPersonMissedDates, selectedPersonTimeline } = controller;
+  if (!analysis) return null;
+
+  const close = () => setSelectedAnalysisPersonId('');
+  const fullName = `${analysis.person.firstName} ${analysis.person.lastName}`.trim();
+  const arabicName = `${analysis.person.arabicFirstName} ${analysis.person.arabicLastName}`.trim();
 
   return (
-    <>
-        {selectedPersonAttendanceAnalysis && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0, 0, 0, 0.55)',
-              zIndex: 1000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '24px',
-            }}
-            onClick={() => setSelectedAnalysisPersonId('')}
-          >
-            <div
-              style={{
-                width: '100%',
-                maxWidth: '1040px',
-                maxHeight: '90vh',
-                overflowY: 'auto',
-                background: 'white',
-                borderRadius: '30px',
-                boxShadow: '0 30px 80px rgba(0,0,0,0.30)',
-                border: '1px solid rgba(139, 30, 30, 0.18)',
-              }}
-              onClick={event => event.stopPropagation()}
-            >
-              <div
-                style={{
-                  position: 'sticky',
-                  top: 0,
-                  zIndex: 2,
-                  background: '#8b1e1e',
-                  color: 'white',
-                  padding: '22px 26px',
-                  borderRadius: '30px 30px 0 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '16px',
-                }}
-              >
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '26px', fontWeight: 900 }}>
-                    {text.personalAnalysis}
-                  </h2>
-                  <p style={{ margin: '6px 0 0', color: 'rgba(255,255,255,0.78)', fontWeight: 700 }}>
-                    {selectedPersonAttendanceAnalysis.person.firstName} {selectedPersonAttendanceAnalysis.person.lastName}
-                    {(selectedPersonAttendanceAnalysis.person.arabicFirstName || selectedPersonAttendanceAnalysis.person.arabicLastName)
-                      ? ` — ${selectedPersonAttendanceAnalysis.person.arabicFirstName} ${selectedPersonAttendanceAnalysis.person.arabicLastName}`
-                      : ''}
-                  </p>
-                </div>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[10000] grid place-items-center bg-[#160909]/70 p-2 backdrop-blur-md sm:p-6" onMouseDown={close}>
+      <section className="flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[1.75rem] bg-[#faf7f2] shadow-2xl sm:max-h-[calc(100dvh-3rem)]" onMouseDown={event => event.stopPropagation()}>
+        <header className="flex shrink-0 items-center justify-between gap-4 bg-[#1d0e0e] px-4 py-4 text-white sm:px-6 sm:py-5">
+          <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300">{text.personalAnalysis}</p><h2 className="truncate font-serif text-2xl font-semibold sm:text-3xl">{fullName || '—'}</h2>{arabicName && <p dir="rtl" className="mt-0.5 truncate text-sm text-white/65">{arabicName}</p>}</div>
+          <button type="button" onClick={close} aria-label={text.close} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/15 bg-white/5 hover:bg-white/10"><X size={20} /></button>
+        </header>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedAnalysisPersonId('')}
-                  aria-label={text.close}
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '50%',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    background: 'rgba(255,255,255,0.12)',
-                    color: 'white',
-                    cursor: 'pointer',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <X size={22} />
-                </button>
-              </div>
-
-              <div style={{ padding: '26px' }}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))',
-                    gap: '14px',
-                    marginBottom: '24px',
-                  }}
-                >
-                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
-                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                      {text.attendanceCount}
-                    </div>
-                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
-                      {selectedPersonAttendanceAnalysis.attendanceCount}
-                    </div>
-                  </div>
-
-                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
-                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                      {text.missedCount}
-                    </div>
-                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
-                      {selectedPersonMissedDates.length}
-                    </div>
-                  </div>
-
-                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
-                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                      {text.attendanceRate}
-                    </div>
-                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
-                      {selectedPersonAttendanceAnalysis.attendanceRate}%
-                    </div>
-                  </div>
-
-                  <div style={{ background: '#f8eeee', borderRadius: '20px', padding: '18px' }}>
-                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 900, marginBottom: '8px' }}>
-                      {text.totalSundays}
-                    </div>
-                    <div style={{ color: '#8b1e1e', fontSize: '30px', fontWeight: 900 }}>
-                      {sundayDateKeysSinceStart.length}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-                    gap: '22px',
-                    marginBottom: '24px',
-                  }}
-                >
-                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
-                    <h3 style={{ margin: '0 0 8px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
-                      {text.dateAttendanceLine}
-                    </h3>
-                    <div style={{ color: '#777', fontSize: '13px', fontWeight: 800, marginBottom: '12px' }}>
-                      {text.presentValue} · {text.absentValue}
-                    </div>
-
-                    <svg viewBox="0 0 560 260" role="img" style={{ width: '100%', minHeight: '260px' }}>
-                      <line x1="58" y1="38" x2="58" y2="198" stroke="#ddd" strokeWidth="2" />
-                      <line x1="58" y1="198" x2="526" y2="198" stroke="#ddd" strokeWidth="2" />
-                      <line x1="58" y1="62" x2="526" y2="62" stroke="#e7d8d8" strokeWidth="1.5" strokeDasharray="6 6" />
-                      <line x1="58" y1="176" x2="526" y2="176" stroke="#e7d8d8" strokeWidth="1.5" strokeDasharray="6 6" />
-
-                      <text x="34" y="67" textAnchor="middle" fontSize="14" fill="#15803d" fontWeight="900">1</text>
-                      <text x="34" y="181" textAnchor="middle" fontSize="14" fill="#b91c1c" fontWeight="900">0</text>
-
-                      <polyline
-                        fill="none"
-                        stroke="#8b1e1e"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={selectedPersonTimeline.map((item, index) => {
-                          const x = selectedPersonTimeline.length === 1
-                            ? 292
-                            : 58 + (index / (selectedPersonTimeline.length - 1)) * 468;
-                          const y = item.attended ? 62 : 176;
-                          return `${x},${y}`;
-                        }).join(' ')}
-                      />
-
-                      {selectedPersonTimeline.map((item, index) => {
-                        const x = selectedPersonTimeline.length === 1
-                          ? 292
-                          : 58 + (index / (selectedPersonTimeline.length - 1)) * 468;
-                        const y = item.attended ? 62 : 176;
-                        const shouldShowDate = selectedPersonTimeline.length <= 8 || index % Math.ceil(selectedPersonTimeline.length / 8) === 0 || index === selectedPersonTimeline.length - 1;
-
-                        return (
-                          <g key={item.dateKey}>
-                            <circle
-                              cx={x}
-                              cy={y}
-                              r="7"
-                              fill={item.attended ? '#15803d' : '#b91c1c'}
-                              stroke="white"
-                              strokeWidth="2"
-                            />
-                            {shouldShowDate && (
-                              <text
-                                x={x}
-                                y="224"
-                                textAnchor="middle"
-                                fontSize="10"
-                                fill="#641414"
-                                fontWeight="800"
-                                transform={`rotate(-38 ${x} 224)`}
-                              >
-                                {item.dateKey.slice(5)}
-                              </text>
-                            )}
-                          </g>
-                        );
-                      })}
-                    </svg>
-
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '8px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', color: '#15803d', fontWeight: 900, fontSize: '13px' }}>
-                        <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#15803d' }} />
-                        {text.present}
-                      </span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', color: '#b91c1c', fontWeight: 900, fontSize: '13px' }}>
-                        <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#b91c1c' }} />
-                        {text.absent}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
-                    <h3 style={{ margin: '0 0 16px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
-                      {text.attendanceDonut}
-                    </h3>
-
-                    <div style={{ display: 'grid', placeItems: 'center' }}>
-                      <svg viewBox="0 0 240 240" role="img" style={{ width: '100%', maxWidth: '260px' }}>
-                        <circle
-                          cx="120"
-                          cy="120"
-                          r="82"
-                          fill="none"
-                          stroke="#fee2e2"
-                          strokeWidth="34"
-                        />
-                        <circle
-                          cx="120"
-                          cy="120"
-                          r="82"
-                          fill="none"
-                          stroke="#15803d"
-                          strokeWidth="34"
-                          strokeLinecap="round"
-                          pathLength="100"
-                          strokeDasharray={`${selectedPersonAttendanceAnalysis.attendanceRate} ${100 - selectedPersonAttendanceAnalysis.attendanceRate}`}
-                          transform="rotate(-90 120 120)"
-                        />
-                        <text x="120" y="112" textAnchor="middle" fontSize="34" fill="#8b1e1e" fontWeight="900">
-                          {selectedPersonAttendanceAnalysis.attendanceRate}%
-                        </text>
-                        <text x="120" y="140" textAnchor="middle" fontSize="13" fill="#641414" fontWeight="900">
-                          {text.attendanceRate}
-                        </text>
-                      </svg>
-                    </div>
-
-                    <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: '#15803d', fontWeight: 900 }}>
-                        <span>{text.attendedPercent}</span>
-                        <span>{selectedPersonAttendanceAnalysis.attendanceCount} / {sundayDateKeysSinceStart.length}</span>
-                      </div>
-                      <div style={{ height: '14px', background: '#f5f4f0', borderRadius: '999px', overflow: 'hidden' }}>
-                        <div style={{ width: `${selectedPersonAttendanceAnalysis.attendanceRate}%`, height: '100%', background: '#15803d', borderRadius: '999px' }} />
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: '#b91c1c', fontWeight: 900 }}>
-                        <span>{text.missedPercent}</span>
-                        <span>{selectedPersonMissedDates.length} / {sundayDateKeysSinceStart.length}</span>
-                      </div>
-                      <div style={{ height: '14px', background: '#f5f4f0', borderRadius: '999px', overflow: 'hidden' }}>
-                        <div style={{ width: `${Math.max(0, 100 - selectedPersonAttendanceAnalysis.attendanceRate)}%`, height: '100%', background: '#b91c1c', borderRadius: '999px' }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
-                    <h3 style={{ margin: '0 0 16px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
-                      {text.cumulativeAttendanceLine}
-                    </h3>
-                    <svg viewBox="0 0 420 220" role="img" style={{ width: '100%', minHeight: '220px' }}>
-                      <line x1="38" y1="20" x2="38" y2="184" stroke="#ddd" strokeWidth="2" />
-                      <line x1="38" y1="184" x2="398" y2="184" stroke="#ddd" strokeWidth="2" />
-                      <polyline
-                        fill="none"
-                        stroke="#8b1e1e"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={selectedPersonTimeline.map((item, index) => {
-                          const x = selectedPersonTimeline.length === 1
-                            ? 218
-                            : 38 + (index / (selectedPersonTimeline.length - 1)) * 360;
-                          const y = 184 - (item.cumulativeAttendance / Math.max(1, selectedPersonAttendanceAnalysis.attendanceCount)) * 150;
-                          return `${x},${y}`;
-                        }).join(' ')}
-                      />
-                      {selectedPersonTimeline.map((item, index) => {
-                        const x = selectedPersonTimeline.length === 1
-                          ? 218
-                          : 38 + (index / (selectedPersonTimeline.length - 1)) * 360;
-                        const y = 184 - (item.cumulativeAttendance / Math.max(1, selectedPersonAttendanceAnalysis.attendanceCount)) * 150;
-                        return (
-                          <g key={item.dateKey}>
-                            <circle cx={x} cy={y} r="5" fill="#8b1e1e" />
-                            <text x={x} y={y - 10} textAnchor="middle" fontSize="10" fill="#641414" fontWeight="800">
-                              {item.cumulativeAttendance}
-                            </text>
-                          </g>
-                        );
-                      })}
-                    </svg>
-                  </div>
-
-                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '24px', padding: '22px', background: '#fffaf7' }}>
-                    <h3 style={{ margin: '0 0 16px', color: '#8b1e1e', fontSize: '21px', fontWeight: 900 }}>
-                      {text.attendanceTimeline}
-                    </h3>
-                    <div style={{ display: 'grid', gap: '10px' }}>
-                      {selectedPersonTimeline.map(item => (
-                        <div key={item.dateKey}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#641414', fontSize: '13px', fontWeight: 800, marginBottom: '6px' }}>
-                            <span>{item.dateKey}</span>
-                            <span>{item.attended ? text.present : text.absent}</span>
-                          </div>
-                          <div style={{ height: '18px', borderRadius: '999px', background: '#f5f4f0', overflow: 'hidden' }}>
-                            <div
-                              style={{
-                                width: item.attended ? '100%' : '18%',
-                                height: '100%',
-                                borderRadius: '999px',
-                                background: item.attended ? '#15803d' : '#b91c1c',
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
-                    gap: '18px',
-                  }}
-                >
-                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '22px', padding: '18px', background: 'white' }}>
-                    <h3 style={{ margin: '0 0 14px', color: '#8b1e1e', fontSize: '19px', fontWeight: 900 }}>
-                      {text.attendedSundays}
-                    </h3>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {(selectedPersonAttendanceAnalysis.attendedDates.length ? selectedPersonAttendanceAnalysis.attendedDates : ['—']).map(dateKey => (
-                        <span key={dateKey} style={{ background: '#f0fdf4', color: '#15803d', borderRadius: '999px', padding: '8px 12px', fontSize: '13px', fontWeight: 800 }}>
-                          {dateKey}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div style={{ border: '1px solid rgba(139,30,30,0.10)', borderRadius: '22px', padding: '18px', background: 'white' }}>
-                    <h3 style={{ margin: '0 0 14px', color: '#8b1e1e', fontSize: '19px', fontWeight: 900 }}>
-                      {text.missedSundays}
-                    </h3>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {(selectedPersonMissedDates.length ? selectedPersonMissedDates : ['—']).map(dateKey => (
-                        <span key={dateKey} style={{ background: '#fee2e2', color: '#991b1b', borderRadius: '999px', padding: '8px 12px', fontSize: '13px', fontWeight: 800 }}>
-                          {dateKey}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3 sm:p-6">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Metric icon={<CalendarCheck2 />} label={text.attendanceCount} value={analysis.attendanceCount} />
+            <Metric icon={<CalendarX2 />} label={text.missedCount} value={selectedPersonMissedDates.length} />
+            <Metric icon={<Percent />} label={text.attendanceRate} value={`${analysis.attendanceRate}%`} accent />
+            <Metric icon={<TrendingUp />} label={text.totalSundays} value={sundayDateKeysSinceStart.length} />
           </div>
-        )}
-    </>
+
+          <div className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+            <ReportCard title={text.dateAttendanceLine}>
+              <TimelineChart timeline={selectedPersonTimeline} />
+              <div className="mt-3 flex gap-4 text-xs font-bold"><Legend color="bg-emerald-600" label={text.present} /><Legend color="bg-red-600" label={text.absent} /></div>
+            </ReportCard>
+            <ReportCard title={text.attendanceDonut}>
+              <div className="grid place-items-center">
+                <div className="relative h-44 w-44 rounded-full" style={{ background: `conic-gradient(#15803d ${analysis.attendanceRate}%, #dc2626 0)` }}><div className="absolute inset-5 grid place-items-center rounded-full bg-white text-center"><strong className="text-3xl text-[#7a1b1b]">{analysis.attendanceRate}%</strong><span className="-mt-6 text-[10px] font-black uppercase tracking-wider text-stone-500">{text.attendanceRate}</span></div></div>
+              </div>
+              <div className="mt-4 grid gap-2 text-xs font-bold"><RateRow label={text.attendedPercent} value={`${analysis.attendanceCount}/${sundayDateKeysSinceStart.length}`} color="text-emerald-700" /><RateRow label={text.missedPercent} value={`${selectedPersonMissedDates.length}/${sundayDateKeysSinceStart.length}`} color="text-red-700" /></div>
+            </ReportCard>
+          </div>
+
+          <ReportCard title={text.attendanceTimeline}>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{selectedPersonTimeline.map(item => <div key={item.dateKey} className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-extrabold ${item.attended ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}><span>{item.dateKey}</span><span>{item.attended ? text.present : text.absent}</span></div>)}</div>
+          </ReportCard>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <DateList title={text.attendedSundays} dates={analysis.attendedDates} empty="—" tone="present" />
+            <DateList title={text.missedSundays} dates={selectedPersonMissedDates} empty="—" tone="missed" />
+          </div>
+
+        </div>
+      </section>
+    </div>
   );
 }
 
+function Metric({ icon, label, value, accent = false }: { icon: ReactNode; label: string; value: string | number; accent?: boolean }) {
+  return <div className={`min-w-0 rounded-2xl border p-3 sm:p-4 ${accent ? 'border-[#7a1b1b] bg-[#7a1b1b] text-white' : 'border-[#7a1b1b]/10 bg-white text-[#641414]'}`}><span className={`mb-3 grid h-8 w-8 place-items-center rounded-xl [&>svg]:h-4 [&>svg]:w-4 ${accent ? 'bg-white/10' : 'bg-[#f5ece4]'}`}>{icon}</span><strong className="block text-2xl sm:text-3xl">{value}</strong><span className={`mt-1 block text-[9px] font-black uppercase tracking-wider ${accent ? 'text-white/60' : 'text-stone-500'}`}>{label}</span></div>;
+}
+
+function ReportCard({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="min-w-0 rounded-[1.4rem] border border-[#7a1b1b]/10 bg-white p-4 shadow-sm sm:p-5"><h3 className="mb-4 font-serif text-xl font-semibold text-[#641414]">{title}</h3>{children}</section>;
+}
+
+function TimelineChart({ timeline }: { timeline: Array<{ dateKey: string; attended: boolean; cumulativeAttendance: number }> }) {
+  const points = timeline.map((item, index) => ({ ...item, x: timeline.length === 1 ? 300 : 28 + (index / (timeline.length - 1)) * 544, y: item.attended ? 45 : 145 }));
+  return <div className="overflow-x-auto"><svg viewBox="0 0 600 190" role="img" className="min-w-[560px]"><line x1="28" y1="45" x2="572" y2="45" stroke="#dcfce7" strokeWidth="2" /><line x1="28" y1="145" x2="572" y2="145" stroke="#fee2e2" strokeWidth="2" /><polyline fill="none" stroke="#8d211d" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={points.map(point => `${point.x},${point.y}`).join(' ')} />{points.map((point, index) => <g key={point.dateKey}><circle cx={point.x} cy={point.y} r="6" fill={point.attended ? '#15803d' : '#dc2626'} stroke="white" strokeWidth="2" />{(timeline.length <= 8 || index % Math.ceil(timeline.length / 8) === 0 || index === timeline.length - 1) && <text x={point.x} y="174" textAnchor="middle" fontSize="9" fill="#78716c">{point.dateKey.slice(5)}</text>}</g>)}</svg></div>;
+}
+
+function Legend({ color, label }: { color: string; label: string }) { return <span className="inline-flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${color}`} />{label}</span>; }
+function RateRow({ label, value, color }: { label: string; value: string; color: string }) { return <div className={`flex justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2 ${color}`}><span>{label}</span><span>{value}</span></div>; }
+
+function DateList({ title, dates, empty, tone }: { title: string; dates: string[]; empty: string; tone: 'present' | 'missed' }) {
+  const classes = tone === 'present' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800';
+  return <ReportCard title={title}><div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">{(dates.length ? dates : [empty]).map(date => <span key={date} className={`rounded-full px-3 py-2 text-xs font-extrabold ${classes}`}>{date}</span>)}</div></ReportCard>;
+}

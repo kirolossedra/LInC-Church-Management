@@ -88,6 +88,22 @@ export function buildDaysOfAttendance(
   return [...attendanceDays, selectedDateKey].sort().join(', ');
 }
 
+export function toggleAttendanceDate(
+  existingDays: string,
+  selectedDateKey: string
+): string {
+  const attendanceDays = getAttendanceDays(existingDays);
+
+  if (attendanceDays.includes(selectedDateKey)) {
+    return attendanceDays
+      .filter(dateKey => dateKey !== selectedDateKey)
+      .sort()
+      .join(', ');
+  }
+
+  return [...attendanceDays, selectedDateKey].sort().join(', ');
+}
+
 export function buildCalendarDays(monthDate: Date): CalendarDay[] {
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();

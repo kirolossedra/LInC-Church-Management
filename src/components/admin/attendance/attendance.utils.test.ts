@@ -7,6 +7,7 @@ import {
   getAttendanceDays,
   getFirstSundayInMay,
   normalizePerson,
+  toggleAttendanceDate,
 } from './attendance.utils';
 
 describe('attendance utilities', () => {
@@ -30,6 +31,13 @@ describe('attendance utilities', () => {
     expect(buildDaysOfAttendance('2026-05-10, 2026-05-24', '2026-05-17'))
       .toBe('2026-05-10, 2026-05-17, 2026-05-24');
     expect(buildDaysOfAttendance('2026-05-10', '2026-05-10')).toBe('2026-05-10');
+  });
+
+  it('toggles a Sunday on and off without disturbing other dates', () => {
+    expect(toggleAttendanceDate('2026-05-10, 2026-05-24', '2026-05-17'))
+      .toBe('2026-05-10, 2026-05-17, 2026-05-24');
+    expect(toggleAttendanceDate('2026-05-10, 2026-05-17, 2026-05-24', '2026-05-17'))
+      .toBe('2026-05-10, 2026-05-24');
   });
 
   it('parses stored attendance strings without blank entries', () => {
