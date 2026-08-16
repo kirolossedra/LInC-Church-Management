@@ -82,6 +82,31 @@ describe('Bezalel agent routes', () => {
     expect(JSON.stringify(calendar)).not.toContain('internalSecret')
   })
 
+  it('preserves a complete validated recurring group schedule action', async () => {
+    const pastorAgent = vi.fn().mockResolvedValue({
+      reply: 'I will schedule the Teachers group on the second Friday of each month.',
+      focusDates: ['2026-09-11'],
+      actions: [{
+        action: 'create_group_schedule', date: '2026-09-11', startTime: '19:00', endTime: '',
+        targetId: '', reason: '', meetingTitle: '', audience: 'group', group: 'teachers',
+        ordinal: 2, weekday: 5, durationMinutes: 90, startDate: '2026-09-01', endDate: '', active: true,
+      }],
+    })
+    const app = createApp({ bezalel: {
+      verifyToken: vi.fn().mockResolvedValue(pastor),
+      databaseFetch: vi.fn(() => Promise.resolve(json({}))) as typeof fetch,
+      pastorAgent,
+    } })
+    const response = await app.request('/api/v1/bezalel/pastor/chat', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer valid-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'Add Teachers every second Friday at 7 PM from September 1.' }], locale: 'en' }),
+    }, bindings)
+    const body = await response.json() as { data: { actions: Array<{ action: string; group: string }> } }
+    expect(response.status).toBe(200)
+    expect(body.data.actions).toEqual([expect.objectContaining({ action: 'create_group_schedule', group: 'teachers' })])
+  })
+
   it('lets the public booking agent inspect only public availability', async () => {
     const bookingAgent = vi.fn().mockResolvedValue({
       reply: 'The first opening is August 20 at 9 AM.',

@@ -7,6 +7,22 @@ const BACKEND_BASE_URL = (
   'https://linc-backend.linc-ministry.workers.dev'
 ).replace(/\/+$/, '');
 
+export interface PeopleAccessPerson {
+  memberKey: string;
+  fullName: string;
+  sourceEmail: string;
+  authEmail: string;
+  firebaseUid: string;
+  status: 'ready' | 'registered' | 'missing_email' | 'invalid_email' | 'invalid_password' | 'failed';
+  problem: string;
+}
+
+export interface PeopleAccessMigrationResult {
+  memberKey: string;
+  status: string;
+  message: string;
+}
+
 export async function getAdministratorSession() {
   return requestAdmin<{ account: AdminAccount; adminAccounts: AdminAccount[] }>(
     '/session',
@@ -25,6 +41,24 @@ export async function suspendAdministrator(uid: string) {
   return requestAdmin<{ suspended: true }>(
     `/users/${encodeURIComponent(uid)}/suspend`,
     { method: 'PATCH' },
+  );
+}
+
+export async function getPeopleAccessAudit() {
+  return requestAdmin<{ people: PeopleAccessPerson[] }>('/people-access', { method: 'GET' });
+}
+
+export async function updatePeopleAccessEmail(memberKey: string, email: string) {
+  return requestAdmin<{ updated: true }>(
+    `/people-access/${encodeURIComponent(memberKey)}/email`,
+    { method: 'PATCH', body: JSON.stringify({ email }) },
+  );
+}
+
+export async function migratePeopleAccess(memberKeys?: string[]) {
+  return requestAdmin<{ results: PeopleAccessMigrationResult[]; summary: Record<string, number> }>(
+    '/people-access/migrate',
+    { method: 'POST', body: JSON.stringify(memberKeys ? { memberKeys } : {}) },
   );
 }
 

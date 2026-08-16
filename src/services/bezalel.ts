@@ -13,7 +13,11 @@ export type PastorBezalelAction =
   | 'delete_availability'
   | 'delete_unavailability'
   | 'accept_request'
-  | 'reject_request';
+  | 'reject_request'
+  | 'create_group_schedule'
+  | 'update_group_schedule'
+  | 'set_group_schedule_active'
+  | 'delete_group_schedule';
 
 export interface PastorBezalelCalendarAction {
   action: Exclude<PastorBezalelAction, 'none'>;
@@ -23,6 +27,14 @@ export interface PastorBezalelCalendarAction {
   targetId: string;
   reason: string;
   meetingTitle: string;
+  audience: 'group' | 'shared';
+  group: string;
+  ordinal: 1 | 2 | 3 | 4 | 'last';
+  weekday: number;
+  durationMinutes: number;
+  startDate: string;
+  endDate: string;
+  active: boolean;
 }
 
 export interface PastorBezalelResult {

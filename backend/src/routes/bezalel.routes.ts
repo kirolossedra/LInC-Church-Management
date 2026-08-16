@@ -9,6 +9,7 @@ import {
 } from '../bezalel/bezalel.ai'
 import { buildPublicBookingSchedule } from '../booking/booking.service'
 import { bookingDateSchema, bookingTimeSchema, createBookingRequestSchema } from '../schemas/booking.schema'
+import { createScheduleSchema } from '../schemas/peopleDevelopment.schema'
 import { createFirebaseAuthMiddleware, type FirebaseTokenVerifier } from '../security/firebaseAuth'
 import { getFirebaseServiceAccountAccessToken } from '../security/firebaseServiceAccount'
 import { requirePastorAccess } from '../security/pastorAuthorization'
@@ -132,7 +133,7 @@ async function pastorCalendarContext(database: FirebaseRealtimeDatabaseClient) {
     meetingRequests: safeRecords(meetingRequests, ['name', 'date', 'startTime', 'endTime', 'status']),
     availability: safeRecords(availability, ['date', 'startTime', 'endTime', 'reason', 'allDay']),
     unavailability: safeRecords(unavailability, ['date', 'startTime', 'endTime', 'reason', 'allDay']),
-    groupMeetingSchedules: safeRecords(groupMeetingSchedules, ['audience', 'group', 'weekday', 'ordinal', 'startTime', 'durationMinutes', 'active']),
+    groupMeetingSchedules: safeRecords(groupMeetingSchedules, ['audience', 'group', 'weekday', 'ordinal', 'startTime', 'durationMinutes', 'startDate', 'endDate', 'active']),
   }
 }
 
@@ -177,6 +178,23 @@ function validatePastorAction(result: PastorAgentResult): PastorAgentResult {
       return bookingDateSchema.safeParse(action.date).success &&
         bookingTimeSchema.safeParse(action.startTime).success &&
         bookingTimeSchema.safeParse(action.endTime).success
+    }
+    if (action.action === 'create_group_schedule' || action.action === 'update_group_schedule') {
+      const scheduleValid = createScheduleSchema.safeParse({
+        audience: action.audience,
+        group: action.group,
+        ordinal: action.ordinal,
+        weekday: action.weekday,
+        startTime: action.startTime,
+        durationMinutes: action.durationMinutes,
+        startDate: action.startDate,
+        endDate: action.endDate,
+        active: action.active,
+      }).success
+      return scheduleValid && (action.action !== 'update_group_schedule' || /^[A-Za-z0-9_-]{1,128}$/.test(action.targetId))
+    }
+    if (action.action === 'set_group_schedule_active' || action.action === 'delete_group_schedule') {
+      return /^[A-Za-z0-9_-]{1,128}$/.test(action.targetId)
     }
     return !targetedAction || /^[A-Za-z0-9_-]{1,128}$/.test(action.targetId)
   })

@@ -17,9 +17,6 @@ export default function MemberProfileHeader({ controller }: { controller: Congre
                         {profile.fullName || (isAr ? 'مرحباً' : 'Welcome')}
                       </h2>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <span className="rounded-full border border-[#ead9d0] bg-white px-3 py-1 text-sm text-[#6b4b4b]">
-                          {profile.identifier}
-                        </span>
                         {profile.email && (
                           <span className="rounded-full border border-[#ead9d0] bg-white px-3 py-1 text-sm text-[#6b4b4b]">
                             {profile.email}
@@ -46,4 +43,3 @@ export default function MemberProfileHeader({ controller }: { controller: Congre
               </section>
   );
 }
-

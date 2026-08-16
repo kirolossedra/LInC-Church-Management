@@ -5,6 +5,8 @@ const FIREBASE_DATABASE_SCOPE =
   'https://www.googleapis.com/auth/firebase.database'
 const USERINFO_EMAIL_SCOPE =
   'https://www.googleapis.com/auth/userinfo.email'
+const IDENTITY_TOOLKIT_SCOPE =
+  'https://www.googleapis.com/auth/identitytoolkit'
 
 type CachedAccessToken = {
   clientEmail: string
@@ -124,7 +126,7 @@ async function createServiceAccountAssertion({
     iss: clientEmail,
     sub: clientEmail,
     aud: GOOGLE_OAUTH_TOKEN_URL,
-    scope: `${USERINFO_EMAIL_SCOPE} ${FIREBASE_DATABASE_SCOPE}`,
+    scope: `${USERINFO_EMAIL_SCOPE} ${FIREBASE_DATABASE_SCOPE} ${IDENTITY_TOOLKIT_SCOPE}`,
     iat: issuedAt,
     exp: issuedAt + 3600,
   })

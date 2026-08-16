@@ -10,6 +10,7 @@ export type AdminSectionId =
   | 'carousel'
   | 'attendance'
   | 'nextgen-qa'
+  | 'people-access'
   | 'archives';
 
 export interface AdminArea {

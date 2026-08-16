@@ -7,7 +7,7 @@ export default function CongregationGroupHeader({ isAr }: { isAr: boolean }) {
       title={isAr ? 'ملاحظات وتكليفات مجموعتك' : 'Your Group Notes & Assignments'}
       description={isAr
         ? 'سجل الدخول باستخدام رمز العبور الشخصي الخاص بك لعرض ملاحظات وتكليفات المجموعة التي تم تعيينك فيها.'
-        : 'Log in with your personal identifier to view the notes and assignments for your assigned group.'}
+        : 'Log in with your Firebase email and password to view the notes and assignments for your assigned group.'}
       eyebrow={isAr ? 'بوابة نمو الأشخاص' : 'People Development Portal'}
       icon={<ShieldCheck size={22} />}
       aside={(

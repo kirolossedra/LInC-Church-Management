@@ -11,6 +11,7 @@ const bindings = {
   BREVO_TEST_RECIPIENT: 'recipient@example.com',
   FIREBASE_PROJECT_ID: 'test-project',
   FIREBASE_DATABASE_URL: 'https://test-project.firebaseio.com',
+  FIREBASE_WEB_API_KEY: 'public-test-key',
 }
 
 const administrator: AuthenticatedFirebaseUser = {
@@ -43,6 +44,7 @@ function authenticatedRequest(path: string, method = 'GET', body?: unknown) {
 function createTestApp(
   fetchMock: ReturnType<typeof vi.fn>,
   user: AuthenticatedFirebaseUser = administrator,
+  identityFetch?: typeof fetch,
 ) {
   return createApp({
     admin: {
@@ -50,6 +52,7 @@ function createTestApp(
       getAccessToken: vi.fn().mockResolvedValue('server-token'),
       databaseFetch: fetchMock as unknown as typeof fetch,
       now: () => 1_777_777_777_000,
+      identityFetch,
     },
   })
 }
@@ -64,7 +67,8 @@ describe('Administrator routes', () => {
   })
 
   it('registers a new non-chief account as pending', async () => {
-    const fetchMock = vi.fn((input: string | URL | Request, _init?: RequestInit) => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      void init
       const url = String(input)
       if (url.endsWith('/administration/adminHierarchy/chiefUid.json')) {
         return Promise.resolve(jsonResponse('existing-chief'))
@@ -132,10 +136,72 @@ describe('Administrator routes', () => {
         manageAttendance: false,
         manageArchives: false,
         manageNextGenQa: false,
+        managePeopleAccess: false,
       },
     ), undefined, bindings)
     expect(response.status).toBe(403)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('bulk registers an eligible person and stores the Firebase UID linkage', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          uid: administrator.uid, email: administrator.email, role: 'administrator', status: 'active',
+          authority: { managePeopleAccess: true },
+        }))
+      }
+      if (url.endsWith('/peopleDevelopment/members.json')) {
+        return Promise.resolve(jsonResponse({
+          'member-1': { identifier: 'PERSON-1', fullName: 'Person One', email: 'person@example.com' },
+        }))
+      }
+      if (init?.method === 'PATCH') return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse(null))
+    })
+    const identityFetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('accounts:lookup')) return Promise.resolve(jsonResponse({}))
+      return Promise.resolve(jsonResponse({ localId: 'firebase-person-uid', email: 'person@example.com', displayName: 'Person One' }))
+    })
+    const app = createTestApp(databaseFetch, administrator, identityFetch as typeof fetch)
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/people-access/migrate', 'POST', {},
+    ), undefined, bindings)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data: { summary: { registered: 1 } } })
+    const linkWrite = databaseFetch.mock.calls.find(call => String(call[0]).endsWith('/peopleDevelopment/members/member-1.json'))
+    const payload = JSON.parse(String((linkWrite?.[1] as RequestInit).body))
+    expect(payload).toMatchObject({ firebaseUid: 'firebase-person-uid', authMigration: { status: 'registered', method: 'created' } })
+  })
+
+  it('reports missing migration data without returning the identifier password', async () => {
+    const databaseFetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          uid: administrator.uid, email: administrator.email, role: 'administrator', status: 'active',
+          authority: { managePeopleAccess: true },
+        }))
+      }
+      if (url.endsWith('/peopleDevelopment/members.json')) {
+        return Promise.resolve(jsonResponse({
+          missing: { identifier: 'PERSON-2', fullName: 'Missing Email' },
+          short: { identifier: 'A12', fullName: 'Short Password', email: 'short@example.com' },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const app = createTestApp(databaseFetch)
+    const response = await app.request(authenticatedRequest('/api/v1/admin/people-access'), undefined, bindings)
+    const body = await response.json() as { data: { people: Array<Record<string, unknown>> } }
+    expect(response.status).toBe(200)
+    expect(body.data.people).toEqual(expect.arrayContaining([
+      expect.objectContaining({ memberKey: 'missing', status: 'missing_email' }),
+      expect.objectContaining({ memberKey: 'short', status: 'invalid_password' }),
+    ]))
+    expect(body.data.people.every(person => !('identifier' in person))).toBe(true)
   })
 
   it('denies LInC Archives to an administrator without archive authority', async () => {
@@ -159,7 +225,8 @@ describe('Administrator routes', () => {
   })
 
   it('lists normalized archive folders for an allocated administrator', async () => {
-    const fetchMock = vi.fn((input: string | URL | Request, _init?: RequestInit) => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      void init
       const url = String(input)
       if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
         return Promise.resolve(jsonResponse({
@@ -247,7 +314,8 @@ describe('Administrator routes', () => {
   })
 
   it('refuses to delete an archive folder that contains nested folders', async () => {
-    const fetchMock = vi.fn((input: string | URL | Request, _init?: RequestInit) => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      void init
       const url = String(input)
       if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
         return Promise.resolve(jsonResponse({

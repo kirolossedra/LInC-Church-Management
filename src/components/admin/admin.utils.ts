@@ -31,6 +31,7 @@ export function normalizeAdminAuthority(value: unknown): AdminAuthority {
     manageAttendance: record.manageAttendance === true,
     manageArchives: record.manageArchives === true,
     manageNextGenQa: record.manageNextGenQa === true,
+    managePeopleAccess: record.managePeopleAccess === true,
   };
 }
 

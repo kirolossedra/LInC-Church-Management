@@ -6,6 +6,7 @@ export type FirebaseBindings = {
   FIREBASE_DATABASE_URL: string
   FIREBASE_SERVICE_ACCOUNT_EMAIL?: string
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY?: string
+  FIREBASE_WEB_API_KEY?: string
   NEXTGEN_MISSION_MAP_DATA?: string
 }
 

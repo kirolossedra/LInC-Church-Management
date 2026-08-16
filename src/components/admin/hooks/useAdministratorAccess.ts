@@ -98,6 +98,8 @@ export function useAdministratorAccess({
     (adminAccount?.status === 'active' && adminAccount.authority.manageArchives);
   const canManageNextGenQa = !!isChief ||
     (adminAccount?.status === 'active' && adminAccount.authority.manageNextGenQa);
+  const canManagePeopleAccess = !!isChief ||
+    (adminAccount?.status === 'active' && adminAccount.authority.managePeopleAccess);
 
   const sortedAdminAccounts = useMemo(() => [...adminAccounts].sort((a, b) => {
     if (a.role !== b.role) return a.role === 'chief' ? -1 : 1;
@@ -187,7 +189,7 @@ export function useAdministratorAccess({
     email, setEmail, password, setPassword, loginError, showPassword, setShowPassword,
     isAuthResolving, isSigningIn, isInitializingAdmin, authUser, adminAccount,
     authorityDrafts, savingAdminUid, isChief, isUnlocked, canManageAssessmentForms,
-    canManageCarousel, canManageAttendance, canManageArchives, canManageNextGenQa, sortedAdminAccounts, handleLogin,
+    canManageCarousel, canManageAttendance, canManageArchives, canManageNextGenQa, canManagePeopleAccess, sortedAdminAccounts, handleLogin,
     handleLogout, updateAuthorityDraft, handleSaveAdminAuthority, handleSuspendAdmin,
   };
 }

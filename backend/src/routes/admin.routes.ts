@@ -32,6 +32,11 @@ import {
   type FirebaseRealtimeDatabaseClient,
 } from '../services/firebaseRealtimeDatabase.service'
 import {
+  createFirebaseIdentityToolkitClient,
+  FirebaseIdentityError,
+  type FirebaseIdentityFetch,
+} from '../services/firebaseIdentityToolkit.service'
+import {
   ArchiveStorageError,
   createBackblazeArchiveStorage,
   type ArchiveStorage,
@@ -44,10 +49,16 @@ const authoritySchema = z.object({
   manageAttendance: z.boolean(),
   manageArchives: z.boolean(),
   manageNextGenQa: z.boolean(),
+  managePeopleAccess: z.boolean(),
 }).strict().refine(value => Object.values(value).some(Boolean), {
   message: 'At least one administrator authority is required.',
 })
+const peopleAccessEmailSchema = z.string().trim().toLowerCase().email().max(254)
+const peopleAccessEmailUpdateSchema = z.object({ email: peopleAccessEmailSchema }).strict()
 const uidSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,128}$/)
+const peopleAccessMigrationSchema = z.object({
+  memberKeys: z.array(uidSchema).max(100).optional(),
+}).strict()
 const archiveFolderIdSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,128}$/)
 const archiveFolderSchema = z.object({
   name: z.string().trim().min(1).max(80).refine(
@@ -74,6 +85,7 @@ export type AdminDependencies = {
   now?: () => number
   generateId?: () => string
   archiveStorage?: ArchiveStorage
+  identityFetch?: FirebaseIdentityFetch
 }
 
 export function createAdminRoutes(dependencies: AdminDependencies = {}) {
@@ -156,6 +168,135 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         status: 'suspended', authority: EMPTY_ADMIN_AUTHORITY, updatedAt: now(),
       })
       return context.json({ success: true, data: { suspended: true } })
+    })
+  })
+
+  routes.get('/people-access', context => withPeopleAccessAuthority(
+    context,
+    dependencies,
+    async database => context.json({
+      success: true,
+      data: { people: peopleAccessRows(await database.get(['peopleDevelopment', 'members'])).map(publicPeopleAccessRow) },
+    }),
+  ))
+
+  routes.patch('/people-access/:memberKey/email', async context => {
+    const memberKey = uidSchema.safeParse(context.req.param('memberKey'))
+    const body = peopleAccessEmailUpdateSchema.safeParse(await readJson(context))
+    if (!memberKey.success || !body.success) return validationError(context)
+    return withPeopleAccessAuthority(context, dependencies, async database => {
+      const raw = await database.get<unknown>(['peopleDevelopment', 'members', memberKey.data])
+      const member = recordValue(raw)
+      if (!member) return peopleAccessNotFound(context)
+      if (typeof member.firebaseUid === 'string' && member.firebaseUid) {
+        return context.json({
+          success: false,
+          error: { code: 'PEOPLE_ACCESS_ALREADY_REGISTERED', message: 'This person is already linked to Firebase Authentication.' },
+        }, 409)
+      }
+      await database.patch(['peopleDevelopment', 'members', memberKey.data], {
+        authEmail: body.data.email,
+        authMigration: { status: 'pending', updatedAt: now(), updatedByUid: context.get('firebaseUser').uid },
+      })
+      return context.json({ success: true, data: { updated: true } })
+    })
+  })
+
+  routes.post('/people-access/migrate', async context => {
+    const body = peopleAccessMigrationSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withPeopleAccessAuthority(context, dependencies, async database => {
+      const rawMembers = recordValue(await database.get<unknown>(['peopleDevelopment', 'members'])) || {}
+      const people = peopleAccessRows(rawMembers)
+      const requestedKeys = body.data.memberKeys ? new Set(body.data.memberKeys) : null
+      const selected = people.filter(person => !requestedKeys || requestedKeys.has(person.memberKey))
+      const getAccessToken = dependencies.getAccessToken ?? (bindings => getFirebaseServiceAccountAccessToken(bindings))
+      let identity: ReturnType<typeof createFirebaseIdentityToolkitClient>
+      try {
+        identity = createFirebaseIdentityToolkitClient({
+          bindings: context.env,
+          accessToken: await getAccessToken(context.env),
+          fetchImpl: dependencies.identityFetch,
+        })
+      } catch (error) {
+        return peopleAccessConfigurationError(context, error)
+      }
+
+      const claimedUids = new Map(
+        people.filter(person => person.firebaseUid).map(person => [person.firebaseUid, person.memberKey]),
+      )
+      const results: Array<{ memberKey: string; status: string; message: string }> = []
+
+      for (const person of selected) {
+        if (person.firebaseUid) {
+          results.push({ memberKey: person.memberKey, status: 'already_registered', message: 'Already linked.' })
+          continue
+        }
+        if (person.status !== 'ready' && person.status !== 'failed') {
+          results.push({ memberKey: person.memberKey, status: person.status, message: person.problem })
+          continue
+        }
+
+        try {
+          let firebaseUser = await identity.findByEmail(person.authEmail)
+          let migrationStatus = 'linked_existing'
+          if (firebaseUser) {
+            const owner = claimedUids.get(firebaseUser.localId)
+            if (owner && owner !== person.memberKey) {
+              throw new FirebaseIdentityError(
+                'FIREBASE_UID_CONFLICT',
+                'That Firebase account is already linked to another person.',
+                409,
+              )
+            }
+          } else {
+            firebaseUser = await identity.createUser({
+              email: person.authEmail,
+              password: person.identifier,
+              displayName: person.fullName,
+            })
+            migrationStatus = 'created'
+          }
+
+          const timestamp = now()
+          await database.patch(['peopleDevelopment', 'members', person.memberKey], {
+            authEmail: person.authEmail,
+            firebaseUid: firebaseUser.localId,
+            authMigration: {
+              status: 'registered',
+              method: migrationStatus,
+              registeredAt: timestamp,
+              updatedAt: timestamp,
+              updatedByUid: context.get('firebaseUser').uid,
+            },
+          })
+          claimedUids.set(firebaseUser.localId, person.memberKey)
+          results.push({ memberKey: person.memberKey, status: 'registered', message: migrationStatus === 'created' ? 'Firebase account created.' : 'Existing Firebase account linked.' })
+        } catch (error) {
+          const normalized = error instanceof FirebaseIdentityError
+            ? error
+            : new FirebaseIdentityError('PEOPLE_ACCESS_REGISTRATION_FAILED', 'Firebase registration failed.', 502)
+          await database.patch(['peopleDevelopment', 'members', person.memberKey, 'authMigration'], {
+            status: 'failed',
+            errorCode: normalized.code,
+            errorMessage: normalized.message,
+            updatedAt: now(),
+            updatedByUid: context.get('firebaseUser').uid,
+          })
+          results.push({ memberKey: person.memberKey, status: 'failed', message: normalized.message })
+        }
+      }
+
+      return context.json({
+        success: true,
+        data: {
+          results,
+          summary: results.reduce<Record<string, number>>((summary, result) => {
+            summary[result.status] = (summary[result.status] || 0) + 1
+            return summary
+          }, {}),
+        },
+      })
     })
   })
 
@@ -389,6 +530,24 @@ async function withArchiveAuthority(
   })
 }
 
+async function withPeopleAccessAuthority(
+  context: Context<AppEnv>,
+  dependencies: AdminDependencies,
+  operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>,
+) {
+  return withDatabase(context, dependencies, async database => {
+    context.header('Cache-Control', 'private, no-store, max-age=0')
+    const { allowed } = await requireAdminAuthority(database, context.get('firebaseUser'), 'managePeopleAccess')
+    if (!allowed) {
+      return context.json({
+        success: false,
+        error: { code: 'ADMIN_PEOPLE_ACCESS_REQUIRED', message: 'People Access administrator authority is required.' },
+      }, 403)
+    }
+    return operation(database)
+  })
+}
+
 async function withChief(
   context: Context<AppEnv>,
   dependencies: AdminDependencies,
@@ -439,6 +598,60 @@ function validationError(context: Context<AppEnv>) {
 }
 function notFound(context: Context<AppEnv>) {
   return context.json({ success: false, error: { code: 'ADMIN_NOT_FOUND', message: 'The administrator account was not found.' } }, 404)
+}
+
+function peopleAccessNotFound(context: Context<AppEnv>) {
+  return context.json({ success: false, error: { code: 'PEOPLE_ACCESS_NOT_FOUND', message: 'The People Development member was not found.' } }, 404)
+}
+
+function peopleAccessConfigurationError(context: Context<AppEnv>, error: unknown) {
+  const normalized = error instanceof FirebaseIdentityError ? error : null
+  return context.json({
+    success: false,
+    error: {
+      code: normalized?.code || 'FIREBASE_IDENTITY_NOT_CONFIGURED',
+      message: normalized?.message || 'Firebase account provisioning is not configured.',
+    },
+  }, (normalized?.status === 502 ? 502 : 503) as 502 | 503)
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function peopleAccessRows(value: unknown) {
+  return Object.entries(recordValue(value) || {}).map(([memberKey, raw]) => {
+    const member = recordValue(raw) || {}
+    const identifier = typeof member.identifier === 'string' ? member.identifier.trim() : ''
+    const fullName = typeof member.fullName === 'string' ? member.fullName.trim() : ''
+    const sourceEmail = typeof member.email === 'string' ? member.email.trim().toLowerCase() : ''
+    const authEmail = typeof member.authEmail === 'string' ? member.authEmail.trim().toLowerCase() : sourceEmail
+    const firebaseUid = typeof member.firebaseUid === 'string' ? member.firebaseUid.trim() : ''
+    const migration = recordValue(member.authMigration) || {}
+    let status = 'ready'
+    let problem = ''
+    if (firebaseUid) status = 'registered'
+    else if (!authEmail) { status = 'missing_email'; problem = 'A Firebase login email is missing.' }
+    else if (!peopleAccessEmailSchema.safeParse(authEmail).success) { status = 'invalid_email'; problem = 'The Firebase login email is invalid.' }
+    else if (identifier.length < 6) { status = 'invalid_password'; problem = 'The personal identifier is shorter than Firebase’s six-character password minimum.' }
+    else if (migration.status === 'failed') {
+      status = 'failed'
+      problem = typeof migration.errorMessage === 'string' ? migration.errorMessage : 'The last registration attempt failed.'
+    }
+    return { memberKey, fullName, sourceEmail, authEmail, identifier, firebaseUid, status, problem }
+  }).sort((a, b) => a.fullName.localeCompare(b.fullName))
+}
+
+function publicPeopleAccessRow(person: ReturnType<typeof peopleAccessRows>[number]) {
+  return {
+    memberKey: person.memberKey,
+    fullName: person.fullName,
+    sourceEmail: person.sourceEmail,
+    authEmail: person.authEmail,
+    firebaseUid: person.firebaseUid,
+    status: person.status,
+    problem: person.problem,
+  }
 }
 
 function archiveError(context: Context<AppEnv>, error: unknown) {

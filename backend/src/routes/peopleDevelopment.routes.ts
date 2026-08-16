@@ -3,13 +3,11 @@ import type { z } from 'zod'
 
 import {
   asRecord,
-  extractResponseValue,
   normalizeAssignments,
   normalizeGroup,
   normalizeMembers,
   normalizePersonalNotes,
   normalizeSchedules,
-  safeFirebaseKey,
 } from '../peopleDevelopment/peopleDevelopment.normalize'
 import {
   assignMemberSchema,
@@ -18,7 +16,6 @@ import {
   createScheduleSchema,
   firebasePushResponseSchema,
   idSchema,
-  portalAccessSchema,
   replaceAssignmentAttachmentsSchema,
   updateScheduleSchema,
 } from '../schemas/peopleDevelopment.schema'
@@ -44,36 +41,20 @@ export type PeopleDevelopmentDependencies = {
   getAccessToken?: (bindings: FirebaseBindings) => Promise<string>
   databaseFetch?: FirebaseDatabaseFetch
   now?: () => number
-  checkPortalRateLimit?: (clientKey: string, timestamp: number) => {
-    allowed: boolean
-    retryAfterSeconds: number
-  }
 }
 
 export function createPeopleDevelopmentRoutes(dependencies: PeopleDevelopmentDependencies = {}) {
   const routes = new Hono<AppEnv>()
   const now = dependencies.now ?? Date.now
-  const checkPortalRateLimit = dependencies.checkPortalRateLimit ?? createPortalRateLimiter()
 
-  routes.post('/portal', async context => {
-    const validation = portalAccessSchema.safeParse(await readJson(context))
-    if (!validation.success) return validationError(context, validation.error)
-    const rateLimit = checkPortalRateLimit(getPortalClientKey(context), now())
-    if (!rateLimit.allowed) {
-      context.header('Retry-After', String(rateLimit.retryAfterSeconds))
-      return context.json({
-        success: false,
-        error: { code: 'RATE_LIMITED', message: 'Too many access attempts. Please try again later.' },
-      }, 429)
-    }
-
+  routes.get('/portal', createFirebaseAuthMiddleware(dependencies.verifyToken), async context => {
     return withDatabase(context, dependencies, async database => {
-      const member = await findPortalMember(database, validation.data.identifier)
+      const member = await findPortalMember(database, context.get('firebaseUser').uid)
       if (!member) {
         return context.json({
           success: false,
-          error: { code: 'GROUP_ACCESS_NOT_FOUND', message: 'The identifier could not be authorized.' },
-        }, 404)
+          error: { code: 'GROUP_ACCESS_NOT_LINKED', message: 'This Firebase account is not linked to a People Development profile.' },
+        }, 403)
       }
       if (!member.group) {
         context.header('Cache-Control', 'private, no-store, max-age=0')
@@ -240,41 +221,15 @@ export function createPeopleDevelopmentRoutes(dependencies: PeopleDevelopmentDep
   return routes
 }
 
-async function findPortalMember(database: FirebaseRealtimeDatabaseClient, identifier: string) {
-  const normalized = identifier.trim().toLowerCase()
-  const directKey = `identifier_${safeFirebaseKey(normalized)}`
-  const direct = await database.get([...MEMBERS, directKey])
-  let memberKey = directKey
-  let raw = direct
-
-  if (!raw) {
-    const members = asRecord(await database.get(MEMBERS))
-    const match = Object.entries(members).find(([, value]) => String(asRecord(value).identifier || '').trim().toLowerCase() === normalized)
-    if (match) [memberKey, raw] = match
-  }
-
-  if (!raw) {
-    const forms = asRecord(await database.get(['form']))
-    const match = Object.entries(forms).find(([, value]) => extractResponseValue(value, ['userIdentifier', 'linkedUserIdentifier', 'memberId', 'memberIdentifier', 'linkId']).trim().toLowerCase() === normalized)
-    if (match) {
-      const [formId, form] = match
-      const record = asRecord(form)
-      const group = normalizeGroup(extractResponseValue(record, ['peopleDevelopmentGroup', 'group']))
-      return {
-        memberKey: directKey,
-        identifier: identifier.trim(),
-        fullName: extractResponseValue(record, ['fullName', 'full_name', 'name', 'firstName', 'lastName']),
-        email: extractResponseValue(record, ['email', 'emailAddress', 'userEmail']),
-        primaryGift: '', group, groupLabel: '', sourcePath: 'form', sourceKeys: [formId],
-      }
-    }
-  }
-
-  if (!raw) return null
+async function findPortalMember(database: FirebaseRealtimeDatabaseClient, firebaseUid: string) {
+  const members = asRecord(await database.get(MEMBERS))
+  const match = Object.entries(members).find(([, value]) => String(asRecord(value).firebaseUid || '').trim() === firebaseUid)
+  if (!match) return null
+  const [memberKey, raw] = match
   const member = asRecord(raw)
   return {
     memberKey,
-    identifier: String(member.identifier || identifier).trim(),
+    identifier: String(member.identifier || '').trim(),
     fullName: String(member.fullName || member.name || '').trim(),
     email: String(member.email || '').trim(),
     primaryGift: String(member.primaryGift || '').trim(),
@@ -299,28 +254,6 @@ function parseId(context: Context<AppEnv>, name: string) { const result = idSche
 function invalidId(context: Context<AppEnv>) { return context.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'A People Development identifier is invalid.' } }, 400) }
 function validationError(context: Context<AppEnv>, error: z.ZodError) { return context.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'The People Development request is invalid.', details: error.issues } }, 400) }
 function torontoDateKey(timestamp: number) { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(timestamp)) }
-
-function getPortalClientKey(context: Context<AppEnv>) {
-  return context.req.header('CF-Connecting-IP')?.trim()
-    || context.req.header('X-Forwarded-For')?.split(',')[0]?.trim()
-    || 'unknown-client'
-}
-
-function createPortalRateLimiter(maxAttempts = 10, windowMilliseconds = 60_000) {
-  const clients = new Map<string, { attempts: number, resetsAt: number }>()
-  return (clientKey: string, timestamp: number) => {
-    const current = clients.get(clientKey)
-    if (!current || timestamp >= current.resetsAt) {
-      clients.set(clientKey, { attempts: 1, resetsAt: timestamp + windowMilliseconds })
-      return { allowed: true, retryAfterSeconds: 0 }
-    }
-    if (current.attempts >= maxAttempts) {
-      return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((current.resetsAt - timestamp) / 1000)) }
-    }
-    current.attempts += 1
-    return { allowed: true, retryAfterSeconds: 0 }
-  }
-}
 
 async function withDatabase(context: Context<AppEnv>, dependencies: PeopleDevelopmentDependencies, operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>): Promise<Response> {
   try {

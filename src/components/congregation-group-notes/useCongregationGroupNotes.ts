@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+
+import { auth } from '../../firebase';
 import { useI18n } from '../../i18n';
 import { getCongregationGroupAccess } from '../../services/congregationGroupNotes';
 import { getNextPeopleDevelopmentMeetingOccurrence, type PeopleDevelopmentMeetingSchedule } from '../pastor/people-development';
-import {
-  SAVED_IDENTIFIER_STORAGE_KEY,
-  getGroupConfig,
-  getGroupDescription,
-  getGroupLabel,
-} from './congregationGroupNotes.config';
+import { getGroupConfig, getGroupDescription, getGroupLabel } from './congregationGroupNotes.config';
 import type {
   GroupAssignment,
   GroupAssignmentAttachment,
@@ -22,10 +20,9 @@ export default function useCongregationGroupNotes() {
   const rawLocale = String(locale || '').toLowerCase();
   const isAr = rawLocale === 'ar' || rawLocale.startsWith('ar-') || rawLocale.startsWith('arabic') || dir === 'rtl';
   const displayLocale: 'en' | 'ar' = isAr ? 'ar' : 'en';
-  const [identifierInput, setIdentifierInput] = useState(() =>
-    typeof window === 'undefined' ? '' : window.localStorage.getItem(SAVED_IDENTIFIER_STORAGE_KEY) || '',
-  );
-  const [activeIdentifier, setActiveIdentifier] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [activeUid, setActiveUid] = useState('');
   const [loginStatus, setLoginStatus] = useState<LoginStatus>('idle');
   const [loginMessage, setLoginMessage] = useState('');
   const [profile, setProfile] = useState<MemberProfile | null>(null);
@@ -46,15 +43,44 @@ export default function useCongregationGroupNotes() {
     setMeetingSchedulesLoading(false);
   }, []);
 
+  const clearPortalData = useCallback(() => {
+    setActiveUid('');
+    setProfile(null);
+    setAssignments([]);
+    setMeetingSchedules([]);
+    setAssignmentsLoading(false);
+    setMeetingSchedulesLoading(false);
+  }, []);
+
+  useEffect(() => onAuthStateChanged(auth, user => {
+    if (!user) {
+      clearPortalData();
+      return;
+    }
+    setAssignmentsLoading(true);
+    setMeetingSchedulesLoading(true);
+    void getCongregationGroupAccess()
+      .then(data => {
+        applyPortalData(data);
+        setActiveUid(user.uid);
+        setEmailInput(user.email || '');
+        setLoginStatus('success');
+      })
+      .catch(error => {
+        console.error('Failed to restore People Notes access:', error);
+        clearPortalData();
+      });
+  }), [applyPortalData, clearPortalData]);
+
   useEffect(() => {
-    if (!activeIdentifier) return undefined;
+    if (!activeUid) return undefined;
     const timer = window.setInterval(() => {
-      void getCongregationGroupAccess(activeIdentifier)
+      void getCongregationGroupAccess()
         .then(applyPortalData)
-        .catch(error => console.error('Failed to refresh group access:', error));
+        .catch(error => console.error('Failed to refresh People Notes access:', error));
     }, 30_000);
     return () => window.clearInterval(timer);
-  }, [activeIdentifier, applyPortalData]);
+  }, [activeUid, applyPortalData]);
 
   const groupConfig = getGroupConfig(profile?.group || '');
   const groupLabel = profile?.group ? getGroupLabel(profile.group, displayLocale) : '';
@@ -87,7 +113,7 @@ export default function useCongregationGroupNotes() {
     try {
       const attachmentUrl = createDecodedAttachmentUrl(attachment);
       const openedWindow = window.open(attachmentUrl, '_blank', 'noopener,noreferrer');
-      if (!openedWindow) window.alert(isAr ? 'تم منع فتح الملف من المتصفح. جرّب زر التحميل.' : 'The browser blocked opening the file. Try the download button.');
+      if (!openedWindow) window.alert(isAr ? 'حظر المتصفح فتح الملف. جرّب زر التنزيل.' : 'The browser blocked opening the file. Try the download button.');
       window.setTimeout(() => window.URL.revokeObjectURL(attachmentUrl), 60_000);
     } catch (error) {
       console.error('Failed to open assignment attachment:', error);
@@ -107,16 +133,16 @@ export default function useCongregationGroupNotes() {
       window.setTimeout(() => window.URL.revokeObjectURL(attachmentUrl), 10_000);
     } catch (error) {
       console.error('Failed to download assignment attachment:', error);
-      window.alert(isAr ? 'تعذر تحميل ملف PDF.' : 'Could not download the PDF file.');
+      window.alert(isAr ? 'تعذر تنزيل ملف PDF.' : 'Could not download the PDF file.');
     }
   };
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
-    const identifier = identifierInput.trim();
-    if (!identifier) {
+    const email = emailInput.trim().toLowerCase();
+    if (!email || !passwordInput) {
       setLoginStatus('error');
-      setLoginMessage(isAr ? 'اكتب رمز العبور الشخصي أولاً.' : 'Enter your personal identifier first.');
+      setLoginMessage(isAr ? 'أدخل البريد الإلكتروني وكلمة المرور.' : 'Enter your email and password.');
       return;
     }
     setLoginStatus('loading');
@@ -124,44 +150,39 @@ export default function useCongregationGroupNotes() {
     setAssignmentsLoading(true);
     setMeetingSchedulesLoading(true);
     try {
-      const data = await getCongregationGroupAccess(identifier);
+      const credential = await signInWithEmailAndPassword(auth, email, passwordInput);
+      const data = await getCongregationGroupAccess();
       applyPortalData(data);
-      setActiveIdentifier(identifier);
+      setActiveUid(credential.user.uid);
+      setPasswordInput('');
       setLoginStatus('success');
-      window.localStorage.setItem(SAVED_IDENTIFIER_STORAGE_KEY, identifier);
     } catch (error) {
-      console.error('Identifier login failed:', error);
-      setProfile(null);
-      setAssignments([]);
-      setMeetingSchedules([]);
-      setAssignmentsLoading(false);
-      setMeetingSchedulesLoading(false);
+      console.error('People Notes Firebase login failed:', error);
+      clearPortalData();
       setLoginStatus('error');
-      setLoginMessage(isAr ? 'لم يتم العثور على هذا الرمز أو لا توجد مجموعة مخصصة له.' : 'Identifier not found or no group is assigned.');
+      setLoginMessage(error instanceof Error ? error.message : 'The email, password, or People Notes linkage is invalid.');
     }
   };
 
-  const handleLogout = () => {
-    setActiveIdentifier('');
-    setProfile(null);
-    setAssignments([]);
-    setMeetingSchedules([]);
+  const handleLogout = async () => {
+    await signOut(auth).catch(error => console.error('People Notes logout failed:', error));
+    clearPortalData();
     setMeetingCalendarMonth(new Date());
     setIsMeetingCalendarExpanded(false);
     setSearchTerm('');
     setSelectedAssignment(null);
     setLoginStatus('idle');
     setLoginMessage('');
-    window.localStorage.removeItem(SAVED_IDENTIFIER_STORAGE_KEY);
   };
 
   return {
-    dir, isAr, displayLocale, identifierInput, setIdentifierInput, loginStatus, loginMessage,
-    profile, assignments, assignmentsLoading, searchTerm, setSearchTerm, selectedAssignment,
-    setSelectedAssignment, meetingSchedules, meetingSchedulesLoading, meetingCalendarMonth,
-    setMeetingCalendarMonth, isMeetingCalendarExpanded, setIsMeetingCalendarExpanded,
-    groupConfig, groupLabel, groupDescription, filteredAssignments, latestAssignment,
-    nextGroupMeeting, nextSharedMeeting, openAttachment, downloadAttachment, handleLogin, handleLogout,
+    dir, isAr, displayLocale, emailInput, setEmailInput, passwordInput, setPasswordInput,
+    loginStatus, loginMessage, profile, assignments, assignmentsLoading, searchTerm,
+    setSearchTerm, selectedAssignment, setSelectedAssignment, meetingSchedules,
+    meetingSchedulesLoading, meetingCalendarMonth, setMeetingCalendarMonth,
+    isMeetingCalendarExpanded, setIsMeetingCalendarExpanded, groupConfig, groupLabel,
+    groupDescription, filteredAssignments, latestAssignment, nextGroupMeeting,
+    nextSharedMeeting, openAttachment, downloadAttachment, handleLogin, handleLogout,
   };
 }
 

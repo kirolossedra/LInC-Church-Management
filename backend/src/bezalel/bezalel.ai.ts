@@ -30,6 +30,10 @@ const PASTOR_ACTIONS = [
   'delete_unavailability',
   'accept_request',
   'reject_request',
+  'create_group_schedule',
+  'update_group_schedule',
+  'set_group_schedule_active',
+  'delete_group_schedule',
 ] as const
 
 const pastorActionSchema = z.object({
@@ -40,6 +44,14 @@ const pastorActionSchema = z.object({
   targetId: z.string().trim().max(128).default(''),
   reason: z.string().trim().max(1_000).default(''),
   meetingTitle: z.string().trim().max(200).default('Meeting with Pastor'),
+  audience: z.enum(['group', 'shared']).default('group'),
+  group: z.string().trim().max(40).default(''),
+  ordinal: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal('last')]).default(1),
+  weekday: z.number().int().min(0).max(6).default(0),
+  durationMinutes: z.number().int().min(30).max(480).default(90),
+  startDate: z.string().trim().max(10).default(''),
+  endDate: z.string().trim().max(10).default(''),
+  active: z.boolean().default(true),
 })
 
 export const pastorAgentResultSchema = z.object({
@@ -137,7 +149,11 @@ export async function runPastorAgent(
           action: { type: 'string', enum: PASTOR_ACTIONS },
           date: { type: 'string' }, startTime: { type: 'string' }, endTime: { type: 'string' },
           targetId: { type: 'string' }, reason: { type: 'string' }, meetingTitle: { type: 'string' },
-        }, ['action', 'date', 'startTime', 'endTime', 'targetId', 'reason', 'meetingTitle']),
+          audience: { type: 'string', enum: ['group', 'shared'] }, group: { type: 'string' },
+          ordinal: { anyOf: [{ type: 'integer', enum: [1, 2, 3, 4] }, { type: 'string', enum: ['last'] }] }, weekday: { type: 'integer' },
+          durationMinutes: { type: 'integer' }, startDate: { type: 'string' },
+          endDate: { type: 'string' }, active: { type: 'boolean' },
+        }, ['action', 'date', 'startTime', 'endTime', 'targetId', 'reason', 'meetingTitle', 'audience', 'group', 'ordinal', 'weekday', 'durationMinutes', 'startDate', 'endDate', 'active']),
       },
     }, ['reply', 'focusDates', 'actions']),
   })

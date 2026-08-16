@@ -132,6 +132,11 @@ export function AdminHierarchySection({
                         title: 'NextGen QA',
                         description: 'Create QA sessions, review voters, and open or close voting.',
                       },
+                      {
+                        key: 'managePeopleAccess',
+                        title: 'People Access',
+                        description: 'Register and repair Firebase access for People Notes.',
+                      },
                     ] as const
                   ).map((authorityOption) => {
                     const selected = draft[authorityOption.key];

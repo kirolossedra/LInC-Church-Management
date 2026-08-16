@@ -22,7 +22,7 @@ function request(path: string, method = 'GET', body?: unknown, token = 'valid-to
   return new Request(`https://worker.test${path}`, {
     method,
     headers: {
-      ...(path.includes('/pastor') ? { Authorization: `Bearer ${token}` } : {}),
+      ...(path.includes('/pastor') || path.endsWith('/portal') ? { Authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -39,21 +39,33 @@ function app(fetchMock: ReturnType<typeof vi.fn>, user = pastor) {
 }
 
 describe('People Development routes', () => {
-  it('rejects invalid portal identifiers before database access', async () => {
+  it('requires Firebase authentication for People Notes portal access', async () => {
     const fetchMock = vi.fn()
     const result = await app(fetchMock).request(
-      request('/api/v1/people-development/portal', 'POST', { identifier: 'x' }),
+      '/api/v1/people-development/portal',
+      {},
+      bindings,
+    )
+    expect(result.status).toBe(401)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a Firebase account that is not linked to a person', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response({
+      other: { firebaseUid: 'someone-else', identifier: 'MEMBER-123' },
+    }))
+    const result = await app(fetchMock).request(
+      request('/api/v1/people-development/portal'),
       undefined,
       bindings,
     )
-    expect(result.status).toBe(400)
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.status).toBe(403)
   })
 
   it('returns only the matched group assignments and active schedules', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response({
-        identifier: 'MEMBER-123', fullName: 'Member', group: 'teachers', email: 'member@example.com',
+        member: { firebaseUid: 'pastor', identifier: 'MEMBER-123', fullName: 'Member', group: 'teachers', email: 'member@example.com' },
       }))
       .mockResolvedValueOnce(response({
         teacher: { group: 'teachers', groups: ['teachers'], text: 'Teacher note', createdAt: 10 },
@@ -66,7 +78,7 @@ describe('People Development routes', () => {
         disabled: { audience: 'shared', active: false, ordinal: 1, weekday: 1, startTime: '19:00', startDate: '2026-01-01' },
       }))
     const result = await app(fetchMock).request(
-      request('/api/v1/people-development/portal', 'POST', { identifier: 'MEMBER-123' }),
+      request('/api/v1/people-development/portal'),
       undefined,
       bindings,
     )
@@ -80,10 +92,10 @@ describe('People Development routes', () => {
 
   it('returns no group data for a recognized unassigned member', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(response({
-      identifier: 'MEMBER-UNASSIGNED', fullName: 'Waiting Member', group: '', email: 'waiting@example.com',
+      member: { firebaseUid: 'pastor', identifier: 'MEMBER-UNASSIGNED', fullName: 'Waiting Member', group: '', email: 'waiting@example.com' },
     }))
     const result = await app(fetchMock).request(
-      request('/api/v1/people-development/portal', 'POST', { identifier: 'MEMBER-UNASSIGNED' }),
+      request('/api/v1/people-development/portal'),
       undefined,
       bindings,
     )
@@ -96,25 +108,6 @@ describe('People Development routes', () => {
     expect(body.data.schedules).toEqual([])
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(result.headers.get('Cache-Control')).toContain('no-store')
-  })
-
-  it('rate limits public identifier attempts before database access', async () => {
-    const fetchMock = vi.fn()
-    const testApp = createApp({ peopleDevelopment: {
-      verifyToken: vi.fn().mockResolvedValue(pastor),
-      getAccessToken: vi.fn().mockResolvedValue('service-token'),
-      databaseFetch: fetchMock as unknown as typeof fetch,
-      now: () => 1_777_777_777_000,
-      checkPortalRateLimit: () => ({ allowed: false, retryAfterSeconds: 45 }),
-    } })
-    const result = await testApp.request(
-      request('/api/v1/people-development/portal', 'POST', { identifier: 'MEMBER-123' }),
-      undefined,
-      bindings,
-    )
-    expect(result.status).toBe(429)
-    expect(result.headers.get('Retry-After')).toBe('45')
-    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('requires Firebase authentication for pastor routes', async () => {

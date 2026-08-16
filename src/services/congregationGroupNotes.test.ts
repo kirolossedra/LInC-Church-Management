@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { getIdToken } = vi.hoisted(() => ({ getIdToken: vi.fn().mockResolvedValue('member-token') }));
+vi.mock('../firebase', () => ({ auth: { currentUser: { getIdToken } } }));
+
 import { getCongregationGroupAccess } from './congregationGroupNotes';
 
 describe('Congregation group access service', () => {
@@ -10,13 +13,14 @@ describe('Congregation group access service', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
   });
 
-  it('sends only the submitted identifier to the Hono portal', async () => {
-    await getCongregationGroupAccess('MEMBER-1');
+  it('uses the Firebase token and sends no identifier to the Hono portal', async () => {
+    await getCongregationGroupAccess();
 
     const fetchMock = vi.mocked(fetch);
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/api/v1/people-development/portal');
-    expect(init?.method).toBe('POST');
-    expect(JSON.parse(String(init?.body))).toEqual({ identifier: 'MEMBER-1' });
+    expect(init?.method).toBe('GET');
+    expect(init?.headers).toMatchObject({ Authorization: 'Bearer member-token' });
+    expect(init?.body).toBeUndefined();
   });
 });

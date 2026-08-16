@@ -116,7 +116,7 @@ export function buildPeopleDevelopmentNotificationEmail(
   const appLinkEn = request.post.appUrl
     ? `
       <p style="margin: 12px 0 0;">
-        Open the LinC app and log in with your personal identifier to view the complete post.
+        Open LINC One and log in to People Notes with your Firebase email and password to view the complete post.
       </p>
       <p style="margin: 8px 0 0;">
         <a href="${escapeHtml(request.post.appUrl)}" style="color: #8b1e1e; font-weight: 800; word-break: break-all;">
@@ -124,7 +124,7 @@ export function buildPeopleDevelopmentNotificationEmail(
         </a>
       </p>
     `
-    : '<p style="margin: 12px 0 0;">Open the LinC app and log in with your personal identifier to view the complete post.</p>'
+    : '<p style="margin: 12px 0 0;">Open LINC One and log in to People Notes with your Firebase email and password to view the complete post.</p>'
 
   const appLinkAr = request.post.appUrl
     ? `
@@ -212,7 +212,7 @@ export function buildPeopleDevelopmentNotificationEmail(
       '',
       request.post.appUrl
         ? `Open LinC: ${request.post.appUrl}`
-        : 'Open the LinC app and log in with your personal identifier.',
+        : 'Open LINC One and log in to People Notes with your Firebase email and password.',
       '',
       'تحديث جديد في برنامج نمو الأشخاص',
       '',

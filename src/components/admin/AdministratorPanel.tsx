@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   MessageCircleQuestion,
   UsersRound,
+  UserRoundCog,
   X,
 } from 'lucide-react';
 import { get, onValue, ref, set, update } from 'firebase/database';
@@ -26,6 +27,7 @@ import {
   type AdminSectionId,
 } from './components';
 import { LincArchivesSection } from './archives';
+import PeopleAccessMigrationSection from './people-access/PeopleAccessMigrationSection';
 import { NextGenQaSessionsAdmin } from '../pastor/nextgen';
 import {
   AdminApprovalScreen,
@@ -104,6 +106,7 @@ export default function AdministratorPanel() {
     canManageAttendance,
     canManageArchives,
     canManageNextGenQa,
+    canManagePeopleAccess,
     sortedAdminAccounts,
     handleLogin,
     handleLogout,
@@ -184,6 +187,14 @@ export default function AdministratorPanel() {
       icon: MessageCircleQuestion,
       accent: 'bg-[#a66c18] text-white',
     }] : []),
+    ...(canManagePeopleAccess ? [{
+      id: 'people-access' as const,
+      label: 'People Access',
+      eyebrow: 'Firebase transition',
+      description: 'Register People Notes accounts, repair missing emails, and retry individual migrations.',
+      icon: UserRoundCog,
+      accent: 'bg-[#57314f] text-white',
+    }] : []),
     ...(canManageArchives ? [{
       id: 'archives' as const,
       label: 'LInC Archives',
@@ -192,7 +203,7 @@ export default function AdministratorPanel() {
       icon: Archive,
       accent: 'bg-[#1b1010] text-white',
     }] : []),
-  ], [canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, canManageNextGenQa, isChief]);
+  ], [canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, canManageNextGenQa, canManagePeopleAccess, isChief]);
 
   const visibleActiveSection = adminAreas.some(area => area.id === activeSection)
     ? activeSection
@@ -712,6 +723,7 @@ export default function AdministratorPanel() {
               />
             )}
             {visibleActiveSection === 'archives' && canManageArchives && <LincArchivesSection />}
+            {visibleActiveSection === 'people-access' && canManagePeopleAccess && <PeopleAccessMigrationSection />}
           </motion.div>
         </AnimatePresence>
       </main>

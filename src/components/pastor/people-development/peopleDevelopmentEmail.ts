@@ -68,7 +68,7 @@ export function buildPeopleDevelopmentAssignmentNotificationEmailHtml(params: {
   const appLinkEn = params.appUrl
     ? `
       <p style="margin: 12px 0 0;">
-        Open the LinC app and log in with your personal identifier to view the full note/resource.
+        Open LINC One and log in to People Notes with your Firebase email and password to view the full note/resource.
       </p>
       <p style="margin: 8px 0 0;">
         <a
@@ -81,7 +81,7 @@ export function buildPeopleDevelopmentAssignmentNotificationEmailHtml(params: {
     `
     : `
       <p style="margin: 12px 0 0;">
-        Open the LinC app and log in with your personal identifier to view the full note/resource.
+        Open LINC One and log in to People Notes with your Firebase email and password to view the full note/resource.
       </p>
     `;
 

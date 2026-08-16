@@ -1,6 +1,12 @@
 import { useRef, useState } from 'react';
 
 import {
+  createPeopleDevelopmentMeetingSchedule,
+  deletePeopleDevelopmentMeetingSchedule,
+  updatePeopleDevelopmentMeetingSchedule,
+} from '../../services/peopleDevelopment';
+import type { PeopleDevelopmentGroupId } from '../pastor/people-development/peopleDevelopment.types';
+import {
   chatWithPastorBezalel,
   type BezalelMessage,
   type PastorBezalelCalendarAction,
@@ -28,7 +34,7 @@ export default function PastorBezalelAssistant({
     role: 'assistant',
     content: locale === 'ar'
       ? 'أنا بصلئيل. يمكنني مراجعة التقويم وفتح أو إغلاق أوقات الحجز وإدارة الطلبات المعلقة.'
-      : 'I am Bezalel. I can review the calendar, open or close booking times, and help manage pending requests.',
+      : 'I am Bezalel. I can review the calendar, manage booking times and requests, and maintain recurring group meetings.',
   }]);
   const [activity, setActivity] = useState<BezalelActivity>('idle');
   const [travelRequest, setTravelRequest] = useState<BezalelTravelRequest>();
@@ -128,5 +134,37 @@ async function executeAction(result: PastorBezalelCalendarAction) {
       result.action === 'accept_request' ? 'accepted' : 'rejected',
       result.meetingTitle || 'Meeting with Pastor',
     );
+  } else if (result.action === 'create_group_schedule') {
+    await createPeopleDevelopmentMeetingSchedule({
+      audience: result.audience,
+      group: result.group as PeopleDevelopmentGroupId | '',
+      ordinal: result.ordinal,
+      weekday: result.weekday as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      startTime: result.startTime,
+      durationMinutes: result.durationMinutes,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      active: result.active,
+      createdAt: Date.now(),
+      createdAtISO: new Date().toISOString(),
+      updatedAt: Date.now(),
+      updatedAtISO: new Date().toISOString(),
+    });
+  } else if (result.action === 'update_group_schedule') {
+    await updatePeopleDevelopmentMeetingSchedule(result.targetId, {
+      audience: result.audience,
+      group: result.group as PeopleDevelopmentGroupId | '',
+      ordinal: result.ordinal,
+      weekday: result.weekday as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      startTime: result.startTime,
+      durationMinutes: result.durationMinutes,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      active: result.active,
+    });
+  } else if (result.action === 'set_group_schedule_active') {
+    await updatePeopleDevelopmentMeetingSchedule(result.targetId, { active: result.active });
+  } else if (result.action === 'delete_group_schedule') {
+    await deletePeopleDevelopmentMeetingSchedule(result.targetId);
   }
 }
