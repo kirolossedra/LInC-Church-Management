@@ -1,5 +1,6 @@
 import { auth } from '../firebase';
-import type { AdminAccount, AdminAuthority } from '../components/admin/admin.types';
+import type { AdminAccount, AdminAuditEvent, AdminAuthority } from '../components/admin/admin.types';
+import type { CarouselPhoto } from '../components/admin/admin.types';
 import type { ArchiveFile, ArchiveFolder } from '../components/admin/archives/archives.types';
 import type { AttendancePerson, AttendancePersonForm } from '../components/admin/attendance/attendance.types';
 
@@ -29,6 +30,10 @@ export async function getAdministratorSession() {
     '/session',
     { method: 'GET' },
   );
+}
+
+export async function getAdminAuditEvents() {
+  return requestAdmin<{ events: AdminAuditEvent[] }>('/audit', { method: 'GET' });
 }
 
 export async function saveAdministratorAuthority(uid: string, authority: AdminAuthority) {
@@ -68,6 +73,38 @@ export async function updateAttendanceDate(personId: string, dateKey: string, at
     `/attendance/people/${encodeURIComponent(personId)}/attendance`,
     { method: 'PATCH', body: JSON.stringify({ dateKey, attended }) },
   );
+}
+
+export async function getAdminCarousel() {
+  return requestAdmin<{ enabled: boolean; photos: CarouselPhoto[] }>('/carousel', { method: 'GET' });
+}
+
+export async function updateAdminCarouselVisibility(enabled: boolean) {
+  return requestAdmin<{ enabled: boolean }>('/carousel/visibility', {
+    method: 'PATCH', body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function uploadAdminCarouselPhotos(photos: Array<Pick<CarouselPhoto, 'id' | 'url' | 'altEn' | 'altAr'>>) {
+  return requestAdmin<{ photos: CarouselPhoto[] }>('/carousel/photos', {
+    method: 'POST', body: JSON.stringify({ photos }),
+  });
+}
+
+export async function updateAdminCarouselPhotoText(photoId: string, altEn: string, altAr: string) {
+  return requestAdmin<{ updated: true }>(`/carousel/photos/${encodeURIComponent(photoId)}/text`, {
+    method: 'PATCH', body: JSON.stringify({ altEn, altAr }),
+  });
+}
+
+export async function reorderAdminCarouselPhotos(photoIds: string[]) {
+  return requestAdmin<{ updated: true }>('/carousel/photos/order', {
+    method: 'PATCH', body: JSON.stringify({ photoIds }),
+  });
+}
+
+export async function deleteAdminCarouselPhoto(photoId: string) {
+  return requestAdmin<{ deleted: true }>(`/carousel/photos/${encodeURIComponent(photoId)}`, { method: 'DELETE' });
 }
 
 export async function getPeopleAccessAudit() {

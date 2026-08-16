@@ -8,7 +8,7 @@ vi.mock('../firebase', () => ({
   },
 }));
 
-import { uploadArchiveFile } from './administrator';
+import { getAdminAuditEvents, uploadArchiveFile } from './administrator';
 
 function apiResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify({ success: true, data }), {
@@ -96,5 +96,32 @@ describe('Administrator archive service', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.some(call => call[1]?.method === 'DELETE')).toBe(false);
+  });
+});
+
+describe('Administrator audit service', () => {
+  it('loads the authenticated server-filtered audit trail', async () => {
+    const events = [{
+      id: 'audit-1',
+      occurredAt: 100,
+      actorUid: 'admin-1',
+      actorEmail: 'admin@example.com',
+      actorRole: 'administrator',
+      action: 'attendance.person.created',
+      targetType: 'attendancePerson',
+      targetId: 'person-1',
+      targetLabel: 'Ada Lovelace',
+      summary: 'Created attendance person Ada Lovelace.',
+      status: 'succeeded',
+      changes: {},
+      metadata: {},
+    }];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(apiResponse({ events }));
+
+    await expect(getAdminAuditEvents()).resolves.toEqual({ events });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/admin/audit');
+    expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).Authorization)
+      .toBe('Bearer firebase-id-token');
   });
 });

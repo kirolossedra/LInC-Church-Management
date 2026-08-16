@@ -34,7 +34,8 @@ import {
   translateQaTheme,
 } from '../bezalel/bezalel.ai'
 import { GeminiServiceError } from '../services/gemini.service'
-import { requireAdminAuthority } from '../admin/adminAuthorization'
+import { FULL_ADMIN_AUTHORITY, getAdminAccount, requireAdminAuthority, type AdminAccount } from '../admin/adminAuthorization'
+import { writeAdminAudit } from '../admin/adminAudit'
 import { createFirebaseAuthMiddleware, type FirebaseTokenVerifier } from '../security/firebaseAuth'
 import { FirebaseServiceAccountError, getFirebaseServiceAccountAccessToken } from '../security/firebaseServiceAccount'
 import { isPastorUser } from '../security/pastorAuthorization'
@@ -256,7 +257,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
   routes.post('/pastor/qa/sessions', async context => {
     const body = sessionSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
-    return withQaManager(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async (database, account) => {
       let theme
       try {
         theme = await (dependencies.translateTheme ?? translateQaTheme)(
@@ -277,6 +278,11 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
         userUid: context.get('firebaseUser').uid,
         timestamp: now(),
       })
+      await auditNextGen(context, database, account, generateId, now, {
+        action: 'nextgen.qa.session.created', targetType: 'nextGenQaSession', targetId: session.id,
+        targetLabel: session.title, summary: `Created NextGen QA session ${session.title}.`,
+        metadata: { status: session.status, hasDescription: !!session.description, themeLanguages: Object.keys(session.theme) },
+      })
       return context.json({ success: true, data: { session } }, 201)
     })
   })
@@ -285,7 +291,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     const sessionId = idSchema.safeParse(context.req.param('sessionId'))
     const body = sessionUpdateSchema.safeParse(await readJson(context))
     if (!sessionId.success || !body.success) return validationError(context)
-    return withQaManager(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async (database, account) => {
       const session = await getQaSession(database, sessionId.data)
       if (!session) return notFound(context, 'NEXTGEN_QA_SESSION_NOT_FOUND', 'The QA session was not found.')
       let translatedTheme = session.theme
@@ -300,7 +306,8 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
           return geminiPortalError(context, error)
         }
       }
-      const { theme: _themeInput, ...updates } = body.data
+      const updates = { ...body.data }
+      delete updates.theme
       const updated = {
         ...session,
         ...updates,
@@ -308,6 +315,16 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
         updatedAt: now(),
       }
       await database.patch(['nextGenPortal', 'qa', 'sessions', session.id], updated)
+      await auditNextGen(context, database, account, generateId, now, {
+        action: 'nextgen.qa.session.updated', targetType: 'nextGenQaSession', targetId: session.id,
+        targetLabel: updated.title, summary: `Updated NextGen QA session ${updated.title}.`,
+        changes: {
+          title: { before: session.title, after: updated.title },
+          description: { before: session.description, after: updated.description },
+          status: { before: session.status, after: updated.status },
+          theme: { before: session.theme, after: updated.theme },
+        },
+      })
       return context.json({ success: true, data: { session: updated } })
     })
   })
@@ -317,7 +334,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     const questionId = idSchema.safeParse(context.req.param('questionId'))
     const body = discussionSelectionSchema.safeParse(await readJson(context))
     if (!sessionId.success || !questionId.success || !body.success) return validationError(context)
-    return withQaManager(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async (database, account) => {
       const session = await getQaSession(database, sessionId.data)
       if (!session) return notFound(context, 'NEXTGEN_QA_SESSION_NOT_FOUND', 'The QA session was not found.')
       try {
@@ -328,6 +345,12 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
           selectedForDiscussion: body.data.selectedForDiscussion,
           managerUid: context.get('firebaseUser').uid,
           timestamp: now(),
+        })
+        await auditNextGen(context, database, account, generateId, now, {
+          action: 'nextgen.qa.question.discussion.updated', targetType: 'nextGenQaQuestion', targetId: question.id,
+          targetLabel: question.prompt, summary: `${body.data.selectedForDiscussion ? 'Selected' : 'Removed'} a NextGen question for discussion.`,
+          changes: { selectedForDiscussion: { before: !body.data.selectedForDiscussion, after: body.data.selectedForDiscussion } },
+          metadata: { sessionId: session.id },
         })
         return context.json({ success: true, data: { question } })
       } catch (error) {
@@ -351,7 +374,7 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
     const participantUid = idSchema.safeParse(context.req.param('participantUid'))
     const body = participantStatusSchema.safeParse(await readJson(context))
     if (!sessionId.success || !participantUid.success || !body.success) return validationError(context)
-    return withQaManager(context, dependencies, async database => {
+    return withQaManager(context, dependencies, async (database, account) => {
       try {
         const participant = await updateParticipantStatus({
           database,
@@ -360,6 +383,13 @@ export function createNextGenPortalRoutes(dependencies: NextGenPortalDependencie
           status: body.data.status,
           pastorUid: context.get('firebaseUser').uid,
           timestamp: now(),
+        })
+        await auditNextGen(context, database, account, generateId, now, {
+          action: 'nextgen.qa.participant.status.updated', targetType: 'nextGenQaParticipant', targetId: participantUid.data,
+          targetLabel: participant.name || participant.email || participantUid.data,
+          summary: `Marked a NextGen participant as ${body.data.status}.`,
+          changes: { status: { before: 'unknown', after: body.data.status } },
+          metadata: { sessionId: sessionId.data },
         })
         return context.json({ success: true, data: { participant } })
       } catch (error) {
@@ -463,16 +493,33 @@ async function withMemberSession(context: Context<AppEnv>, dependencies: NextGen
   })
 }
 
-async function withQaManager(context: Context<AppEnv>, dependencies: NextGenPortalDependencies, operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>) {
+async function withQaManager(context: Context<AppEnv>, dependencies: NextGenPortalDependencies, operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>) {
   return withDatabase(context, dependencies, async database => {
     const user = context.get('firebaseUser')
-    if (isPastorUser(user)) return operation(database)
+    if (isPastorUser(user)) {
+      const account = await getAdminAccount(database, user.uid) || {
+        uid: user.uid, email: user.email || '', role: 'chief' as const, status: 'active' as const,
+        authority: { ...FULL_ADMIN_AUTHORITY }, firstSignedInAt: 0, lastSignedInAt: 0,
+      }
+      return operation(database, account)
+    }
     const authorization = await requireAdminAuthority(database, user, 'manageNextGenQa')
-    if (!authorization.allowed) {
+    if (!authorization.allowed || !authorization.account) {
       return context.json({ success: false, error: { code: 'NEXTGEN_QA_MANAGEMENT_ACCESS_REQUIRED', message: 'Pastor or allocated administrator access is required to manage QA sessions.' } }, 403)
     }
-    return operation(database)
+    return operation(database, authorization.account)
   })
+}
+
+async function auditNextGen(
+  context: Context<AppEnv>,
+  database: FirebaseRealtimeDatabaseClient,
+  account: AdminAccount,
+  generateId: () => string,
+  now: () => number,
+  event: Omit<Parameters<typeof writeAdminAudit>[0], 'database' | 'id' | 'occurredAt' | 'actor' | 'account'>,
+) {
+  return writeAdminAudit({ database, id: generateId(), occurredAt: now(), actor: context.get('firebaseUser'), account, ...event })
 }
 
 async function withFile(context: Context<AppEnv>, dependencies: NextGenPortalDependencies, operation: (database: FirebaseRealtimeDatabaseClient, file: NextGenFile) => Promise<Response>) {

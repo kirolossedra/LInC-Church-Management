@@ -148,6 +148,62 @@ describe('Administrator routes', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('shows an active administrator only their own audit events', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          uid: administrator.uid,
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: {},
+        }))
+      }
+      if (url.endsWith('/administration/auditLog.json')) {
+        return Promise.resolve(jsonResponse({
+          own: { occurredAt: 20, actorUid: 'admin-uid', actorEmail: 'admin@example.com', action: 'own.action' },
+          other: { occurredAt: 30, actorUid: 'other-admin', actorEmail: 'other@example.com', action: 'other.action' },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const response = await createTestApp(fetchMock).request(
+      authenticatedRequest('/api/v1/admin/audit'), undefined, bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data: { events: [{ id: 'own', actorUid: 'admin-uid' }] } })
+  })
+
+  it('shows the chief audit events from every administrator newest-first', async () => {
+    const chief = { ...administrator, uid: 'chief-uid', email: 'chief@example.com' }
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/chief-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          uid: chief.uid,
+          email: chief.email,
+          role: 'chief',
+          status: 'active',
+          authority: {},
+        }))
+      }
+      if (url.endsWith('/administration/auditLog.json')) {
+        return Promise.resolve(jsonResponse({
+          older: { occurredAt: 20, actorUid: 'admin-uid', actorEmail: 'admin@example.com', action: 'older.action' },
+          newer: { occurredAt: 30, actorUid: 'other-admin', actorEmail: 'other@example.com', action: 'newer.action' },
+        }))
+      }
+      return Promise.resolve(jsonResponse(null))
+    })
+    const response = await createTestApp(fetchMock, chief).request(
+      authenticatedRequest('/api/v1/admin/audit'), undefined, bindings,
+    )
+    expect(response.status).toBe(200)
+    const body = await response.json() as { data: { events: Array<{ id: string }> } }
+    expect(body.data.events.map(event => event.id)).toEqual(['newer', 'older'])
+  })
+
   it('creates Firebase with a memorable password, persists its UID, then sends the access email', async () => {
     const databaseFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = String(input)

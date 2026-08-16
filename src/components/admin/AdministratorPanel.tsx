@@ -5,14 +5,13 @@ import {
   BarChart3,
   ClipboardCheck,
   GalleryHorizontalEnd,
+  History,
   LayoutDashboard,
   MessageCircleQuestion,
   UsersRound,
   UserRoundCog,
   X,
 } from 'lucide-react';
-import { get, onValue, ref, set, update } from 'firebase/database';
-import { database } from '../../firebase';
 import { useAdministratorAccess } from './hooks';
 import {
   AdminHierarchySection,
@@ -28,6 +27,7 @@ import {
 } from './components';
 import { LincArchivesSection } from './archives';
 import PeopleAccessMigrationSection from './people-access/PeopleAccessMigrationSection';
+import AdminAuditTrail from './audit/AdminAuditTrail';
 import { NextGenQaSessionsAdmin } from '../pastor/nextgen';
 import {
   AdminApprovalScreen,
@@ -36,7 +36,6 @@ import {
 } from './AdminAccessScreens';
 import {
   ASSESSMENT_FORM_DEFINITIONS,
-  CAROUSEL_PATH,
   MAX_CAROUSEL_PHOTOS,
   MAX_IMAGE_SIZE_BYTES,
 } from './admin.constants';
@@ -50,13 +49,20 @@ import {
   createPhotoId,
   fileToDataUrl,
   humanizeIdentifier,
-  parsePhotos,
 } from './admin.utils';
 import {
   getAssessmentFormStates,
   updateAssessmentFormState,
   type AssessmentFormId,
 } from '../../services/assessment';
+import {
+  deleteAdminCarouselPhoto,
+  getAdminCarousel,
+  reorderAdminCarouselPhotos,
+  updateAdminCarouselPhotoText,
+  updateAdminCarouselVisibility,
+  uploadAdminCarouselPhotos,
+} from '../../services/administrator';
 
 export default function AdministratorPanel() {
   const prefersReducedMotion = useReducedMotion();
@@ -203,6 +209,14 @@ export default function AdministratorPanel() {
       icon: Archive,
       accent: 'bg-[#1b1010] text-white',
     }] : []),
+    {
+      id: 'audit' as const,
+      label: 'Audit Trail',
+      eyebrow: 'Accountability',
+      description: isChief ? 'Review verified activity across every administrator.' : 'Review your verified administrator activity.',
+      icon: History,
+      accent: 'bg-[#324b46] text-white',
+    },
   ], [canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, canManageNextGenQa, canManagePeopleAccess, isChief]);
 
   const visibleActiveSection = adminAreas.some(area => area.id === activeSection)
@@ -211,31 +225,20 @@ export default function AdministratorPanel() {
 
   useEffect(() => {
     if (!canManageCarousel) return;
-
-    const carouselRef = ref(database, CAROUSEL_PATH);
-
-    const unsubscribe = onValue(
-      carouselRef,
-      (snapshot) => {
-        const value = snapshot.val() as
-          | {
-              enabled?: unknown;
-              photos?: unknown;
-            }
-          | null;
-
-        setCarouselEnabled(value?.enabled !== false);
-        setPhotos(parsePhotos(value?.photos));
-        setLoadingSettings(false);
-      },
-      (error) => {
+    let active = true;
+    void getAdminCarousel()
+      .then(result => {
+        if (!active) return;
+        setCarouselEnabled(result.enabled);
+        setPhotos(result.photos);
+      })
+      .catch(error => {
+        if (!active) return;
         console.error('Failed to load carousel settings:', error);
-        setErrorMessage('The carousel settings could not be loaded from Firebase.');
-        setLoadingSettings(false);
-      }
-    );
-
-    return unsubscribe;
+        setErrorMessage(error instanceof Error ? error.message : 'The carousel settings could not be loaded.');
+      })
+      .finally(() => { if (active) setLoadingSettings(false); });
+    return () => { active = false; };
   }, [canManageCarousel]);
 
   useEffect(() => {
@@ -316,10 +319,7 @@ export default function AdministratorPanel() {
     setSavingVisibility(true);
 
     try {
-      await update(ref(database, CAROUSEL_PATH), {
-        enabled,
-        updatedAt: Date.now(),
-      });
+      await updateAdminCarouselVisibility(enabled);
 
       setStatusMessage(
         enabled
@@ -428,41 +428,25 @@ export default function AdministratorPanel() {
     setSavingPhotos(true);
 
     try {
-      const snapshot = await get(ref(database, `${CAROUSEL_PATH}/photos`));
-      const currentPhotos = parsePhotos(snapshot.val());
-      const now = Date.now();
-
-      const photoUpdates: Record<string, CarouselPhoto> = {};
-
-      pendingUploads.forEach((upload, index) => {
-        const order = currentPhotos.length + index;
-
-        photoUpdates[upload.id] = {
+      const preparedPhotos = pendingUploads.map(upload => ({
           id: upload.id,
           url: upload.dataUrl,
           altEn: upload.altEn.trim(),
           altAr: upload.altAr.trim(),
-          order,
-          createdAt: now,
-          updatedAt: now,
-        };
-      });
-
-      await update(ref(database, `${CAROUSEL_PATH}/photos`), photoUpdates);
-      await update(ref(database, CAROUSEL_PATH), {
-        updatedAt: now,
-      });
+      }));
+      const result = await uploadAdminCarouselPhotos(preparedPhotos);
 
       setPendingUploads([]);
+      setPhotos(current => [...current, ...result.photos].sort((a, b) => a.order - b.order));
       setStatusMessage(
-        `${photoUpdates ? Object.keys(photoUpdates).length : 0} photo${
-          Object.keys(photoUpdates).length === 1 ? '' : 's'
+        `${result.photos.length} photo${
+          result.photos.length === 1 ? '' : 's'
         } uploaded successfully.`
       );
     } catch (error) {
       console.error('Failed to upload carousel photos:', error);
       setErrorMessage(
-        'The selected photos could not be uploaded to Firebase. Large Base64 images may exceed the database write limit.'
+        error instanceof Error ? error.message : 'The selected photos could not be uploaded.'
       );
     } finally {
       setSavingPhotos(false);
@@ -485,11 +469,7 @@ export default function AdministratorPanel() {
     clearMessages();
 
     try {
-      await update(ref(database, `${CAROUSEL_PATH}/photos/${photo.id}`), {
-        altEn: photo.altEn.trim(),
-        altAr: photo.altAr.trim(),
-        updatedAt: Date.now(),
-      });
+      await updateAdminCarouselPhotoText(photo.id, photo.altEn.trim(), photo.altAr.trim());
 
       setStatusMessage('The photo description was saved.');
     } catch (error) {
@@ -499,13 +479,7 @@ export default function AdministratorPanel() {
   };
 
   const savePhotoOrder = async (orderedPhotos: CarouselPhoto[]) => {
-    const updates: Record<string, number> = {};
-
-    orderedPhotos.forEach((photo, index) => {
-      updates[`${photo.id}/order`] = index;
-    });
-
-    await update(ref(database, `${CAROUSEL_PATH}/photos`), updates);
+    await reorderAdminCarouselPhotos(orderedPhotos.map(photo => photo.id));
   };
 
   const movePhoto = async (photoId: string, direction: -1 | 1) => {
@@ -554,10 +528,7 @@ export default function AdministratorPanel() {
     setDeletingPhotoId(photo.id);
 
     try {
-      await set(
-        ref(database, `${CAROUSEL_PATH}/photos/${photo.id}`),
-        null
-      );
+      await deleteAdminCarouselPhoto(photo.id);
 
       const remainingPhotos = photos
         .filter((currentPhoto) => currentPhoto.id !== photo.id)
@@ -723,6 +694,7 @@ export default function AdministratorPanel() {
               />
             )}
             {visibleActiveSection === 'archives' && canManageArchives && <LincArchivesSection />}
+            {visibleActiveSection === 'audit' && <AdminAuditTrail isChief={!!isChief} />}
             {visibleActiveSection === 'people-access' && canManagePeopleAccess && <PeopleAccessMigrationSection />}
           </motion.div>
         </AnimatePresence>

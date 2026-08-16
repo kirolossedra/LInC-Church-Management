@@ -9,9 +9,9 @@ import {
   normalizeAssessmentResponses,
   normalizeFormState,
   AssessmentValidationError,
-  type AssessmentFormId,
 } from '../assessment/assessment.service'
-import { requireAdminAuthority } from '../admin/adminAuthorization'
+import { requireAdminAuthority, type AdminAccount } from '../admin/adminAuthorization'
+import { writeAdminAudit } from '../admin/adminAudit'
 import { buildAssessmentEmail, buildIdentifierEmail } from '../emails/assessment.email'
 import {
   assessmentFormIdSchema,
@@ -46,11 +46,13 @@ export type AssessmentDependencies = {
     email: Parameters<typeof sendBrevoEmail>[1],
   ) => Promise<BrevoEmailResult>
   now?: () => number
+  generateId?: () => string
 }
 
 export function createAssessmentRoutes(dependencies: AssessmentDependencies = {}) {
   const routes = new Hono<AppEnv>()
   const now = dependencies.now ?? Date.now
+  const generateId = dependencies.generateId ?? (() => crypto.randomUUID())
 
   routes.get('/forms', context => withDatabase(context, dependencies, async database => {
     const controls = await database.get<Record<string, unknown>>(FORM_CONTROLS_PATH)
@@ -141,7 +143,13 @@ export function createAssessmentRoutes(dependencies: AssessmentDependencies = {}
     const body = assessmentLinkageSchema.safeParse(await readJson(context))
     if (!responseId.success) return validationError(context, responseId.error)
     if (!body.success) return validationError(context, body.error)
-    return withAssessmentAdmin(context, dependencies, async database => {
+    return withAssessmentAdmin(context, dependencies, async (database, account) => {
+      const existing = await database.get<unknown>([...FORM_PATH, responseId.data])
+      if (!existing) return context.json({ success: false, error: { code: 'ASSESSMENT_RESPONSE_NOT_FOUND', message: 'The assessment response was not found.' } }, 404)
+      const previous = extractAssessmentResponseDetails(existing)
+      const previousRecord = existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? existing as Record<string, unknown>
+        : {}
       const timestamp = now()
       const updates: Record<string, unknown> = {
         userLinkage: { ...body.data, updatedAt: timestamp, updatedAtISO: new Date(timestamp).toISOString() },
@@ -156,6 +164,14 @@ export function createAssessmentRoutes(dependencies: AssessmentDependencies = {}
         updates.linkedFormId = body.data.databaseFormId
       }
       await database.patch([...FORM_PATH, responseId.data], updates)
+      await auditAssessment(context, database, account, generateId, now, {
+        action: 'assessment.response.linkage.updated', targetType: 'assessmentResponse', targetId: responseId.data,
+        targetLabel: previous.fullName, summary: `Updated assessment linkage for ${previous.fullName || responseId.data}.`,
+        changes: {
+          userIdentifier: { before: previous.userIdentifier, after: body.data.userIdentifier },
+          formId: { before: typeof previousRecord.formId === 'string' ? previousRecord.formId : '', after: body.data.databaseFormId },
+        },
+      })
       return context.json({ success: true, data: { updated: true } })
     })
   })
@@ -163,8 +179,16 @@ export function createAssessmentRoutes(dependencies: AssessmentDependencies = {}
   routes.delete('/admin/responses/:responseId', context => {
     const responseId = assessmentResponseIdSchema.safeParse(context.req.param('responseId'))
     if (!responseId.success) return validationError(context, responseId.error)
-    return withAssessmentAdmin(context, dependencies, async database => {
+    return withAssessmentAdmin(context, dependencies, async (database, account) => {
+      const raw = await database.get<unknown>([...FORM_PATH, responseId.data])
+      if (!raw) return context.json({ success: false, error: { code: 'ASSESSMENT_RESPONSE_NOT_FOUND', message: 'The assessment response was not found.' } }, 404)
+      const details = extractAssessmentResponseDetails(raw)
       await database.delete([...FORM_PATH, responseId.data])
+      await auditAssessment(context, database, account, generateId, now, {
+        action: 'assessment.response.deleted', targetType: 'assessmentResponse', targetId: responseId.data,
+        targetLabel: details.fullName, summary: `Deleted assessment response for ${details.fullName || responseId.data}.`,
+        metadata: { userIdentifier: details.userIdentifier },
+      })
       return context.json({ success: true, data: { deleted: true } })
     })
   })
@@ -172,7 +196,7 @@ export function createAssessmentRoutes(dependencies: AssessmentDependencies = {}
   routes.post('/admin/responses/:responseId/identifier-email', context => {
     const responseId = assessmentResponseIdSchema.safeParse(context.req.param('responseId'))
     if (!responseId.success) return validationError(context, responseId.error)
-    return withAssessmentAdmin(context, dependencies, async database => {
+    return withAssessmentAdmin(context, dependencies, async (database, account) => {
       const raw = await database.get([...FORM_PATH, responseId.data])
       if (!raw) return context.json({ success: false, error: { code: 'ASSESSMENT_RESPONSE_NOT_FOUND', message: 'The assessment response was not found.' } }, 404)
       const details = extractAssessmentResponseDetails(raw)
@@ -198,6 +222,11 @@ export function createAssessmentRoutes(dependencies: AssessmentDependencies = {}
         identifierEmailSentUsing: 'Brevo',
         identifierEmailMessageId: delivery.messageId,
       })
+      await auditAssessment(context, database, account, generateId, now, {
+        action: 'assessment.identifier.email.sent', targetType: 'assessmentResponse', targetId: responseId.data,
+        targetLabel: details.fullName, summary: `Sent an identifier email for ${details.fullName || responseId.data}.`,
+        metadata: { language: details.language, deliveryMessageId: delivery.messageId },
+      })
       return context.json({ success: true, data: { sent: true } })
     })
   })
@@ -207,11 +236,17 @@ export function createAssessmentRoutes(dependencies: AssessmentDependencies = {}
     const body = updateAssessmentFormStateSchema.safeParse(await readJson(context))
     if (!formId.success) return validationError(context, formId.error)
     if (!body.success) return validationError(context, body.error)
-    return withAssessmentAdmin(context, dependencies, async database => {
+    return withAssessmentAdmin(context, dependencies, async (database, account) => {
+      const previousState = normalizeFormState(await database.get([...FORM_CONTROLS_PATH, formId.data]))
       await database.patch([...FORM_CONTROLS_PATH, formId.data], {
         state: body.data.state,
         updatedAt: now(),
         updatedBy: context.get('firebaseUser').email || context.get('firebaseUser').uid,
+      })
+      await auditAssessment(context, database, account, generateId, now, {
+        action: 'assessment.form.state.updated', targetType: 'assessmentForm', targetId: formId.data,
+        targetLabel: formId.data, summary: `Changed assessment form ${formId.data} to ${body.data.state}.`,
+        changes: { state: { before: previousState, after: body.data.state } },
       })
       return context.json({ success: true, data: { updated: true } })
     })
@@ -256,7 +291,7 @@ async function sendAssessmentNotifications(
 async function withAssessmentAdmin(
   context: Context<AppEnv>,
   dependencies: AssessmentDependencies,
-  operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>,
+  operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>,
 ) {
   return withDatabase(context, dependencies, async database => {
     const authorization = await requireAdminAuthority(
@@ -264,14 +299,25 @@ async function withAssessmentAdmin(
       context.get('firebaseUser'),
       'manageAssessmentForms',
     )
-    if (!authorization.allowed) {
+    if (!authorization.allowed || !authorization.account) {
       return context.json({
         success: false,
         error: { code: 'ASSESSMENT_ADMIN_ACCESS_REQUIRED', message: 'Assessment Forms administrator authority is required.' },
       }, 403)
     }
-    return operation(database)
+    return operation(database, authorization.account)
   })
+}
+
+async function auditAssessment(
+  context: Context<AppEnv>,
+  database: FirebaseRealtimeDatabaseClient,
+  account: AdminAccount,
+  generateId: () => string,
+  now: () => number,
+  event: Omit<Parameters<typeof writeAdminAudit>[0], 'database' | 'id' | 'occurredAt' | 'actor' | 'account'>,
+) {
+  return writeAdminAudit({ database, id: generateId(), occurredAt: now(), actor: context.get('firebaseUser'), account, ...event })
 }
 
 async function withDatabase(

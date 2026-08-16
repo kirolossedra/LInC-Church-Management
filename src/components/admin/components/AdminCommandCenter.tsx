@@ -11,7 +11,8 @@ export type AdminSectionId =
   | 'attendance'
   | 'nextgen-qa'
   | 'people-access'
-  | 'archives';
+  | 'archives'
+  | 'audit';
 
 export interface AdminArea {
   id: AdminSectionId;

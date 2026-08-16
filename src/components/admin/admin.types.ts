@@ -70,3 +70,19 @@ export interface AdminAccount {
   approvedByUid?: string;
   updatedAt?: number;
 }
+
+export interface AdminAuditEvent {
+  id: string;
+  occurredAt: number;
+  actorUid: string;
+  actorEmail: string;
+  actorRole: AdminRole;
+  action: string;
+  targetType: string;
+  targetId: string;
+  targetLabel: string;
+  summary: string;
+  status: 'succeeded' | 'failed';
+  changes: Record<string, { before: unknown; after: unknown }>;
+  metadata: Record<string, unknown>;
+}

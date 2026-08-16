@@ -9,6 +9,7 @@ import {
   normalizeAdminAccount,
   type AdminAccount,
 } from '../admin/adminAuthorization'
+import { ADMIN_AUDIT_PATH, normalizeAdminAuditEvents, writeAdminAudit } from '../admin/adminAudit'
 import {
   AdminArchiveError,
   completeArchiveFile,
@@ -91,6 +92,16 @@ const attendanceUpdateSchema = z.object({
   dateKey: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isSundayDateKey),
   attended: z.boolean(),
 }).strict()
+const carouselPhotoSchema = z.object({
+  id: uidSchema,
+  url: z.string().max(4_100_000).refine(value => /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/i.test(value)),
+  altEn: z.string().trim().max(300).default(''),
+  altAr: z.string().trim().max(300).default(''),
+}).strict()
+const carouselUploadSchema = z.object({ photos: z.array(carouselPhotoSchema).min(1).max(12) }).strict()
+const carouselVisibilitySchema = z.object({ enabled: z.boolean() }).strict()
+const carouselTextSchema = z.object({ altEn: z.string().trim().max(300), altAr: z.string().trim().max(300) }).strict()
+const carouselOrderSchema = z.object({ photoIds: z.array(uidSchema).max(12).refine(ids => new Set(ids).size === ids.length) }).strict()
 const archiveUploadSchema = z.object({
   name: z.string().trim().min(1).max(255).refine(
     value => value !== '.' && value !== '..' && !hasInvalidArchiveNameCharacter(value),
@@ -170,6 +181,14 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     return context.json({ success: true, data: { account, adminAccounts } })
   }))
 
+  routes.get('/audit', context => withActiveAdmin(context, dependencies, async (database, account) => {
+    const events = normalizeAdminAuditEvents(await database.get(ADMIN_AUDIT_PATH))
+      .filter(event => account.role === 'chief' || event.actorUid === account.uid)
+      .slice(0, 500)
+    context.header('Cache-Control', 'private, no-store, max-age=0')
+    return context.json({ success: true, data: { events } })
+  }))
+
   routes.patch('/users/:uid/authority', async context => {
     const uid = uidSchema.safeParse(context.req.param('uid'))
     const body = authoritySchema.safeParse(await readJson(context))
@@ -182,6 +201,14 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         role: 'administrator', status: 'active', authority: body.data,
         approvedAt: timestamp, approvedByUid: chief.uid, updatedAt: timestamp,
       })
+      await audit(context, database, chief, generateId, now, {
+        action: 'administrator.authority.updated', targetType: 'administrator', targetId: uid.data,
+        targetLabel: target.email, summary: `Updated administrator authority for ${target.email || uid.data}.`,
+        changes: {
+          status: { before: target.status, after: 'active' },
+          authority: { before: target.authority, after: body.data },
+        },
+      })
       return context.json({ success: true, data: { updated: true } })
     })
   })
@@ -189,11 +216,19 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
   routes.patch('/users/:uid/suspend', context => {
     const uid = uidSchema.safeParse(context.req.param('uid'))
     if (!uid.success) return validationError(context)
-    return withChief(context, dependencies, async database => {
+    return withChief(context, dependencies, async (database, chief) => {
       const target = await getAdminAccount(database, uid.data)
       if (!target || target.role === 'chief') return notFound(context)
       await database.patch([...ADMIN_HIERARCHY_PATH, 'users', uid.data], {
         status: 'suspended', authority: EMPTY_ADMIN_AUTHORITY, updatedAt: now(),
+      })
+      await audit(context, database, chief, generateId, now, {
+        action: 'administrator.suspended', targetType: 'administrator', targetId: uid.data,
+        targetLabel: target.email, summary: `Suspended administrator ${target.email || uid.data}.`,
+        changes: {
+          status: { before: target.status, after: 'suspended' },
+          authority: { before: target.authority, after: EMPTY_ADMIN_AUTHORITY },
+        },
       })
       return context.json({ success: true, data: { suspended: true } })
     })
@@ -211,7 +246,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
   routes.post('/attendance/people', async context => {
     const body = attendancePersonSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
-    return withAttendanceAuthority(context, dependencies, async database => {
+    return withAttendanceAuthority(context, dependencies, async (database, account) => {
       const personId = generateId()
       const timestamp = now()
       const person = {
@@ -222,6 +257,12 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         updatedAt: timestamp,
       }
       await database.patch(['attendance', 'people', personId], attendanceStoredPerson(person))
+      await audit(context, database, account, generateId, now, {
+        action: 'attendance.person.created', targetType: 'attendancePerson', targetId: personId,
+        targetLabel: `${person.firstName} ${person.lastName}`.trim(),
+        summary: `Created attendance person ${person.firstName} ${person.lastName}.`,
+        metadata: { email: person.email, phoneNumber: person.phoneNumber, hasPhoto: !!person.photoBase64 },
+      })
       return context.json({ success: true, data: { person } }, 201)
     })
   })
@@ -230,7 +271,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const personId = attendancePersonIdSchema.safeParse(context.req.param('personId'))
     const body = attendancePersonSchema.safeParse(await readJson(context))
     if (!personId.success || !body.success) return validationError(context)
-    return withAttendanceAuthority(context, dependencies, async database => {
+    return withAttendanceAuthority(context, dependencies, async (database, account) => {
       const existing = normalizeAttendancePerson(
         personId.data,
         await database.get<unknown>(['attendance', 'people', personId.data]),
@@ -241,6 +282,13 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         ...body.data,
         updatedAt: person.updatedAt,
       })
+      await audit(context, database, account, generateId, now, {
+        action: 'attendance.person.updated', targetType: 'attendancePerson', targetId: personId.data,
+        targetLabel: `${person.firstName} ${person.lastName}`.trim(),
+        summary: `Updated attendance person ${person.firstName} ${person.lastName}.`,
+        changes: attendancePersonChanges(existing, person),
+        metadata: { hasPhoto: !!person.photoBase64 },
+      })
       return context.json({ success: true, data: { person } })
     })
   })
@@ -249,7 +297,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const personId = attendancePersonIdSchema.safeParse(context.req.param('personId'))
     const body = attendanceUpdateSchema.safeParse(await readJson(context))
     if (!personId.success || !body.success) return validationError(context)
-    return withAttendanceAuthority(context, dependencies, async database => {
+    return withAttendanceAuthority(context, dependencies, async (database, account) => {
       const existing = normalizeAttendancePerson(
         personId.data,
         await database.get<unknown>(['attendance', 'people', personId.data]),
@@ -267,7 +315,112 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         daysOfAttendance: person.daysOfAttendance,
         updatedAt: person.updatedAt,
       })
+      await audit(context, database, account, generateId, now, {
+        action: body.data.attended ? 'attendance.date.marked' : 'attendance.date.removed',
+        targetType: 'attendancePerson', targetId: personId.data,
+        targetLabel: `${person.firstName} ${person.lastName}`.trim(),
+        summary: `${body.data.attended ? 'Marked' : 'Removed'} attendance for ${body.data.dateKey}.`,
+        changes: { attendance: { before: !body.data.attended, after: body.data.attended } },
+        metadata: { dateKey: body.data.dateKey },
+      })
       return context.json({ success: true, data: { person } })
+    })
+  })
+
+  routes.get('/carousel', context => withCarouselAuthority(context, dependencies, async database => {
+    const value = recordValue(await database.get(['landingPage', 'carousel'])) || {}
+    const photos = normalizeCarouselPhotos(value.photos)
+    return context.json({ success: true, data: { enabled: value.enabled !== false, photos } })
+  }))
+
+  routes.patch('/carousel/visibility', async context => {
+    const body = carouselVisibilitySchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withCarouselAuthority(context, dependencies, async (database, account) => {
+      const current = recordValue(await database.get(['landingPage', 'carousel'])) || {}
+      const before = current.enabled !== false
+      await database.patch(['landingPage', 'carousel'], { enabled: body.data.enabled, updatedAt: now() })
+      await audit(context, database, account, generateId, now, {
+        action: 'carousel.visibility.updated', targetType: 'carousel', targetId: 'landingPage',
+        targetLabel: 'Landing-page carousel', summary: `Turned the landing-page carousel ${body.data.enabled ? 'on' : 'off'}.`,
+        changes: { enabled: { before, after: body.data.enabled } },
+      })
+      return context.json({ success: true, data: { enabled: body.data.enabled } })
+    })
+  })
+
+  routes.post('/carousel/photos', async context => {
+    const body = carouselUploadSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withCarouselAuthority(context, dependencies, async (database, account) => {
+      const current = normalizeCarouselPhotos(await database.get(['landingPage', 'carousel', 'photos']))
+      if (current.length + body.data.photos.length > 12) return validationError(context)
+      const timestamp = now()
+      const additions = body.data.photos.map((photo, index) => ({ ...photo, order: current.length + index, createdAt: timestamp, updatedAt: timestamp }))
+      await database.patch(['landingPage', 'carousel', 'photos'], Object.fromEntries(additions.map(photo => [photo.id, photo])))
+      await database.patch(['landingPage', 'carousel'], { updatedAt: timestamp })
+      await audit(context, database, account, generateId, now, {
+        action: 'carousel.photos.uploaded', targetType: 'carousel', targetId: 'landingPage',
+        targetLabel: 'Landing-page carousel', summary: `Uploaded ${additions.length} carousel photo${additions.length === 1 ? '' : 's'}.`,
+        metadata: { photoIds: additions.map(photo => photo.id), photoCount: additions.length },
+      })
+      return context.json({ success: true, data: { photos: additions } }, 201)
+    })
+  })
+
+  routes.patch('/carousel/photos/:photoId/text', async context => {
+    const photoId = uidSchema.safeParse(context.req.param('photoId'))
+    const body = carouselTextSchema.safeParse(await readJson(context))
+    if (!photoId.success || !body.success) return validationError(context)
+    return withCarouselAuthority(context, dependencies, async (database, account) => {
+      const existing = normalizeCarouselPhoto(photoId.data, await database.get(['landingPage', 'carousel', 'photos', photoId.data]))
+      if (!existing) return carouselPhotoNotFound(context)
+      await database.patch(['landingPage', 'carousel', 'photos', photoId.data], { ...body.data, updatedAt: now() })
+      await audit(context, database, account, generateId, now, {
+        action: 'carousel.photo.text.updated', targetType: 'carouselPhoto', targetId: photoId.data,
+        targetLabel: existing.altEn || photoId.data, summary: 'Updated a carousel photo description.',
+        changes: {
+          altEn: { before: existing.altEn, after: body.data.altEn },
+          altAr: { before: existing.altAr, after: body.data.altAr },
+        },
+      })
+      return context.json({ success: true, data: { updated: true } })
+    })
+  })
+
+  routes.patch('/carousel/photos/order', async context => {
+    const body = carouselOrderSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withCarouselAuthority(context, dependencies, async (database, account) => {
+      const photos = normalizeCarouselPhotos(await database.get(['landingPage', 'carousel', 'photos']))
+      const currentIds = photos.map(photo => photo.id)
+      if (body.data.photoIds.length !== currentIds.length || body.data.photoIds.some(id => !currentIds.includes(id))) return validationError(context)
+      await database.patch(['landingPage', 'carousel', 'photos'], Object.fromEntries(body.data.photoIds.map((id, order) => [`${id}/order`, order])))
+      await audit(context, database, account, generateId, now, {
+        action: 'carousel.photos.reordered', targetType: 'carousel', targetId: 'landingPage',
+        targetLabel: 'Landing-page carousel', summary: 'Reordered landing-page carousel photos.',
+        changes: { order: { before: currentIds, after: body.data.photoIds } },
+      })
+      return context.json({ success: true, data: { updated: true } })
+    })
+  })
+
+  routes.delete('/carousel/photos/:photoId', context => {
+    const photoId = uidSchema.safeParse(context.req.param('photoId'))
+    if (!photoId.success) return validationError(context)
+    return withCarouselAuthority(context, dependencies, async (database, account) => {
+      const photos = normalizeCarouselPhotos(await database.get(['landingPage', 'carousel', 'photos']))
+      const existing = photos.find(photo => photo.id === photoId.data)
+      if (!existing) return carouselPhotoNotFound(context)
+      await database.delete(['landingPage', 'carousel', 'photos', photoId.data])
+      const remaining = photos.filter(photo => photo.id !== photoId.data)
+      if (remaining.length) await database.patch(['landingPage', 'carousel', 'photos'], Object.fromEntries(remaining.map((photo, order) => [`${photo.id}/order`, order])))
+      await audit(context, database, account, generateId, now, {
+        action: 'carousel.photo.deleted', targetType: 'carouselPhoto', targetId: photoId.data,
+        targetLabel: existing.altEn || photoId.data, summary: 'Deleted a landing-page carousel photo.',
+        metadata: { hadArabicDescription: !!existing.altAr },
+      })
+      return context.json({ success: true, data: { deleted: true } })
     })
   })
 
@@ -290,7 +443,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const memberKey = uidSchema.safeParse(context.req.param('memberKey'))
     const body = peopleAccessEmailUpdateSchema.safeParse(await readJson(context))
     if (!memberKey.success || !body.success) return validationError(context)
-    return withPeopleAccessAuthority(context, dependencies, async database => {
+    return withPeopleAccessAuthority(context, dependencies, async (database, account) => {
       const raw = await database.get<unknown>(['peopleDevelopment', 'members', memberKey.data])
       const member = recordValue(raw)
       if (!member) return peopleAccessNotFound(context)
@@ -304,6 +457,12 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         authEmail: body.data.email,
         authMigration: { status: 'pending', updatedAt: now(), updatedByUid: context.get('firebaseUser').uid },
       })
+      await audit(context, database, account, generateId, now, {
+        action: 'peopleAccess.email.updated', targetType: 'peopleDevelopmentMember', targetId: memberKey.data,
+        targetLabel: typeof member.fullName === 'string' ? member.fullName : memberKey.data,
+        summary: `Updated the access email for ${typeof member.fullName === 'string' ? member.fullName : memberKey.data}.`,
+        changes: { authEmail: { before: typeof member.authEmail === 'string' ? member.authEmail : member.email, after: body.data.email } },
+      })
       return context.json({ success: true, data: { updated: true } })
     })
   })
@@ -311,7 +470,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
   routes.post('/people-access/migrate', async context => {
     const body = peopleAccessMigrationSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
-    return withPeopleAccessAuthority(context, dependencies, async database => {
+    return withPeopleAccessAuthority(context, dependencies, async (database, account) => {
       const [membersValue, assessmentResponses] = await Promise.all([
         database.get<unknown>(['peopleDevelopment', 'members']),
         database.get<unknown>(['form']),
@@ -476,14 +635,20 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         }
       }
 
+      const summary = results.reduce<Record<string, number>>((totals, result) => {
+        totals[result.status] = (totals[result.status] || 0) + 1
+        return totals
+      }, {})
+      await audit(context, database, account, generateId, now, {
+        action: 'peopleAccess.migration.run', targetType: 'peopleAccessMigration', targetId: generateId(),
+        targetLabel: 'People Access migration', summary: `Processed ${results.length} People Access record${results.length === 1 ? '' : 's'}.`,
+        metadata: { memberKeys: selected.map(person => person.memberKey), summary },
+      })
       return context.json({
         success: true,
         data: {
           results,
-          summary: results.reduce<Record<string, number>>((summary, result) => {
-            summary[result.status] = (summary[result.status] || 0) + 1
-            return summary
-          }, {}),
+          summary,
         },
       })
     })
@@ -502,7 +667,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const body = archiveFolderSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
 
-    return withArchiveAuthority(context, dependencies, async database => {
+    return withArchiveAuthority(context, dependencies, async (database, account) => {
       try {
         const folder = await createArchiveFolder({
           database,
@@ -511,6 +676,11 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
           parentId: body.data.parentId,
           userUid: context.get('firebaseUser').uid,
           timestamp: now(),
+        })
+        await audit(context, database, account, generateId, now, {
+          action: 'archive.folder.created', targetType: 'archiveFolder', targetId: folder.id,
+          targetLabel: folder.name, summary: `Created archive folder ${folder.name}.`,
+          metadata: { parentId: folder.parentId },
         })
         return context.json({ success: true, data: { folder } }, 201)
       } catch (error) {
@@ -523,9 +693,15 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const folderId = archiveFolderIdSchema.safeParse(context.req.param('folderId'))
     if (!folderId.success) return validationError(context)
 
-    return withArchiveAuthority(context, dependencies, async database => {
+    return withArchiveAuthority(context, dependencies, async (database, account) => {
       try {
+        const folder = (await listArchiveFolders(database)).find(item => item.id === folderId.data)
         await deleteArchiveFolder(database, folderId.data)
+        await audit(context, database, account, generateId, now, {
+          action: 'archive.folder.deleted', targetType: 'archiveFolder', targetId: folderId.data,
+          targetLabel: folder?.name || folderId.data, summary: `Deleted archive folder ${folder?.name || folderId.data}.`,
+          metadata: { parentId: folder?.parentId || null },
+        })
         return context.json({ success: true, data: { deleted: true } })
       } catch (error) {
         return archiveError(context, error)
@@ -548,7 +724,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const body = archiveUploadSchema.safeParse(await readJson(context))
     if (!body.success) return validationError(context)
 
-    return withArchiveAuthority(context, dependencies, async database => {
+    return withArchiveAuthority(context, dependencies, async (database, account) => {
       let file: AdminArchiveFile | null = null
       try {
         file = await createPendingArchiveFile({
@@ -563,6 +739,11 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         })
         const signed = await archiveStorage(context, dependencies, now)
           .createUploadUrl(file.objectKey)
+        await audit(context, database, account, generateId, now, {
+          action: 'archive.file.upload.prepared', targetType: 'archiveFile', targetId: file.id,
+          targetLabel: file.name, summary: `Prepared upload for archive file ${file.name}.`,
+          metadata: { folderId: file.folderId, size: file.size, contentType: file.contentType },
+        })
         return context.json({
           success: true,
           data: {
@@ -584,7 +765,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const fileId = archiveFileIdSchema.safeParse(context.req.param('fileId'))
     if (!fileId.success) return validationError(context)
 
-    return withArchiveAuthority(context, dependencies, async database => {
+    return withArchiveAuthority(context, dependencies, async (database, account) => {
       try {
         const file = await getArchiveFile(database, fileId.data)
         if (!file) throw archiveFileNotFound()
@@ -607,6 +788,12 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
           contentType: stored.contentType || file.contentType,
           timestamp: now(),
         })
+        await audit(context, database, account, generateId, now, {
+          action: 'archive.file.upload.completed', targetType: 'archiveFile', targetId: completed.id,
+          targetLabel: completed.name, summary: `Completed archive upload for ${completed.name}.`,
+          changes: { status: { before: file.status, after: completed.status } },
+          metadata: { folderId: completed.folderId, size: completed.size, contentType: completed.contentType },
+        })
         return context.json({
           success: true,
           data: { file: publicArchiveFile(completed) },
@@ -621,7 +808,7 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const fileId = archiveFileIdSchema.safeParse(context.req.param('fileId'))
     if (!fileId.success) return validationError(context)
 
-    return withArchiveAuthority(context, dependencies, async database => {
+    return withArchiveAuthority(context, dependencies, async (database, account) => {
       try {
         const file = await getArchiveFile(database, fileId.data)
         if (!file) throw archiveFileNotFound()
@@ -634,6 +821,11 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         }
         const signed = await archiveStorage(context, dependencies, now)
           .createDownloadUrl(file.objectKey, file.name)
+        await audit(context, database, account, generateId, now, {
+          action: 'archive.file.download.requested', targetType: 'archiveFile', targetId: file.id,
+          targetLabel: file.name, summary: `Requested a download for archive file ${file.name}.`,
+          metadata: { folderId: file.folderId, size: file.size },
+        })
         return context.json({
           success: true,
           data: { downloadUrl: signed.url, expiresAt: signed.expiresAt },
@@ -648,12 +840,17 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
     const fileId = archiveFileIdSchema.safeParse(context.req.param('fileId'))
     if (!fileId.success) return validationError(context)
 
-    return withArchiveAuthority(context, dependencies, async database => {
+    return withArchiveAuthority(context, dependencies, async (database, account) => {
       try {
         const file = await getArchiveFile(database, fileId.data)
         if (!file) throw archiveFileNotFound()
         await archiveStorage(context, dependencies, now).deleteObject(file.objectKey)
         await deleteArchiveFileMetadata(database, file.id)
+        await audit(context, database, account, generateId, now, {
+          action: 'archive.file.deleted', targetType: 'archiveFile', targetId: file.id,
+          targetLabel: file.name, summary: `Deleted archive file ${file.name}.`,
+          metadata: { folderId: file.folderId, size: file.size, contentType: file.contentType },
+        })
         return context.json({ success: true, data: { deleted: true } })
       } catch (error) {
         return archiveOperationError(context, error)
@@ -697,16 +894,16 @@ function archiveFileNotFound() {
 async function withArchiveAuthority(
   context: Context<AppEnv>,
   dependencies: AdminDependencies,
-  operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>,
+  operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>,
 ) {
   return withDatabase(context, dependencies, async database => {
     context.header('Cache-Control', 'private, no-store, max-age=0')
-    const { allowed } = await requireAdminAuthority(
+    const { allowed, account } = await requireAdminAuthority(
       database,
       context.get('firebaseUser'),
       'manageArchives',
     )
-    if (!allowed) {
+    if (!allowed || !account) {
       return context.json({
         success: false,
         error: {
@@ -715,19 +912,19 @@ async function withArchiveAuthority(
         },
       }, 403)
     }
-    return operation(database)
+    return operation(database, account)
   })
 }
 
 async function withAttendanceAuthority(
   context: Context<AppEnv>,
   dependencies: AdminDependencies,
-  operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>,
+  operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>,
 ) {
   return withDatabase(context, dependencies, async database => {
     context.header('Cache-Control', 'private, no-store, max-age=0')
-    const { allowed } = await requireAdminAuthority(database, context.get('firebaseUser'), 'manageAttendance')
-    if (!allowed) {
+    const { allowed, account } = await requireAdminAuthority(database, context.get('firebaseUser'), 'manageAttendance')
+    if (!allowed || !account) {
       return context.json({
         success: false,
         error: {
@@ -736,25 +933,59 @@ async function withAttendanceAuthority(
         },
       }, 403)
     }
-    return operation(database)
+    return operation(database, account)
+  })
+}
+
+async function withCarouselAuthority(
+  context: Context<AppEnv>,
+  dependencies: AdminDependencies,
+  operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>,
+) {
+  return withDatabase(context, dependencies, async database => {
+    context.header('Cache-Control', 'private, no-store, max-age=0')
+    const { allowed, account } = await requireAdminAuthority(database, context.get('firebaseUser'), 'manageCarousel')
+    if (!allowed || !account) return context.json({
+      success: false,
+      error: { code: 'ADMIN_CAROUSEL_ACCESS_REQUIRED', message: 'Landing Media administrator authority is required.' },
+    }, 403)
+    return operation(database, account)
+  })
+}
+
+async function audit(
+  context: Context<AppEnv>,
+  database: FirebaseRealtimeDatabaseClient,
+  account: AdminAccount,
+  generateId: () => string,
+  now: () => number,
+  event: Omit<Parameters<typeof writeAdminAudit>[0], 'database' | 'id' | 'occurredAt' | 'actor' | 'account'>,
+) {
+  return writeAdminAudit({
+    database,
+    id: generateId(),
+    occurredAt: now(),
+    actor: context.get('firebaseUser'),
+    account,
+    ...event,
   })
 }
 
 async function withPeopleAccessAuthority(
   context: Context<AppEnv>,
   dependencies: AdminDependencies,
-  operation: (database: FirebaseRealtimeDatabaseClient) => Promise<Response>,
+  operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>,
 ) {
   return withDatabase(context, dependencies, async database => {
     context.header('Cache-Control', 'private, no-store, max-age=0')
-    const { allowed } = await requireAdminAuthority(database, context.get('firebaseUser'), 'managePeopleAccess')
-    if (!allowed) {
+    const { allowed, account } = await requireAdminAuthority(database, context.get('firebaseUser'), 'managePeopleAccess')
+    if (!allowed || !account) {
       return context.json({
         success: false,
         error: { code: 'ADMIN_PEOPLE_ACCESS_REQUIRED', message: 'People Access administrator authority is required.' },
       }, 403)
     }
-    return operation(database)
+    return operation(database, account)
   })
 }
 
@@ -767,6 +998,20 @@ async function withChief(
     const account = await getAdminAccount(database, context.get('firebaseUser').uid)
     if (!account || account.role !== 'chief') {
       return context.json({ success: false, error: { code: 'CHIEF_ACCESS_REQUIRED', message: 'Chief administrator access is required.' } }, 403)
+    }
+    return operation(database, account)
+  })
+}
+
+async function withActiveAdmin(
+  context: Context<AppEnv>,
+  dependencies: AdminDependencies,
+  operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>,
+) {
+  return withDatabase(context, dependencies, async database => {
+    const account = await getAdminAccount(database, context.get('firebaseUser').uid)
+    if (!account || (account.role !== 'chief' && account.status !== 'active')) {
+      return context.json({ success: false, error: { code: 'ADMIN_ACCESS_REQUIRED', message: 'Active administrator access is required.' } }, 403)
     }
     return operation(database, account)
   })
@@ -821,6 +1066,43 @@ function attendancePersonNotFound(context: Context<AppEnv>) {
   }, 404)
 }
 
+function carouselPhotoNotFound(context: Context<AppEnv>) {
+  return context.json({ success: false, error: { code: 'CAROUSEL_PHOTO_NOT_FOUND', message: 'The carousel photo was not found.' } }, 404)
+}
+
+type AdminCarouselPhoto = {
+  id: string
+  url: string
+  altEn: string
+  altAr: string
+  order: number
+  createdAt: number
+  updatedAt: number
+}
+
+function normalizeCarouselPhotos(value: unknown): AdminCarouselPhoto[] {
+  return Object.entries(recordValue(value) || {})
+    .map(([id, photo]) => normalizeCarouselPhoto(id, photo))
+    .filter((photo): photo is AdminCarouselPhoto => photo !== null)
+    .sort((a, b) => a.order - b.order)
+}
+
+function normalizeCarouselPhoto(id: string, value: unknown): AdminCarouselPhoto | null {
+  const photo = recordValue(value)
+  if (!photo) return null
+  const url = stringValue(photo.url || photo.dataUrl)
+  if (!url) return null
+  return {
+    id,
+    url,
+    altEn: stringValue(photo.altEn),
+    altAr: stringValue(photo.altAr),
+    order: finiteNumber(photo.order),
+    createdAt: finiteNumber(photo.createdAt),
+    updatedAt: finiteNumber(photo.updatedAt),
+  }
+}
+
 type AttendancePersonRecord = {
   firebaseId: string
   firstName: string
@@ -866,6 +1148,13 @@ function attendanceStoredPerson(person: AttendancePersonRecord) {
   const { firebaseId: _firebaseId, ...stored } = person
   void _firebaseId
   return stored
+}
+
+function attendancePersonChanges(before: AttendancePersonRecord, after: AttendancePersonRecord) {
+  const fields = ['firstName', 'lastName', 'arabicFirstName', 'arabicLastName', 'phoneNumber', 'email'] as const
+  return Object.fromEntries(fields
+    .filter(field => before[field] !== after[field])
+    .map(field => [field, { before: before[field], after: after[field] }]))
 }
 
 function attendanceDates(value: string) {
