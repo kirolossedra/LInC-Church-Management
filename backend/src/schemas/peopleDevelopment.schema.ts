@@ -68,13 +68,15 @@ const scheduleFieldsSchema = z.object({
   ordinal: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal('last')]),
   weekday: z.number().int().min(0).max(6),
   startTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-  durationMinutes: z.number().int().min(30).max(480).default(90),
+  durationMinutes: z.number().int().min(30).max(480),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: dateSchema,
   active: z.boolean(),
 }).strict()
 
-export const createScheduleSchema = scheduleFieldsSchema.refine(value => value.audience === 'shared' || value.group !== '', {
+export const createScheduleSchema = scheduleFieldsSchema.extend({
+  durationMinutes: z.number().int().min(30).max(480).default(90),
+}).refine(value => value.audience === 'shared' || value.group !== '', {
   message: 'A group is required for group meetings.',
 }).refine(value => !value.endDate || value.endDate >= value.startDate, {
   message: 'The schedule end date cannot precede its start date.',

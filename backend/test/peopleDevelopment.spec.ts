@@ -18,6 +18,13 @@ function response(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
+function etagResponse(value: unknown, etag = 'null-etag') {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json', etag },
+  })
+}
+
 function request(path: string, method = 'GET', body?: unknown, token = 'valid-token') {
   return new Request(`https://worker.test${path}`, {
     method,
@@ -171,5 +178,96 @@ describe('People Development routes', () => {
     const payload = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)) as Record<string, unknown>
     expect(payload.createdAt).toBe(1_777_777_777_000)
     expect(payload.group).toBe('teachers')
+  })
+
+  it('creates a schedule at an atomic canonical Firebase key', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(null))
+      .mockResolvedValueOnce(etagResponse(null))
+      .mockResolvedValueOnce(response({ ok: true }))
+    const result = await app(fetchMock).request(
+      request('/api/v1/people-development/pastor/schedules', 'POST', {
+        audience: 'group', group: 'teachers', ordinal: 1, weekday: 2,
+        startTime: '18:00', durationMinutes: 60, startDate: '2026-08-01', endDate: '', active: true,
+      }), undefined, bindings,
+    )
+    const body = await result.json() as { data: { id: string } }
+    expect(result.status).toBe(201)
+    expect(body.data.id).toBe('schedule_group_teachers_1_2_1800_60_20260801_open')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect((fetchMock.mock.calls[2][1] as RequestInit).method).toBe('PUT')
+    expect((fetchMock.mock.calls[2][1] as RequestInit).headers).toMatchObject({ 'if-match': 'null-etag' })
+  })
+
+  it('rejects a duplicate schedule already stored under a legacy random key', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response({
+      legacy: {
+        audience: 'group', group: 'teachers', ordinal: 1, weekday: 2,
+        startTime: '18:00', durationMinutes: 60, startDate: '2026-08-01', endDate: '', active: false,
+      },
+    }))
+    const result = await app(fetchMock).request(
+      request('/api/v1/people-development/pastor/schedules', 'POST', {
+        audience: 'group', group: 'teachers', ordinal: 1, weekday: 2,
+        startTime: '18:00', durationMinutes: 60, startDate: '2026-08-01', endDate: '', active: true,
+      }), undefined, bindings,
+    )
+    const body = await result.json() as { error: { code: string } }
+    expect(result.status).toBe(409)
+    expect(body.error.code).toBe('PEOPLE_DEVELOPMENT_SCHEDULE_CONFLICT')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an identical concurrent schedule when the atomic write loses the race', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(null))
+      .mockResolvedValueOnce(etagResponse(null))
+      .mockResolvedValueOnce(response({ conflict: true }, 412))
+    const result = await app(fetchMock).request(
+      request('/api/v1/people-development/pastor/schedules', 'POST', {
+        audience: 'group', group: 'teachers', ordinal: 1, weekday: 2,
+        startTime: '18:00', durationMinutes: 60, startDate: '2026-08-01', endDate: '', active: true,
+      }), undefined, bindings,
+    )
+    expect(result.status).toBe(409)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('rejects editing a schedule into an existing schedule identity', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response({
+      first: {
+        audience: 'group', group: 'teachers', ordinal: 1, weekday: 2,
+        startTime: '18:00', durationMinutes: 60, startDate: '2026-08-01', endDate: '', active: true,
+      },
+      second: {
+        audience: 'group', group: 'teachers', ordinal: 2, weekday: 2,
+        startTime: '18:00', durationMinutes: 60, startDate: '2026-08-01', endDate: '', active: true,
+      },
+    }))
+    const result = await app(fetchMock).request(
+      request('/api/v1/people-development/pastor/schedules/second', 'PATCH', { ordinal: 1 }),
+      undefined,
+      bindings,
+    )
+    expect(result.status).toBe(409)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('deduplicates identical legacy schedules in pastor snapshots', async () => {
+    const duplicate = {
+      audience: 'group', group: 'teachers', ordinal: 1, weekday: 2,
+      startTime: '18:00', durationMinutes: 60, startDate: '2026-08-01', endDate: '', active: true,
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(null))
+      .mockResolvedValueOnce(response(null))
+      .mockResolvedValueOnce(response(null))
+      .mockResolvedValueOnce(response({ first: duplicate, second: duplicate }))
+    const result = await app(fetchMock).request(
+      request('/api/v1/people-development/pastor/snapshot'), undefined, bindings,
+    )
+    const body = await result.json() as { data: { schedules: unknown[] } }
+    expect(result.status).toBe(200)
+    expect(body.data.schedules).toHaveLength(1)
   })
 })
