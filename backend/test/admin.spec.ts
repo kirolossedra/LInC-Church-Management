@@ -975,7 +975,8 @@ describe('Administrator routes', () => {
   })
 
   it('creates an About Us person and records the accountable action', async () => {
-    const fetchMock = vi.fn((input: string | URL | Request) => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      void init
       const url = String(input)
       if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
         return Promise.resolve(jsonResponse({
@@ -1010,14 +1011,14 @@ describe('Administrator routes', () => {
     const personWrite = fetchMock.mock.calls.find(call =>
       String(call[0]).endsWith('/publicContent/about/people/person-1.json')
     )
-    expect(JSON.parse(String((personWrite?.[1] as RequestInit).body))).toMatchObject({
+    expect(JSON.parse(String(personWrite?.[1]?.body))).toMatchObject({
       nameEn: 'Grace Hopper',
       createdAt: 1_777_777_777_000,
     })
     const auditWrite = fetchMock.mock.calls.find(call =>
       String(call[0]).endsWith('/administration/auditLog/person-1.json')
     )
-    expect(JSON.parse(String((auditWrite?.[1] as RequestInit).body))).toMatchObject({
+    expect(JSON.parse(String(auditWrite?.[1]?.body))).toMatchObject({
       action: 'about.person.created',
       targetId: 'person-1',
       actorUid: 'admin-uid',
@@ -1025,7 +1026,8 @@ describe('Administrator routes', () => {
   })
 
   it('lets an authorized administrator polish an About profile with Bezalel and audits it', async () => {
-    const fetchMock = vi.fn((input: string | URL | Request) => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      void init
       const url = String(input)
       if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
         return Promise.resolve(jsonResponse({
@@ -1068,7 +1070,7 @@ describe('Administrator routes', () => {
     const auditWrite = fetchMock.mock.calls.find(call =>
       String(call[0]).endsWith('/administration/auditLog/audit-1.json')
     )
-    expect(JSON.parse(String((auditWrite?.[1] as RequestInit).body))).toMatchObject({
+    expect(JSON.parse(String(auditWrite?.[1]?.body))).toMatchObject({
       action: 'about.person.bezalel.polished',
       actorUid: 'admin-uid',
     })
