@@ -19,10 +19,12 @@ import {
 import type {
   PeopleDevelopmentEntry,
   PeopleDevelopmentGroupId,
+  PeopleDevelopmentMeetingOccurrence,
 } from './peopleDevelopment.types';
 
 import {
   formatFileSize,
+  formatPeopleDevelopmentMeetingTime,
 } from './peopleDevelopment.utils';
 
 import {
@@ -32,6 +34,7 @@ import {
 
 export interface PeopleDevelopmentGroupPanelProps {
   group: PeopleDevelopmentGroupDefinition;
+  nextMeeting: PeopleDevelopmentMeetingOccurrence | null;
   participants: PeopleDevelopmentParticipant[];
   groupParticipants: PeopleDevelopmentParticipant[];
   assignments: PeopleDevelopmentEntry[];
@@ -118,6 +121,7 @@ function getMemberCountLabel(
 
 export default function PeopleDevelopmentGroupPanel({
   group,
+  nextMeeting,
   participants,
   groupParticipants,
   assignments,
@@ -173,7 +177,7 @@ export default function PeopleDevelopmentGroupPanel({
       }
       className="space-y-5"
     >
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div
           className={`rounded-2xl border px-4 py-3 ${group.cardClass}`}
         >
@@ -231,6 +235,21 @@ export default function PeopleDevelopmentGroupPanel({
               : 'View all posts'}
           </div>
         </button>
+
+        <div className={`rounded-2xl border px-4 py-3 ${group.cardClass}`}>
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-65">
+            <CalendarDays size={14} />
+            {isArabic ? 'الاجتماع التالي' : 'Next meeting'}
+          </div>
+          <div className="mt-1 text-sm font-black leading-5">
+            {nextMeeting ? (
+              <>
+                <span className="block">{new Intl.DateTimeFormat(isArabic ? 'ar-CA' : 'en-CA', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Toronto' }).format(nextMeeting.dateValue)}</span>
+                <span className="block opacity-75">{formatPeopleDevelopmentMeetingTime(nextMeeting.startTime, locale)}–{formatPeopleDevelopmentMeetingTime(nextMeeting.endTime, locale)}</span>
+              </>
+            ) : (isArabic ? 'لا يوجد اجتماع قادم' : 'No upcoming meeting')}
+          </div>
+        </div>
       </div>
 
       {draggedMemberKey && (

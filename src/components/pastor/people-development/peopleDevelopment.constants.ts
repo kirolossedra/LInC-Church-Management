@@ -130,6 +130,29 @@ export const PEOPLE_DEVELOPMENT_GROUPS: PeopleDevelopmentGroupDefinition[] = [
   },
 ];
 
+export function getPeopleDevelopmentMeetingColorClass(
+  groupId: PeopleDevelopmentGroupId | '',
+  audience: 'group' | 'shared',
+  variant: 'soft' | 'solid' | 'badge' = 'soft',
+): string {
+  if (audience === 'shared') {
+    if (variant === 'solid') return 'bg-amber-600 hover:bg-amber-700 text-white';
+    if (variant === 'badge') return 'bg-amber-100 text-amber-800 border-amber-200';
+    return 'bg-amber-50 border-amber-200 text-amber-800';
+  }
+
+  const group = PEOPLE_DEVELOPMENT_GROUPS.find(item => item.id === groupId);
+  if (!group) {
+    if (variant === 'solid') return 'bg-sky-700 hover:bg-sky-800 text-white';
+    if (variant === 'badge') return 'bg-sky-100 text-sky-800 border-sky-200';
+    return 'bg-sky-50 border-sky-200 text-sky-800';
+  }
+
+  if (variant === 'solid') return group.buttonClass;
+  if (variant === 'badge') return group.badgeClass;
+  return group.softClass;
+}
+
 export const PEOPLE_DEVELOPMENT_MEETING_SCHEDULES_PATH =
   `${PEOPLE_DEVELOPMENT_ROOT}/meetingSchedules`;
 

@@ -18,6 +18,7 @@ import {
 
 import {
   PEOPLE_DEVELOPMENT_GROUPS,
+  getPeopleDevelopmentMeetingColorClass,
   PEOPLE_DEVELOPMENT_MEETING_ORDINALS,
   PEOPLE_DEVELOPMENT_MEETING_WEEKDAYS,
 } from './peopleDevelopment.constants';
@@ -570,21 +571,17 @@ export default function PeopleDevelopmentMeetingSchedulesSection({
                   return (
                     <article
                       key={schedule.id}
-                      className={`rounded-2xl border-2 bg-white p-4 shadow-sm ${
+                      className={`rounded-2xl border-2 p-4 shadow-sm ${
                         schedule.active
-                          ? 'border-[#ead9d0]'
-                          : 'border-gray-200 opacity-70'
+                          ? getPeopleDevelopmentMeetingColorClass(schedule.group, schedule.audience)
+                          : 'border-gray-200 bg-gray-50 text-gray-600 opacity-70'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <span
-                              className={`rounded-full border px-2.5 py-1 text-xs font-black ${
-                                schedule.audience === 'shared'
-                                  ? 'border-amber-200 bg-amber-50 text-amber-800'
-                                  : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                              }`}
+                              className={`rounded-full border px-2.5 py-1 text-xs font-black ${getPeopleDevelopmentMeetingColorClass(schedule.group, schedule.audience, 'badge')}`}
                             >
                               {schedule.audience === 'shared'
                                 ? isArabic
@@ -612,18 +609,18 @@ export default function PeopleDevelopmentMeetingSchedulesSection({
                             </span>
                           </div>
 
-                          <h5 className="text-lg font-black text-[#7a1717]">
+                          <h5 className="text-lg font-black">
                             {getPeopleDevelopmentMeetingScheduleTitle(
                               schedule,
                               locale,
                             )}
                           </h5>
 
-                          <div className="mt-3 space-y-2 text-sm text-[#6b4b4b]">
+                          <div className="mt-3 space-y-2 text-sm opacity-85">
                             <div className="flex items-center gap-2">
                               <CalendarDays
                                 size={15}
-                                className="shrink-0 text-[#7a1717]"
+                                className="shrink-0"
                               />
                               {getPeopleDevelopmentMeetingRecurrenceLabel(
                                 schedule,
@@ -634,7 +631,7 @@ export default function PeopleDevelopmentMeetingSchedulesSection({
                             <div className="flex items-center gap-2">
                               <Clock
                                 size={15}
-                                className="shrink-0 text-[#7a1717]"
+                                className="shrink-0"
                               />
                               {formatPeopleDevelopmentMeetingTime(
                                 schedule.startTime,
@@ -645,7 +642,7 @@ export default function PeopleDevelopmentMeetingSchedulesSection({
                             <div className="flex items-center gap-2">
                               <Users
                                 size={15}
-                                className="shrink-0 text-[#7a1717]"
+                                className="shrink-0"
                               />
                               {nextOccurrence
                                 ? isArabic

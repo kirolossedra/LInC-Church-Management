@@ -45,6 +45,8 @@ import {
   PeopleDevelopmentMeetingSchedulesSection,
   PeopleDevelopmentSection,
   PeoplePersonalNoteModal,
+  formatPeopleDevelopmentMeetingTime,
+  getPeopleDevelopmentMeetingColorClass,
   getPeopleDevelopmentMeetingOccurrencesForMonth,
   type PeopleDevelopmentParticipant,
 } from './people-development';
@@ -556,16 +558,12 @@ export default function PastorDashboard() {
 
       <div className="pastor-dashboard-card flex flex-col sm:flex-row justify-between items-start sm:items-center p-6 rounded-3xl border gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-[#1A1A1A]">{format(currentDate, 'MMMM yyyy', { locale: dateLocale })}</h2>
+          <h2 className="text-2xl font-bold text-[#1A1A1A]">{displayLocale === 'ar' ? 'أدوات تقويم الراعي' : 'Pastor calendar controls'}</h2>
           <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
             {t('calendar.availabilityOpensBooking')}
           </p>
         </div>
         <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex bg-stone-50 rounded-xl p-1 border border-gray-200">
-            <button data-tutorial-id="pastor-calendar-previous-month" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft size={20} /></button>
-            <button data-tutorial-id="pastor-calendar-next-month" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight size={20} /></button>
-          </div>
           <button
             type="button"
             onClick={() => void exportCurrentCalendarMonth()}
@@ -743,6 +741,7 @@ export default function PastorDashboard() {
           assignmentFileInputResetKeys={
             peopleAssignmentFileInputResetKeys
           }
+          meetingSchedules={peopleDevelopmentMeetingSchedules}
           groupSelectDrafts={peopleGroupSelectDrafts}
           onToggleExpanded={() =>
             setShowPeopleDevelopment(
@@ -881,10 +880,14 @@ export default function PastorDashboard() {
       <section className="pastor-calendar-shell p-6 rounded-3xl border">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div>
-            <h3 className="pastor-calendar-title text-xl font-bold text-[#7a1717] flex items-center gap-2">
-              <CalendarIcon size={20} />
-              {format(currentDate, 'MMMM yyyy', { locale: dateLocale })}
-            </h3>
+            <div className="flex items-center gap-2">
+              <button data-tutorial-id="pastor-calendar-previous-month" type="button" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="rounded-xl border border-[#ead9d0] bg-white p-2 text-[#7a1717] transition hover:bg-[#f8eeee]" aria-label={displayLocale === 'ar' ? 'الشهر السابق' : 'Previous month'}>{displayLocale === 'ar' ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button>
+              <h3 className="pastor-calendar-title text-xl font-bold text-[#7a1717] flex items-center gap-2">
+                <CalendarIcon size={20} />
+                {format(currentDate, 'MMMM yyyy', { locale: dateLocale })}
+              </h3>
+              <button data-tutorial-id="pastor-calendar-next-month" type="button" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="rounded-xl border border-[#ead9d0] bg-white p-2 text-[#7a1717] transition hover:bg-[#f8eeee]" aria-label={displayLocale === 'ar' ? 'الشهر التالي' : 'Next month'}>{displayLocale === 'ar' ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}</button>
+            </div>
             <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">
               {t('calendar.availabilityOpensBooking')}
             </p>
@@ -902,9 +905,9 @@ export default function PastorDashboard() {
               <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
               {t('booking.booked')}
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-sky-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-sky-600" />
-              {displayLocale === 'ar' ? 'اجتماع مجموعة' : 'Group meeting'}
+            <span className="inline-flex items-center gap-2 rounded-full border border-purple-100 bg-white px-3 py-2 text-[#6b4b4b]">
+              <span className="flex gap-0.5"><span className="h-2.5 w-2.5 rounded-full bg-rose-600" /><span className="h-2.5 w-2.5 rounded-full bg-purple-600" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-600" /></span>
+              {displayLocale === 'ar' ? 'ألوان المجموعات' : 'Group colors'}
             </span>
           </div>
         </div>
@@ -982,9 +985,19 @@ export default function PastorDashboard() {
                   {statusDetail}
                 </div>
 
+                {dayGroupMeetings.length > 0 && (
+                  <div className="mt-2 space-y-1" aria-label={`${dayGroupMeetings.length} group meetings`}>
+                    {dayGroupMeetings.slice(0, 3).map(occurrence => (
+                      <span key={occurrence.scheduleId} className={`block w-full truncate rounded-md px-1.5 py-1 text-[9px] font-black leading-tight ${getPeopleDevelopmentMeetingColorClass(occurrence.group, occurrence.audience, 'solid')}`} title={`${occurrence.title} · ${formatPeopleDevelopmentMeetingTime(occurrence.startTime, displayLocale)}`}>
+                        {occurrence.title} · {formatPeopleDevelopmentMeetingTime(occurrence.startTime, displayLocale)}
+                      </span>
+                    ))}
+                    {dayGroupMeetings.length > 3 && <span className={`block text-[9px] font-black ${isSelected ? 'text-white' : 'text-[#7a1717]'}`}>+{dayGroupMeetings.length - 3}</span>}
+                  </div>
+                )}
+
                 <div className="pastor-day-markers mt-1 hidden items-center justify-center gap-1" aria-label={`${dayMeetings.length} meetings, ${dayGroupMeetings.length} group meetings, ${pendingRequests.length} pending requests`}>
                   {dayMeetings.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-white' : 'bg-[#7a1717]'}`} />}
-                  {dayGroupMeetings.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-sky-200' : 'bg-sky-600'}`} />}
                   {pendingRequests.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-amber-200' : 'bg-amber-500'}`} />}
                 </div>
 
@@ -1140,9 +1153,9 @@ export default function PastorDashboard() {
                       <p className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 font-bold text-sky-700/70">{displayLocale === 'ar' ? 'لا توجد اجتماعات مجموعات في هذا اليوم.' : 'No group meetings on this day.'}</p>
                     ) : (
                       <div className="space-y-2">{selectedDayGroupMeetings.map(occurrence => (
-                        <button key={occurrence.scheduleId} type="button" onClick={() => setShowPeopleDevelopmentMeetingSchedules(true)} className="block w-full rounded-2xl border-2 border-sky-100 bg-sky-50 p-4 text-start font-black text-sky-800 transition hover:border-sky-300">
+                        <button key={occurrence.scheduleId} type="button" onClick={() => setShowPeopleDevelopmentMeetingSchedules(true)} className={`block w-full rounded-2xl border-2 p-4 text-start font-black transition hover:shadow-md ${getPeopleDevelopmentMeetingColorClass(occurrence.group, occurrence.audience)}`}>
                           <span className="block">{occurrence.title}</span>
-                          <span className="mt-1 block text-sm text-sky-700">{occurrence.startTime}–{occurrence.endTime} · {displayLocale === 'ar' ? 'متكرر شهرياً' : 'Monthly recurring'}</span>
+                          <span className="mt-1 block text-sm opacity-80">{formatPeopleDevelopmentMeetingTime(occurrence.startTime, displayLocale)}–{formatPeopleDevelopmentMeetingTime(occurrence.endTime, displayLocale)} · {displayLocale === 'ar' ? 'متكرر شهرياً' : 'Monthly recurring'}</span>
                         </button>
                       ))}</div>
                     )}

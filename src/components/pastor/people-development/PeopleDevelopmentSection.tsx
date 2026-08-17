@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useState,
   type DragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -29,9 +30,14 @@ import PeopleDevelopmentGroupPanel from './PeopleDevelopmentGroupPanel';
 import type {
   PeopleDevelopmentEntry,
   PeopleDevelopmentGroupId,
+  PeopleDevelopmentMeetingSchedule,
   PeoplePersonalNote,
   PeoplePersonalNoteType,
 } from './peopleDevelopment.types';
+
+import {
+  getNextPeopleDevelopmentMeetingOccurrence,
+} from './peopleDevelopment.utils';
 
 import {
   getParticipantPeopleDevelopmentGroup,
@@ -52,6 +58,7 @@ export interface PeopleDevelopmentSectionProps {
   members: PeopleDevelopmentMembersByKey;
   assignments: PeopleDevelopmentEntry[];
   personalNotes: PeoplePersonalNote[];
+  meetingSchedules: PeopleDevelopmentMeetingSchedule[];
 
   searchTerm: string;
   draggedMemberKey: string | null;
@@ -184,6 +191,7 @@ export default function PeopleDevelopmentSection({
   members,
   assignments,
   personalNotes,
+  meetingSchedules,
   searchTerm,
   draggedMemberKey,
   savingMemberKey,
@@ -226,6 +234,17 @@ export default function PeopleDevelopmentSection({
   ] = useState<PeopleDevelopmentGroupId | null>(
     null,
   );
+
+  const nextMeetingsByGroup = useMemo(() => Object.fromEntries(
+    PEOPLE_DEVELOPMENT_GROUPS.map(group => {
+      const nextOccurrence = meetingSchedules
+        .filter(schedule => schedule.active && schedule.audience === 'group' && schedule.group === group.id)
+        .map(schedule => getNextPeopleDevelopmentMeetingOccurrence(schedule, new Date(), locale))
+        .filter(occurrence => occurrence !== null)
+        .sort((first, second) => first.dateValue.getTime() - second.dateValue.getTime())[0] || null;
+      return [group.id, nextOccurrence];
+    }),
+  ), [meetingSchedules, locale]);
 
   const [
     peopleListExpanded,
@@ -296,11 +315,10 @@ export default function PeopleDevelopmentSection({
     setSelectedGroupId(null);
   };
 
-  useEffect(() => {
-    if (!expanded) {
-      setSelectedGroupId(null);
-    }
-  }, [expanded]);
+  const handleToggleExpanded = () => {
+    if (expanded) setSelectedGroupId(null);
+    onToggleExpanded();
+  };
 
   useEffect(() => {
     if (!selectedGroupId) {
@@ -495,7 +513,7 @@ export default function PeopleDevelopmentSection({
     <section className="rounded-3xl border border-violet-200 bg-white p-6 shadow-sm">
       <button
         type="button"
-        onClick={onToggleExpanded}
+        onClick={handleToggleExpanded}
         className="flex w-full flex-col gap-4 text-start sm:flex-row sm:items-start sm:justify-between"
         aria-expanded={expanded}
       >
@@ -937,6 +955,7 @@ export default function PeopleDevelopmentSection({
             <div className="overflow-y-auto p-3 sm:p-5">
               <PeopleDevelopmentGroupPanel
                 group={selectedGroup}
+                nextMeeting={nextMeetingsByGroup[selectedGroup.id] || null}
                 participants={participants}
                 groupParticipants={getGroupParticipants(
                   selectedGroup.id,

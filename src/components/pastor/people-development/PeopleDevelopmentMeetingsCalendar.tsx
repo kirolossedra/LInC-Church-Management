@@ -31,6 +31,7 @@ import {
   formatPeopleDevelopmentMeetingTime,
   getPeopleDevelopmentMeetingOccurrencesForMonth,
 } from './peopleDevelopment.utils';
+import { getPeopleDevelopmentMeetingColorClass } from './peopleDevelopment.constants';
 
 export interface PeopleDevelopmentMeetingsCalendarProps {
   schedules: PeopleDevelopmentMeetingSchedule[];
@@ -240,10 +241,10 @@ export default function PeopleDevelopmentMeetingsCalendar({
                           occurrence.scheduleId,
                         );
 
-                      const eventClass =
-                        occurrence.audience === 'shared'
-                          ? 'border-amber-200 bg-amber-50 text-amber-800'
-                          : 'border-emerald-200 bg-emerald-50 text-emerald-800';
+                      const eventClass = getPeopleDevelopmentMeetingColorClass(
+                        occurrence.group,
+                        occurrence.audience,
+                      );
 
                       const content = (
                         <>
