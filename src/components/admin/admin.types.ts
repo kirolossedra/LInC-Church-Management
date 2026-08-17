@@ -56,6 +56,7 @@ export interface AdminAuthority {
   manageArchives: boolean;
   manageNextGenQa: boolean;
   managePeopleAccess: boolean;
+  manageAbout: boolean;
 }
 
 export interface AdminAccount {

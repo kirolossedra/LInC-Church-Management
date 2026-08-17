@@ -8,6 +8,7 @@ export type AdminSectionId =
   | 'hierarchy'
   | 'assessment'
   | 'carousel'
+  | 'about'
   | 'attendance'
   | 'nextgen-qa'
   | 'people-access'

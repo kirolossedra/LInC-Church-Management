@@ -137,6 +137,11 @@ export function AdminHierarchySection({
                         title: 'People Access',
                         description: 'Register and repair Firebase access for People Notes.',
                       },
+                      {
+                        key: 'manageAbout',
+                        title: 'About Us People',
+                        description: 'Manage public team profiles and use Bezalel editorial help.',
+                      },
                     ] as const
                   ).map((authorityOption) => {
                     const selected = draft[authorityOption.key];

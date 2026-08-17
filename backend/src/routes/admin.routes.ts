@@ -11,6 +11,14 @@ import {
 } from '../admin/adminAuthorization'
 import { ADMIN_AUDIT_PATH, normalizeAdminAuditEvents, writeAdminAudit } from '../admin/adminAudit'
 import {
+  ABOUT_PEOPLE_PATH,
+  MAX_ABOUT_PEOPLE,
+  aboutPeopleOrderSchema,
+  aboutPersonInputSchema,
+  normalizeAboutPeople,
+} from '../about/aboutPeople'
+import { polishAboutProfile } from '../bezalel/bezalel.ai'
+import {
   AdminArchiveError,
   completeArchiveFile,
   createPendingArchiveFile,
@@ -43,6 +51,7 @@ import {
 } from '../services/peopleAccessInvitation.service'
 import { generateMemorableTemporaryPassword } from '../services/peopleAccessPassword.service'
 import type { BrevoEmailResult } from '../services/brevo.service'
+import { GeminiServiceError } from '../services/gemini.service'
 import {
   ArchiveStorageError,
   createBackblazeArchiveStorage,
@@ -57,6 +66,7 @@ const authoritySchema = z.object({
   manageArchives: z.boolean(),
   manageNextGenQa: z.boolean(),
   managePeopleAccess: z.boolean(),
+  manageAbout: z.boolean(),
 }).strict().refine(value => Object.values(value).some(Boolean), {
   message: 'At least one administrator authority is required.',
 })
@@ -102,6 +112,16 @@ const carouselUploadSchema = z.object({ photos: z.array(carouselPhotoSchema).min
 const carouselVisibilitySchema = z.object({ enabled: z.boolean() }).strict()
 const carouselTextSchema = z.object({ altEn: z.string().trim().max(300), altAr: z.string().trim().max(300) }).strict()
 const carouselOrderSchema = z.object({ photoIds: z.array(uidSchema).max(12).refine(ids => new Set(ids).size === ids.length) }).strict()
+const aboutPolishSchema = z.object({
+  nameEn: z.string().trim().max(140).default(''),
+  nameAr: z.string().trim().max(140).default(''),
+  roleEn: z.string().trim().max(180).default(''),
+  roleAr: z.string().trim().max(180).default(''),
+  descriptionEn: z.string().trim().max(2_000).default(''),
+  descriptionAr: z.string().trim().max(2_000).default(''),
+}).strict().refine(value => Boolean(
+  value.roleEn || value.roleAr || value.descriptionEn || value.descriptionAr,
+), 'A role or description is required for polishing.')
 const archiveUploadSchema = z.object({
   name: z.string().trim().min(1).max(255).refine(
     value => value !== '.' && value !== '..' && !hasInvalidArchiveNameCharacter(value),
@@ -125,6 +145,8 @@ export type AdminDependencies = {
     bindings: AppEnv['Bindings'],
     input: PeopleAccessInvitationInput,
   ) => Promise<BrevoEmailResult>
+  geminiFetch?: typeof fetch
+  polishAbout?: typeof polishAboutProfile
 }
 
 export function createAdminRoutes(dependencies: AdminDependencies = {}) {
@@ -421,6 +443,125 @@ export function createAdminRoutes(dependencies: AdminDependencies = {}) {
         metadata: { hadArabicDescription: !!existing.altAr },
       })
       return context.json({ success: true, data: { deleted: true } })
+    })
+  })
+
+  routes.get('/about/people', context => withAboutAuthority(context, dependencies, async database => {
+    const people = normalizeAboutPeople(await database.get(ABOUT_PEOPLE_PATH))
+    return context.json({ success: true, data: { people } })
+  }))
+
+  routes.post('/about/people', async context => {
+    const body = aboutPersonInputSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withAboutAuthority(context, dependencies, async (database, account) => {
+      const people = normalizeAboutPeople(await database.get(ABOUT_PEOPLE_PATH))
+      if (people.length >= MAX_ABOUT_PEOPLE) return context.json({
+        success: false,
+        error: { code: 'ABOUT_PEOPLE_LIMIT_REACHED', message: `The About Us directory supports up to ${MAX_ABOUT_PEOPLE} people.` },
+      }, 409)
+      const id = generateId()
+      const timestamp = now()
+      const person = { id, ...body.data, order: people.length, createdAt: timestamp, updatedAt: timestamp }
+      await database.patch([...ABOUT_PEOPLE_PATH, id], person)
+      await audit(context, database, account, generateId, now, {
+        action: 'about.person.created', targetType: 'aboutPerson', targetId: id,
+        targetLabel: body.data.nameEn || body.data.nameAr, summary: `Added ${body.data.nameEn || body.data.nameAr} to About Us.`,
+        metadata: { order: person.order, hasArabicCopy: Boolean(body.data.nameAr && body.data.roleAr) },
+      })
+      return context.json({ success: true, data: { person } }, 201)
+    })
+  })
+
+  routes.patch('/about/people/order', async context => {
+    const body = aboutPeopleOrderSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withAboutAuthority(context, dependencies, async (database, account) => {
+      const people = normalizeAboutPeople(await database.get(ABOUT_PEOPLE_PATH))
+      const currentIds = people.map(person => person.id)
+      if (body.data.personIds.length !== currentIds.length || body.data.personIds.some(id => !currentIds.includes(id))) {
+        return validationError(context)
+      }
+      await database.patch(ABOUT_PEOPLE_PATH, Object.fromEntries(
+        body.data.personIds.map((id, order) => [`${id}/order`, order]),
+      ))
+      await audit(context, database, account, generateId, now, {
+        action: 'about.people.reordered', targetType: 'aboutDirectory', targetId: 'about',
+        targetLabel: 'About Us people', summary: 'Reordered the About Us people directory.',
+        changes: { order: { before: currentIds, after: body.data.personIds } },
+      })
+      return context.json({ success: true, data: { updated: true } })
+    })
+  })
+
+  routes.patch('/about/people/:personId', async context => {
+    const personId = uidSchema.safeParse(context.req.param('personId'))
+    const body = aboutPersonInputSchema.safeParse(await readJson(context))
+    if (!personId.success || !body.success) return validationError(context)
+    return withAboutAuthority(context, dependencies, async (database, account) => {
+      const existing = normalizeAboutPeople({
+        [personId.data]: await database.get([...ABOUT_PEOPLE_PATH, personId.data]),
+      })[0]
+      if (!existing) return aboutPersonNotFound(context)
+      const timestamp = now()
+      const person = { ...existing, ...body.data, updatedAt: timestamp }
+      await database.patch([...ABOUT_PEOPLE_PATH, personId.data], { ...body.data, updatedAt: timestamp })
+      await audit(context, database, account, generateId, now, {
+        action: 'about.person.updated', targetType: 'aboutPerson', targetId: personId.data,
+        targetLabel: body.data.nameEn || body.data.nameAr, summary: `Updated ${body.data.nameEn || body.data.nameAr} on About Us.`,
+        changes: {
+          name: { before: existing.nameEn || existing.nameAr, after: body.data.nameEn || body.data.nameAr },
+          role: { before: existing.roleEn || existing.roleAr, after: body.data.roleEn || body.data.roleAr },
+          description: { before: existing.descriptionEn || existing.descriptionAr, after: body.data.descriptionEn || body.data.descriptionAr },
+          photo: { before: Boolean(existing.photoUrl), after: Boolean(body.data.photoUrl) },
+        },
+      })
+      return context.json({ success: true, data: { person } })
+    })
+  })
+
+  routes.delete('/about/people/:personId', context => {
+    const personId = uidSchema.safeParse(context.req.param('personId'))
+    if (!personId.success) return validationError(context)
+    return withAboutAuthority(context, dependencies, async (database, account) => {
+      const people = normalizeAboutPeople(await database.get(ABOUT_PEOPLE_PATH))
+      const existing = people.find(person => person.id === personId.data)
+      if (!existing) return aboutPersonNotFound(context)
+      await database.delete([...ABOUT_PEOPLE_PATH, personId.data])
+      const remaining = people.filter(person => person.id !== personId.data)
+      if (remaining.length) await database.patch(ABOUT_PEOPLE_PATH, Object.fromEntries(
+        remaining.map((person, order) => [`${person.id}/order`, order]),
+      ))
+      await audit(context, database, account, generateId, now, {
+        action: 'about.person.deleted', targetType: 'aboutPerson', targetId: personId.data,
+        targetLabel: existing.nameEn || existing.nameAr, summary: `Removed ${existing.nameEn || existing.nameAr} from About Us.`,
+        metadata: { previousOrder: existing.order },
+      })
+      return context.json({ success: true, data: { deleted: true } })
+    })
+  })
+
+  routes.post('/about/polish', async context => {
+    const body = aboutPolishSchema.safeParse(await readJson(context))
+    if (!body.success) return validationError(context)
+    return withAboutAuthority(context, dependencies, async (database, account) => {
+      try {
+        const polish = dependencies.polishAbout ?? polishAboutProfile
+        const polished = await polish(context.env, body.data, dependencies.geminiFetch)
+        await audit(context, database, account, generateId, now, {
+          action: 'about.person.bezalel.polished', targetType: 'aboutPersonDraft', targetId: 'draft',
+          targetLabel: body.data.nameEn || body.data.nameAr || 'About Us person',
+          summary: 'Used Bezalel to polish an About Us profile.',
+          metadata: { sourceLanguages: { en: Boolean(body.data.roleEn || body.data.descriptionEn), ar: Boolean(body.data.roleAr || body.data.descriptionAr) } },
+        })
+        return context.json({ success: true, data: { polished } })
+      } catch (error) {
+        if (error instanceof GeminiServiceError) return context.json({
+          success: false,
+          error: { code: error.code, message: error.message },
+        }, error.status as 429 | 503)
+        throw error
+      }
     })
   })
 
@@ -953,6 +1094,22 @@ async function withCarouselAuthority(
   })
 }
 
+async function withAboutAuthority(
+  context: Context<AppEnv>,
+  dependencies: AdminDependencies,
+  operation: (database: FirebaseRealtimeDatabaseClient, account: AdminAccount) => Promise<Response>,
+) {
+  return withDatabase(context, dependencies, async database => {
+    context.header('Cache-Control', 'private, no-store, max-age=0')
+    const { allowed, account } = await requireAdminAuthority(database, context.get('firebaseUser'), 'manageAbout')
+    if (!allowed || !account) return context.json({
+      success: false,
+      error: { code: 'ADMIN_ABOUT_ACCESS_REQUIRED', message: 'About Us administrator authority is required.' },
+    }, 403)
+    return operation(database, account)
+  })
+}
+
 async function audit(
   context: Context<AppEnv>,
   database: FirebaseRealtimeDatabaseClient,
@@ -1068,6 +1225,9 @@ function attendancePersonNotFound(context: Context<AppEnv>) {
 
 function carouselPhotoNotFound(context: Context<AppEnv>) {
   return context.json({ success: false, error: { code: 'CAROUSEL_PHOTO_NOT_FOUND', message: 'The carousel photo was not found.' } }, 404)
+}
+function aboutPersonNotFound(context: Context<AppEnv>) {
+  return context.json({ success: false, error: { code: 'ABOUT_PERSON_NOT_FOUND', message: 'The About Us person was not found.' } }, 404)
 }
 
 type AdminCarouselPhoto = {

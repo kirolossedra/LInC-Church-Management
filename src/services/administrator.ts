@@ -3,6 +3,7 @@ import type { AdminAccount, AdminAuditEvent, AdminAuthority } from '../component
 import type { CarouselPhoto } from '../components/admin/admin.types';
 import type { ArchiveFile, ArchiveFolder } from '../components/admin/archives/archives.types';
 import type { AttendancePerson, AttendancePersonForm } from '../components/admin/attendance/attendance.types';
+import type { AboutPerson, AboutPersonInput, AboutProfilePolish } from './about';
 
 const BACKEND_BASE_URL = (
   import.meta.env.VITE_BACKEND_BASE_URL ||
@@ -105,6 +106,39 @@ export async function reorderAdminCarouselPhotos(photoIds: string[]) {
 
 export async function deleteAdminCarouselPhoto(photoId: string) {
   return requestAdmin<{ deleted: true }>(`/carousel/photos/${encodeURIComponent(photoId)}`, { method: 'DELETE' });
+}
+
+export async function getAdminAboutPeople() {
+  return requestAdmin<{ people: AboutPerson[] }>('/about/people', { method: 'GET' });
+}
+
+export async function createAdminAboutPerson(person: AboutPersonInput) {
+  return requestAdmin<{ person: AboutPerson }>('/about/people', {
+    method: 'POST', body: JSON.stringify(person),
+  });
+}
+
+export async function updateAdminAboutPerson(personId: string, person: AboutPersonInput) {
+  return requestAdmin<{ person: AboutPerson }>(`/about/people/${encodeURIComponent(personId)}`, {
+    method: 'PATCH', body: JSON.stringify(person),
+  });
+}
+
+export async function reorderAdminAboutPeople(personIds: string[]) {
+  return requestAdmin<{ updated: true }>('/about/people/order', {
+    method: 'PATCH', body: JSON.stringify({ personIds }),
+  });
+}
+
+export async function deleteAdminAboutPerson(personId: string) {
+  return requestAdmin<{ deleted: true }>(`/about/people/${encodeURIComponent(personId)}`, { method: 'DELETE' });
+}
+
+export async function polishAdminAboutProfile(input: Omit<AboutPersonInput, 'photoUrl'>) {
+  const result = await requestAdmin<{ polished: AboutProfilePolish }>('/about/polish', {
+    method: 'POST', body: JSON.stringify(input),
+  });
+  return result.polished;
 }
 
 export async function getPeopleAccessAudit() {

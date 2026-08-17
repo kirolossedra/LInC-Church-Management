@@ -18,6 +18,7 @@ export const EMPTY_ADMIN_AUTHORITY: AdminAuthority = {
   manageArchives: false,
   manageNextGenQa: false,
   managePeopleAccess: false,
+  manageAbout: false,
 };
 
 export const FULL_ADMIN_AUTHORITY: AdminAuthority = {
@@ -27,6 +28,7 @@ export const FULL_ADMIN_AUTHORITY: AdminAuthority = {
   manageArchives: true,
   manageNextGenQa: true,
   managePeopleAccess: true,
+  manageAbout: true,
 };
 
 export const ASSESSMENT_FORM_DEFINITIONS = [

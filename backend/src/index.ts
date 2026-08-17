@@ -43,6 +43,10 @@ import {
   createAdminRoutes,
   type AdminDependencies,
 } from './routes/admin.routes'
+import {
+  createAboutRoutes,
+  type AboutDependencies,
+} from './routes/about.routes'
 import type { AppEnv } from './types/app'
 import {
   createBezalelRoutes,
@@ -61,6 +65,7 @@ export type AppDependencies = {
   assessment?: AssessmentDependencies
   admin?: AdminDependencies
   bezalel?: BezalelDependencies
+  about?: AboutDependencies
 }
 
 export function createApp(
@@ -231,6 +236,11 @@ const requestSchema = z
   app.route(
     '/api/v1/admin',
     createAdminRoutes(dependencies.admin),
+  )
+
+  app.route(
+    '/api/v1/about',
+    createAboutRoutes(dependencies.about),
   )
 
   app.route(

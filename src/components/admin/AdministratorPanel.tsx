@@ -4,6 +4,7 @@ import {
   Archive,
   BarChart3,
   ClipboardCheck,
+  ContactRound,
   GalleryHorizontalEnd,
   History,
   LayoutDashboard,
@@ -22,6 +23,7 @@ import {
   AssessmentUserLinkageSection,
   AttendanceAdminSection,
   CarouselManagementSection,
+  AboutPeopleManagementSection,
   type AdminArea,
   type AdminSectionId,
 } from './components';
@@ -113,6 +115,7 @@ export default function AdministratorPanel() {
     canManageArchives,
     canManageNextGenQa,
     canManagePeopleAccess,
+    canManageAbout,
     sortedAdminAccounts,
     handleLogin,
     handleLogout,
@@ -177,6 +180,14 @@ export default function AdministratorPanel() {
       icon: GalleryHorizontalEnd,
       accent: 'bg-[#d9c5aa] text-[#5f1919]',
     }] : []),
+    ...(canManageAbout ? [{
+      id: 'about' as const,
+      label: 'About Us People',
+      eyebrow: 'Public identity',
+      description: 'Publish ministry people, roles, portraits, and polished biographies.',
+      icon: ContactRound,
+      accent: 'bg-[#efe1c8] text-[#681919]',
+    }] : []),
     ...(canManageAttendance ? [{
       id: 'attendance' as const,
       label: 'Attendance',
@@ -217,7 +228,7 @@ export default function AdministratorPanel() {
       icon: History,
       accent: 'bg-[#324b46] text-white',
     },
-  ], [canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, canManageNextGenQa, canManagePeopleAccess, isChief]);
+  ], [canManageAbout, canManageArchives, canManageAssessmentForms, canManageAttendance, canManageCarousel, canManageNextGenQa, canManagePeopleAccess, isChief]);
 
   const visibleActiveSection = adminAreas.some(area => area.id === activeSection)
     ? activeSection
@@ -683,6 +694,13 @@ export default function AdministratorPanel() {
                 movePhoto={movePhoto}
                 deletePhoto={deletePhoto}
                 deletingPhotoId={deletingPhotoId}
+              />
+            )}
+
+            {visibleActiveSection === 'about' && canManageAbout && (
+              <AboutPeopleManagementSection
+                setStatusMessage={setStatusMessage}
+                setErrorMessage={setErrorMessage}
               />
             )}
 

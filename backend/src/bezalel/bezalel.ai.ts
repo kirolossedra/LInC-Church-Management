@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import {
   BEZALEL_BOOKING_PROMPT,
+  BEZALEL_ABOUT_PROFILE_PROMPT,
   BEZALEL_PASTOR_BASELINE_PROMPT,
   BEZALEL_QUESTION_REVIEW_PROMPT,
   BEZALEL_THEME_TRANSLATION_PROMPT,
@@ -20,8 +21,16 @@ const questionReviewSchema = z.object({
   suggestedQuestion: z.string().trim().max(500).default(''),
 })
 
+const aboutProfilePolishSchema = z.object({
+  roleEn: z.string().trim().min(1).max(180),
+  roleAr: z.string().trim().min(1).max(180),
+  descriptionEn: z.string().trim().max(2_000),
+  descriptionAr: z.string().trim().max(2_000),
+})
+
 export type BilingualTheme = z.infer<typeof bilingualThemeSchema>
 export type NextGenQuestionReview = z.infer<typeof questionReviewSchema>
+export type AboutProfilePolish = z.infer<typeof aboutProfilePolishSchema>
 
 const PASTOR_ACTIONS = [
   'open_availability',
@@ -125,6 +134,33 @@ export async function reviewNextGenQuestion(
       reason: { type: 'string' },
       suggestedQuestion: { type: 'string' },
     }, ['relevant', 'reason', 'suggestedQuestion']),
+  })
+}
+
+export async function polishAboutProfile(
+  bindings: GeminiBindings,
+  input: {
+    nameEn: string
+    nameAr: string
+    roleEn: string
+    roleAr: string
+    descriptionEn: string
+    descriptionAr: string
+  },
+  fetchImpl?: typeof fetch,
+) {
+  return generateGeminiJson({
+    bindings,
+    fetchImpl,
+    systemInstruction: BEZALEL_ABOUT_PROFILE_PROMPT,
+    prompt: `Person name in English: ${input.nameEn}\nPerson name in Arabic: ${input.nameAr}\nEnglish role: ${input.roleEn}\nArabic role: ${input.roleAr}\nEnglish description: ${input.descriptionEn}\nArabic description: ${input.descriptionAr}`,
+    validator: aboutProfilePolishSchema,
+    responseSchema: objectSchema({
+      roleEn: { type: 'string' },
+      roleAr: { type: 'string' },
+      descriptionEn: { type: 'string' },
+      descriptionAr: { type: 'string' },
+    }, ['roleEn', 'roleAr', 'descriptionEn', 'descriptionAr']),
   })
 }
 

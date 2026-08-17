@@ -142,6 +142,7 @@ describe('Administrator routes', () => {
         manageArchives: false,
         manageNextGenQa: false,
         managePeopleAccess: false,
+        manageAbout: false,
       },
     ), undefined, bindings)
     expect(response.status).toBe(403)
@@ -951,5 +952,125 @@ describe('Administrator routes', () => {
       { dateKey: '2026-05-18', attended: true },
     ), undefined, bindings)
     expect(invalidResponse.status).toBe(400)
+  })
+
+  it('denies About Us management without manageAbout authority', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      email: administrator.email,
+      role: 'administrator',
+      status: 'active',
+      authority: { manageAbout: false },
+    }))
+    const response = await createTestApp(fetchMock).request(
+      authenticatedRequest('/api/v1/admin/about/people'),
+      undefined,
+      bindings,
+    )
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({
+      error: { code: 'ADMIN_ABOUT_ACCESS_REQUIRED' },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates an About Us person and records the accountable action', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageAbout: true },
+        }))
+      }
+      if (url.endsWith('/publicContent/about/people.json')) return Promise.resolve(jsonResponse(null))
+      return Promise.resolve(jsonResponse({}))
+    })
+    const app = createTestApp(fetchMock, administrator, undefined, { generateId: () => 'person-1' })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/about/people',
+      'POST',
+      {
+        photoUrl: 'data:image/png;base64,YQ==',
+        nameEn: 'Grace Hopper',
+        nameAr: '',
+        roleEn: 'Ministry advisor',
+        roleAr: '',
+        descriptionEn: 'Supports ministry leaders.',
+        descriptionAr: '',
+      },
+    ), undefined, bindings)
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({
+      data: { person: { id: 'person-1', nameEn: 'Grace Hopper', order: 0 } },
+    })
+    const personWrite = fetchMock.mock.calls.find(call =>
+      String(call[0]).endsWith('/publicContent/about/people/person-1.json')
+    )
+    expect(JSON.parse(String((personWrite?.[1] as RequestInit).body))).toMatchObject({
+      nameEn: 'Grace Hopper',
+      createdAt: 1_777_777_777_000,
+    })
+    const auditWrite = fetchMock.mock.calls.find(call =>
+      String(call[0]).endsWith('/administration/auditLog/person-1.json')
+    )
+    expect(JSON.parse(String((auditWrite?.[1] as RequestInit).body))).toMatchObject({
+      action: 'about.person.created',
+      targetId: 'person-1',
+      actorUid: 'admin-uid',
+    })
+  })
+
+  it('lets an authorized administrator polish an About profile with Bezalel and audits it', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/administration/adminHierarchy/users/admin-uid.json')) {
+        return Promise.resolve(jsonResponse({
+          email: administrator.email,
+          role: 'administrator',
+          status: 'active',
+          authority: { manageAbout: true },
+        }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+    const polishAbout = vi.fn().mockResolvedValue({
+      roleEn: 'Ministry advisor',
+      roleAr: 'مستشار خدمة',
+      descriptionEn: 'Equips ministry leaders with practical guidance.',
+      descriptionAr: 'يجهز قادة الخدمة بإرشاد عملي.',
+    })
+    const app = createTestApp(fetchMock, administrator, undefined, {
+      generateId: () => 'audit-1',
+      polishAbout,
+    })
+    const response = await app.request(authenticatedRequest(
+      '/api/v1/admin/about/polish',
+      'POST',
+      {
+        nameEn: 'Grace Hopper',
+        nameAr: '',
+        roleEn: 'Advisor',
+        roleAr: '',
+        descriptionEn: 'Helps leaders.',
+        descriptionAr: '',
+      },
+    ), undefined, bindings)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: { polished: { roleEn: 'Ministry advisor' } },
+    })
+    expect(polishAbout).toHaveBeenCalledTimes(1)
+    const auditWrite = fetchMock.mock.calls.find(call =>
+      String(call[0]).endsWith('/administration/auditLog/audit-1.json')
+    )
+    expect(JSON.parse(String((auditWrite?.[1] as RequestInit).body))).toMatchObject({
+      action: 'about.person.bezalel.polished',
+      actorUid: 'admin-uid',
+    })
   })
 })

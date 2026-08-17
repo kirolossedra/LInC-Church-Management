@@ -9,6 +9,7 @@ export const EMPTY_ADMIN_AUTHORITY = {
   manageArchives: false,
   manageNextGenQa: false,
   managePeopleAccess: false,
+  manageAbout: false,
 }
 export const FULL_ADMIN_AUTHORITY = {
   manageAssessmentForms: true,
@@ -17,6 +18,7 @@ export const FULL_ADMIN_AUTHORITY = {
   manageArchives: true,
   manageNextGenQa: true,
   managePeopleAccess: true,
+  manageAbout: true,
 }
 
 export type AdminAuthority = typeof EMPTY_ADMIN_AUTHORITY
@@ -83,6 +85,7 @@ export function normalizeAdminAccount(
       manageArchives: rawAuthority.manageArchives === true,
       manageNextGenQa: rawAuthority.manageNextGenQa === true,
       managePeopleAccess: rawAuthority.managePeopleAccess === true,
+      manageAbout: rawAuthority.manageAbout === true,
     },
     firstSignedInAt: numberOrZero(record.firstSignedInAt),
     lastSignedInAt: numberOrZero(record.lastSignedInAt),

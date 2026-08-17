@@ -26,6 +26,7 @@ const account: AdminAccount = {
     manageArchives: true,
     manageNextGenQa: true,
     managePeopleAccess: true,
+    manageAbout: true,
   },
   firstSignedInAt: 1,
   lastSignedInAt: 2,

@@ -11,6 +11,7 @@ describe('administrator authority normalization', () => {
       manageArchives: false,
       manageNextGenQa: false,
       managePeopleAccess: false,
+      manageAbout: false,
     });
   });
 

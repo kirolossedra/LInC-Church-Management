@@ -1,18 +1,38 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Globe, HeartHandshake, Layers3, UsersRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { useI18n } from '../i18n';
 import LincLogo from '../components/brand/LincLogo';
+import { getPublicAboutPeople, type AboutPerson } from '../services/about';
 
 export default function AboutUs() {
   const { dir, locale, setLocale } = useI18n();
   const isAr = locale === 'ar';
   const prefersReducedMotion = useReducedMotion();
   const BackIcon = dir === 'rtl' ? ArrowRight : ArrowLeft;
+  const [people, setPeople] = useState<AboutPerson[]>([]);
+  const [loadingPeople, setLoadingPeople] = useState(true);
+  const [peopleFailed, setPeopleFailed] = useState(false);
 
   useEffect(() => { document.title = isAr ? 'من نحن | LINC One' : 'About Us | LINC One'; }, [isAr]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    void getPublicAboutPeople(controller.signal)
+      .then(result => { if (active) setPeople(result); })
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (active) setPeopleFailed(true);
+      })
+      .finally(() => { if (active) setLoadingPeople(false); });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, []);
 
   const areas = [
     { icon: LincLogo, title: isAr ? 'النمو الروحي' : 'Spiritual Growth', text: isAr ? 'اكتشاف المواهب، والحوار، والنمو المستمر.' : 'Gift discovery, meaningful conversation, and continued growth.' },
@@ -62,6 +82,58 @@ export default function AboutUs() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="relative overflow-hidden px-5 py-24 sm:px-8 sm:py-32">
+        <div className="linc-grid pointer-events-none absolute inset-0 opacity-20" />
+        <div className="pointer-events-none absolute -right-40 top-24 h-96 w-96 rounded-full bg-[#f2a900]/10 blur-3xl" />
+        <div className="relative mx-auto max-w-7xl">
+          <div className="grid gap-8 lg:grid-cols-[0.75fr_1.25fr] lg:items-end">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a66c18]">{isAr ? 'أشخاص LINC' : 'People of LINC'}</p>
+              <h2 className="mt-5 font-serif text-[clamp(3.5rem,7vw,7rem)] font-semibold leading-[0.86] tracking-[-0.05em] text-[#681919]">{isAr ? 'الخدمة لها وجوه.' : 'Ministry has faces.'}</h2>
+            </div>
+            <p className="max-w-2xl text-lg leading-8 text-[#625650] lg:justify-self-end">{isAr ? 'تعرّف إلى الأشخاص الذين يخدمون مجتمع LINC ويساعدون في بناء مساحات للنمو والمشاركة.' : 'Meet the people who serve the LINC community and help create spaces for growth, care, and participation.'}</p>
+          </div>
+
+          {loadingPeople ? (
+            <div className="mt-16 grid gap-6 md:grid-cols-2 xl:grid-cols-3" aria-label={isAr ? 'جار تحميل الأشخاص' : 'Loading people'}>
+              {[0, 1, 2].map(index => <div key={index} className="h-[34rem] animate-pulse rounded-[2.5rem] bg-white/70 shadow-sm" />)}
+            </div>
+          ) : peopleFailed ? (
+            <div className="mt-16 rounded-[2rem] border border-[#8b1e1e]/10 bg-white/70 px-6 py-10 text-center font-semibold text-[#681919]">{isAr ? 'تعذر تحميل دليل فريق الخدمة الآن.' : 'The ministry directory could not be loaded right now.'}</div>
+          ) : people.length === 0 ? (
+            <div className="mt-16 rounded-[2rem] border-2 border-dashed border-[#8b1e1e]/10 bg-white/45 px-6 py-14 text-center text-[#625650]">{isAr ? 'يتم إعداد دليل فريق الخدمة.' : 'The ministry people directory is being prepared.'}</div>
+          ) : (
+            <div className="mt-16 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {people.map((person, index) => {
+                const name = isAr ? person.nameAr || person.nameEn : person.nameEn || person.nameAr;
+                const role = isAr ? person.roleAr || person.roleEn : person.roleEn || person.roleAr;
+                const description = isAr ? person.descriptionAr || person.descriptionEn : person.descriptionEn || person.descriptionAr;
+                return (
+                  <motion.article
+                    key={person.id}
+                    initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 38 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, amount: 0.18 }}
+                    transition={{ duration: 0.65, delay: prefersReducedMotion ? 0 : (index % 3) * 0.08 }}
+                    className="group relative overflow-hidden rounded-[2.5rem] border border-[#8b1e1e]/10 bg-white shadow-[0_22px_70px_rgba(61,25,16,0.10)]"
+                  >
+                    <div className="relative aspect-[4/5] overflow-hidden bg-[#e9ded0]">
+                      <img src={person.photoUrl} alt={name} className="h-full w-full object-cover transition duration-700 ease-out group-hover:scale-[1.035]" />
+                      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#1b0e0e]/90 via-[#1b0e0e]/20 to-transparent" />
+                      <p className="absolute bottom-6 left-6 right-6 text-xs font-black uppercase tracking-[0.2em] text-[#ffd36c]" dir={isAr ? 'rtl' : 'ltr'}>{role}</p>
+                    </div>
+                    <div className="p-7 sm:p-8">
+                      <h3 className="font-serif text-3xl font-semibold leading-tight text-[#681919]" dir={isAr ? 'rtl' : 'ltr'}>{name}</h3>
+                      {description && <p className="mt-4 text-sm leading-7 text-[#625650]" dir={isAr ? 'rtl' : 'ltr'}>{description}</p>}
+                    </div>
+                  </motion.article>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
     </main>
