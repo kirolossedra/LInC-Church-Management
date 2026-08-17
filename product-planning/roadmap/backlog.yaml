@@ -1,0 +1,46 @@
+schema_version: 4
+baseline_date: 2026-08-16
+policy:
+  description: Repository-derived candidates remain separate from Product Owner priorities
+    and do not become milestones automatically.
+items:
+- id: CAND-SEC-001
+  title: Authenticate People Development notification route
+  type: candidate
+  initiative: INIT-BACKEND
+  evidence_class: repository_evidence
+- id: CAND-SEC-002
+  title: Narrow NextGen file authorization
+  type: candidate
+  initiative: INIT-BACKEND
+  evidence_class: repository_evidence
+- id: CAND-SEC-003
+  title: Narrow mission-map authorization
+  type: candidate
+  initiative: INIT-BACKEND
+  evidence_class: repository_evidence
+- id: CAND-SEC-004
+  title: Version and review authoritative Firebase Realtime Database security rules
+  type: candidate
+  initiative: INIT-BACKEND
+  evidence_class: repository_evidence
+- id: CAND-STORAGE-001
+  title: Migrate embedded People Development PDFs to object storage
+  type: candidate
+  initiative: INIT-BACKEND
+  evidence_class: repository_evidence
+- id: CAND-CI-001
+  title: Run frontend tests and lint in CI
+  type: candidate
+  initiative: INIT-DELIVERY
+  evidence_class: repository_evidence
+- id: CAND-GOV-001
+  title: Protect main and require checks
+  type: candidate
+  initiative: INIT-DELIVERY
+  evidence_class: repository_evidence
+- id: CAND-CLEAN-001
+  title: Remove verified-dead legacy provider code/dependencies
+  type: candidate_under_issue_20
+  initiative: INIT-MAINT
+  evidence_class: repository_evidence

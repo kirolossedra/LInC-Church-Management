@@ -1,0 +1,132 @@
+schema_version: 4
+baseline_date: 2026-08-16
+initiatives:
+- id: INIT-AI
+  name: Bezalel AI Platform
+  status: active_strategic_direction
+  evidence_class: product_owner_confirmed
+  milestone: M10
+  objective: Extend a constrained server-mediated AI assistant/action layer across
+    appropriate LINC One areas.
+  scope_note: Not subordinate to Pastor, Calendar, or NextGen; those can be integration
+    surfaces.
+  future_surfaces: null
+  target_date: null
+- id: INIT-BACKEND
+  name: Backend Security & Service Boundary
+  status: active_ongoing
+  evidence_class: repository_evidence
+  milestones:
+  - M5
+  - M11
+- id: INIT-MAINT
+  name: Codebase Maintainability
+  status: active
+  issue: 20
+  target_date: null
+- id: INIT-STORAGE-RELIABILITY
+  name: Administrator B2 Storage Reliability Recovery
+  status: current_blocker
+  issue: 21
+  role_context: ROLE-ADMIN
+  investigation_started: false
+  root_cause: null
+  target_date: null
+- id: INIT-ASSESSMENT-EFF
+  name: Assessment Experience Efficiency
+  status: queued
+  issue: 8
+  capability_context: CAP-ASSESS
+  target_date: null
+- id: INIT-FORMS
+  name: Forms Platform Evolution
+  status: deferred
+  issues:
+  - 26
+  - 27
+  target_date: null
+- id: INIT-SMS
+  name: Communications Expansion — SMS Feasibility
+  status: investigation
+  issue: 11
+  implementation_committed: false
+  milestones:
+  - M18
+  evidence_class: product_owner_confirmed
+  objective: Evaluate SMS providers, pricing, quotas, and nonprofit benefits before
+    any implementation commitment.
+  target_date: null
+- id: INIT-PORTABILITY
+  name: Backend Portability & Team Scalability
+  status: deprioritized
+  issue: 16
+  architecture_target: Spring Boot
+  dependency: Microsoft Azure NPO credits
+  target_date: null
+- id: INIT-DELIVERY
+  name: Delivery Automation & Quality Gates
+  status: established_and_evolving
+  related_issues:
+  - 15
+  - 17
+- id: INIT-COMMS
+  name: Transactional Communications
+  status: established_and_evolving
+  related_issues:
+  - 13
+- id: INIT-FRENCH
+  name: French Localization
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  evidence_class: product_owner_confirmed
+  milestones:
+  - M13
+  objective: Introduce French localization across LINC One.
+  first_release_scope: null
+- id: INIT-MISSION-TRIPS
+  name: Mission Trip Management
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  evidence_class: product_owner_confirmed
+  milestones:
+  - M14
+  objective: Create Mission Trip Management as a major LINC One product capability
+    family.
+  first_workflow_scope: null
+- id: INIT-MOBILE
+  name: Mobile App Expansion
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  evidence_class: product_owner_confirmed
+  milestones:
+  - M15
+  objective: Expand LINC One from web into a mobile application.
+  dependencies:
+  - DEP-APPLE-NPO
+- id: INIT-SAAS
+  name: SaaS Transformation
+  status: planned_strategic_direction
+  planning_start_date: '2026-08-16'
+  target_date: null
+  evidence_class: product_owner_confirmed
+  milestones:
+  - M16
+  - M17
+  objective: Transform LINC One into a reusable multi-organization SaaS platform.
+  sub_stages:
+  - Multi-Tenant Foundation
+  - SaaS Launch v1
+dependencies:
+- id: DEP-APPLE-NPO
+  name: Apple Developer Program NPO Waiver
+  type: external_enablement_action
+  initiative: INIT-MOBILE
+  status: next_action
+  evidence_class: product_owner_confirmed
+  owner_role: Media Manager
+  action: Ask the Media Manager to initiate the Apple Developer Program NPO waiver
+    process.
+  target_date: null

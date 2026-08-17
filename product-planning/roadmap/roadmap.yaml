@@ -1,0 +1,125 @@
+schema_version: 4
+product: LINC One
+repository: kirolossedra/LInC-Church-Management
+baseline_date: 2026-08-16
+planning_model:
+  chronological_buckets_are_milestones: false
+  overlapping_lines_allowed: true
+  distinguish_roles_from_capabilities: true
+  planned_milestones_may_have_null_target_date: true
+  planning_start_date_semantics: Date the item entered the roadmap; not necessarily
+    implementation start.
+role_experiences:
+- id: ROLE-PASTOR
+  name: Pastor Workspace
+  purpose: ministry_leadership
+  evidence_class:
+  - repository_evidence
+  - product_owner_confirmed
+  evolution_start: 2026-05-06
+  milestones:
+  - M2
+  - M7
+- id: ROLE-ADMIN
+  name: Administrator Workspace
+  purpose: operational_governance
+  evidence_class:
+  - repository_evidence
+  - product_owner_confirmed
+  evolution_start: 2026-07-22
+  milestones:
+  - M6
+  - M12
+historical_term_disambiguation:
+  early_admin_dashboard:
+    date: 2026-05-05
+    classification: assessment_review_tooling
+    role_experience: null
+    capability: spiritual_assessment
+    note: Do not use this as the start date of the Administrator role.
+product_capabilities:
+- id: CAP-ASSESS
+  name: Spiritual Assessment
+  start: 2026-04-29
+  milestones:
+  - M1
+- id: CAP-NEXTGEN
+  name: NextGen
+  start: 2026-05-08
+  milestones:
+  - M3
+  - M9
+- id: CAP-ATTENDANCE
+  name: Attendance
+  start: 2026-05-24
+  milestones:
+  - M4
+- id: CAP-MISSION-TRIPS
+  name: Mission Trip Management
+  planning_start: '2026-08-16'
+  status: planned
+  milestones:
+  - M14
+platform_lines:
+- id: PLAT-BACKEND
+  name: Backend Security & Service Boundary
+  start: 2026-07-24
+  milestones:
+  - M5
+  - M11
+- id: PLAT-BEZALEL
+  name: Bezalel AI Platform
+  start: 2026-08-11
+  milestones:
+  - M10
+- id: PLAT-MOBILE
+  name: Mobile App Expansion
+  planning_start: '2026-08-16'
+  status: planned
+  milestones:
+  - M15
+- id: PLAT-SAAS
+  name: SaaS Transformation
+  planning_start: '2026-08-16'
+  status: planned
+  milestones:
+  - M16
+  - M17
+current_portfolio:
+  aggregate_progress_percent: null
+  priorities:
+  - rank: 1
+    issue: 21
+    initiative: INIT-STORAGE-RELIABILITY
+    classification: operational_blocker
+  - rank: 2
+    issue: 20
+    initiative: INIT-MAINT
+    classification: maintainability
+  - rank: 3
+    issue: 8
+    initiative: INIT-ASSESSMENT-EFF
+    classification: queued_enhancement
+localization_lines:
+- id: LOC-FRENCH
+  name: French Localization
+  planning_start: '2026-08-16'
+  status: planned
+  milestones:
+  - M13
+future_strategic_directions:
+- initiative: INIT-FRENCH
+  planning_start: '2026-08-16'
+  target_date: null
+- initiative: INIT-MISSION-TRIPS
+  planning_start: '2026-08-16'
+  target_date: null
+- initiative: INIT-MOBILE
+  planning_start: '2026-08-16'
+  target_date: null
+- initiative: INIT-SAAS
+  planning_start: '2026-08-16'
+  target_date: null
+- initiative: INIT-SMS
+  status: investigation
+  target_date: null

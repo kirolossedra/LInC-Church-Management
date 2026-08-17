@@ -1,0 +1,104 @@
+schema_version: 4
+repository: kirolossedra/LInC-Church-Management
+baseline_date: 2026-08-16
+methodology:
+  milestone_definition_from_velocity: false
+  note: Weeks may contain several parallel capabilities and cross-cutting initiatives.
+summary:
+  total_commits: 431
+  weeks: 16
+  mean_commits_per_week: 26.94
+  median_commits_per_week: 22
+  maximum_weekly_commits: 125
+  zero_commit_weeks: 2
+  interpretation: Bursty delivery; activity data must not be converted into chronological
+    product phases.
+  contributors:
+  - user: kirolossedra
+    commits: 390
+  - user: the3miaphysite3engineer3
+    commits: 40
+  - user: nadianaddour
+    commits: 1
+weeks:
+- week: 1
+  start: 2026-04-29
+  end: 2026-05-05
+  commits: 39
+  engineering_activity_index: 31
+- week: 2
+  start: 2026-05-06
+  end: 2026-05-12
+  commits: 70
+  engineering_activity_index: 56
+- week: 3
+  start: 2026-05-13
+  end: 2026-05-19
+  commits: 21
+  engineering_activity_index: 17
+- week: 4
+  start: 2026-05-20
+  end: 2026-05-26
+  commits: 25
+  engineering_activity_index: 20
+- week: 5
+  start: 2026-05-27
+  end: 2026-06-02
+  commits: 23
+  engineering_activity_index: 18
+- week: 6
+  start: 2026-06-03
+  end: 2026-06-09
+  commits: 0
+  engineering_activity_index: 0
+- week: 7
+  start: 2026-06-10
+  end: 2026-06-16
+  commits: 3
+  engineering_activity_index: 2
+- week: 8
+  start: 2026-06-17
+  end: 2026-06-23
+  commits: 38
+  engineering_activity_index: 30
+- week: 9
+  start: 2026-06-24
+  end: 2026-06-30
+  commits: 10
+  engineering_activity_index: 8
+- week: 10
+  start: 2026-07-01
+  end: 2026-07-07
+  commits: 1
+  engineering_activity_index: 1
+- week: 11
+  start: 2026-07-08
+  end: 2026-07-14
+  commits: 0
+  engineering_activity_index: 0
+- week: 12
+  start: 2026-07-15
+  end: 2026-07-21
+  commits: 10
+  engineering_activity_index: 8
+- week: 13
+  start: 2026-07-22
+  end: 2026-07-28
+  commits: 125
+  engineering_activity_index: 100
+- week: 14
+  start: 2026-07-29
+  end: 2026-08-04
+  commits: 28
+  engineering_activity_index: 22
+- week: 15
+  start: 2026-08-05
+  end: 2026-08-11
+  commits: 28
+  engineering_activity_index: 22
+- week: 16
+  start: 2026-08-12
+  end: 2026-08-16
+  partial_week: true
+  commits: 10
+  engineering_activity_index: 8

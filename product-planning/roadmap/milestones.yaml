@@ -1,0 +1,188 @@
+schema_version: 4
+baseline_date: 2026-08-16
+milestones:
+- id: M1
+  name: Spiritual Assessment MVP
+  achieved_date: 2026-05-05
+  object_type: product_capability
+  object_id: CAP-ASSESS
+  evidence_class: derived_analysis
+  outcome: Public spiritual assessment and assessment-review dashboard formed a coherent
+    initial assessment workflow.
+  explicitly_excludes:
+  - Pastor role
+  - later Administrator role
+- id: M2
+  name: Pastor Scheduling Workspace v1
+  achieved_date: 2026-05-07
+  object_type: role_experience
+  object_id: ROLE-PASTOR
+  evidence_class: derived_analysis
+  outcome: Pastor-specific calendar, availability, meeting, and booking-request operations
+    formed a usable scheduling workspace.
+- id: M3
+  name: NextGen Participation v1
+  achieved_date: 2026-05-22
+  object_type: product_capability
+  object_id: CAP-NEXTGEN
+  evidence_class: derived_analysis
+  outcome: NextGen became a distinct participant/Pastor program surface.
+- id: M4
+  name: Attendance Operations v1
+  achieved_date: 2026-05-24
+  object_type: product_capability
+  object_id: CAP-ATTENDANCE
+  evidence_class: derived_analysis
+  outcome: Bilingual attendance-taking and personal attendance functionality became
+    operational.
+- id: M5
+  name: Backend Platform v1
+  achieved_date: 2026-07-24
+  object_type: platform
+  object_id: PLAT-BACKEND
+  evidence_class: repository_evidence
+  outcome: A deployed, frontend-connected Hono backend became an operational server
+    platform.
+- id: M6
+  name: Administrator Delegation v1
+  achieved_date: 2026-07-29
+  object_type: role_experience
+  object_id: ROLE-ADMIN
+  evidence_class: repository_evidence
+  outcome: The separate Administrator system gained Firebase login, Chief ownership,
+    approval/suspension, and delegated authorities.
+  precursor:
+    date: 2026-07-22
+    description: AdministratorPanel prototype begins with landing-media operations.
+- id: M7
+  name: Pastor Ministry Workspace v2
+  achieved_date: 2026-07-30
+  object_type: role_experience
+  object_id: ROLE-PASTOR
+  evidence_class: derived_analysis
+  outcome: Pastor operations expand into people development, group meeting coordination,
+    and multi-group ministry communication.
+  related_issues:
+  - 6
+  - 7
+  - 9
+- id: M8
+  name: LINC One Platform Launch
+  achieved_date: 2026-08-11
+  object_type: product_identity
+  evidence_class: derived_analysis
+  related_issues:
+  - 18
+  outcome: Product identity broadens into the LINC One platform.
+- id: M9
+  name: NextGen Portal v2
+  achieved_date: 2026-08-11
+  object_type: product_capability
+  object_id: CAP-NEXTGEN
+  evidence_class: repository_evidence
+  outcome: NextGen becomes a stronger authenticated portal with redesigned QA/member
+    workflows and file capability.
+- id: M10
+  name: Bezalel AI Platform v1
+  achieved_date: 2026-08-11
+  object_type: platform
+  object_id: PLAT-BEZALEL
+  evidence_class:
+  - repository_evidence
+  - product_owner_confirmed
+  outcome: Bezalel becomes a platform-level AI direction with initial integrations
+    and future cross-platform expansion intent.
+  related_issues:
+  - 24
+- id: M11
+  name: Server-Mediated Core Operations v1
+  achieved_date: 2026-08-15
+  object_type: platform
+  object_id: PLAT-BACKEND
+  evidence_class: derived_analysis
+  outcome: A broad set of sensitive/core operations is mediated by Hono authentication,
+    authorization, validation, and provider boundaries.
+- id: M12
+  name: Administrator Operations & Accountability v2
+  achieved_date: 2026-08-16
+  object_type: role_experience
+  object_id: ROLE-ADMIN
+  evidence_class: derived_analysis
+  outcome: Administrator workspace matures into broad delegated operations with command-center
+    organization and audit/accountability.
+  related_issues:
+  - 10
+  - 14
+  - 23
+- id: M13
+  name: French Localization v1
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  object_type: localization
+  object_id: LOC-FRENCH
+  initiative: INIT-FRENCH
+  evidence_class: product_owner_confirmed
+  outcome: First usable French-localized LINC One release across Product Owner-selected
+    surfaces.
+  scope_status: unknown_product_owner_clarification_required
+- id: M14
+  name: Mission Trip Management v1
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  object_type: product_capability
+  object_id: CAP-MISSION-TRIPS
+  initiative: INIT-MISSION-TRIPS
+  evidence_class: product_owner_confirmed
+  outcome: First usable end-to-end Mission Trip Management capability.
+  scope_status: unknown_product_owner_clarification_required
+- id: M15
+  name: Mobile App v1
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  object_type: platform
+  object_id: PLAT-MOBILE
+  initiative: INIT-MOBILE
+  evidence_class: product_owner_confirmed
+  outcome: First usable LINC One mobile application release.
+  dependencies:
+  - DEP-APPLE-NPO
+  scope_status: unknown_product_owner_clarification_required
+- id: M16
+  name: Multi-Tenant Foundation
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  object_type: platform
+  object_id: PLAT-SAAS
+  initiative: INIT-SAAS
+  evidence_class: product_owner_confirmed
+  outcome: LINC One can support isolated organizations/churches within the shared
+    platform.
+  scope_status: unknown_product_owner_clarification_required
+- id: M17
+  name: SaaS Launch v1
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  object_type: strategic_product_outcome
+  object_id: PLAT-SAAS
+  initiative: INIT-SAAS
+  evidence_class: product_owner_confirmed
+  outcome: First usable multi-organization SaaS form of LINC One.
+  dependencies:
+  - M16
+  scope_status: unknown_product_owner_clarification_required
+- id: M18
+  name: SMS Feasibility Decision
+  status: planned
+  planning_start_date: '2026-08-16'
+  target_date: null
+  object_type: decision_milestone
+  initiative: INIT-SMS
+  evidence_class: product_owner_confirmed
+  outcome: Complete provider, pricing, quota, and nonprofit-benefit investigation
+    and decide whether/how SMS should proceed.
+  implementation_committed: false
