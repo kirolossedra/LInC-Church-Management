@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import BezalelChat, { type BezalelTravelRequest } from './BezalelChat';
 
-const messages = [{ role: 'assistant' as const, content: 'How may I help?' }];
+const messages = [{ role: 'assistant' as const, content: 'How may I help?', timestamp: '2026-08-17T15:00:00.000Z' }];
 
 function CalendarHarness({
   travelRequest,
@@ -24,6 +24,8 @@ function CalendarHarness({
         messages={messages}
         activity="acting"
         onSend={vi.fn()}
+        participant="Pastor Test"
+        participantRole="Pastor"
         travelRequest={travelRequest}
         onPrepareTravelTarget={onPrepareTravelTarget}
         onTravelComplete={onTravelComplete}

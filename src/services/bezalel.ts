@@ -4,6 +4,7 @@ import type { CreatePublicBookingRequest } from './booking';
 export type BezalelMessage = {
   role: 'user' | 'assistant';
   content: string;
+  timestamp: string;
 };
 
 export type PastorBezalelAction =
@@ -75,7 +76,7 @@ export async function chatWithPastorBezalel(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${await user.getIdToken(refresh)}`,
     },
-    body: JSON.stringify({ messages: messages.slice(-12), locale }),
+    body: JSON.stringify({ messages: apiMessages(messages), locale }),
   });
   let response = await send(false);
   if (response.status === 401) response = await send(true);
@@ -89,9 +90,13 @@ export async function chatWithBookingBezalel(
   const response = await fetch(`${BACKEND_BASE_URL}/api/v1/bezalel/booking/chat`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages: messages.slice(-12), locale }),
+    body: JSON.stringify({ messages: apiMessages(messages), locale }),
   });
   return parseResponse<BookingBezalelResult>(response);
+}
+
+function apiMessages(messages: BezalelMessage[]) {
+  return messages.slice(-12).map(({ role, content }) => ({ role, content }));
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

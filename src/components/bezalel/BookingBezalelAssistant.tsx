@@ -24,6 +24,7 @@ export default function BookingBezalelAssistant({
     content: locale === 'ar'
       ? 'أنا بصلئيل. يمكنني إيجاد أقرب موعد متاح ومساعدتك في إرسال طلب الحجز.'
       : 'I am Bezalel. I can find the next available appointment and help prepare your booking request.',
+    timestamp: new Date().toISOString(),
   }]);
   const [activity, setActivity] = useState<BezalelActivity>('idle');
   const [travelRequest, setTravelRequest] = useState<BezalelTravelRequest>();
@@ -55,12 +56,12 @@ export default function BookingBezalelAssistant({
   };
 
   const send = async (content: string) => {
-    const nextMessages: BezalelMessage[] = [...messages, { role: 'user', content }];
+    const nextMessages: BezalelMessage[] = [...messages, { role: 'user', content, timestamp: new Date().toISOString() }];
     setMessages(nextMessages);
     setActivity('thinking');
     try {
       const result = await chatWithBookingBezalel(nextMessages, locale);
-      setMessages(current => [...current, { role: 'assistant', content: result.reply }]);
+      setMessages(current => [...current, { role: 'assistant', content: result.reply, timestamp: new Date().toISOString() }]);
       const hasJourney = beginCalendarJourney([
         result.focusDate,
         ...result.suggestions.map(suggestion => suggestion.date),
@@ -75,6 +76,7 @@ export default function BookingBezalelAssistant({
           content: locale === 'ar'
             ? 'تم إرسال طلب الحجز إلى الراعي للمراجعة.'
             : 'Your booking request was sent to the Pastor for review.',
+          timestamp: new Date().toISOString(),
         }]);
         setActivity('success');
         if (!hasJourney) window.setTimeout(() => setActivity('idle'), 1400);
@@ -88,6 +90,7 @@ export default function BookingBezalelAssistant({
       setMessages(current => [...current, {
         role: 'assistant',
         content: error instanceof Error ? error.message : 'I could not complete that request.',
+        timestamp: new Date().toISOString(),
       }]);
     }
   };
@@ -99,6 +102,8 @@ export default function BookingBezalelAssistant({
       messages={messages}
       activity={activity}
       onSend={send}
+      participant="Booking visitor"
+      participantRole="Visitor"
       travelRequest={travelRequest}
       onPrepareTravelTarget={target => onFocusDate(target.date)}
       onTravelComplete={finishCalendarJourney}

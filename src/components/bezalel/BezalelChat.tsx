@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, MessageCircle, Send, Sparkles, X } from 'lucide-react';
+import { ChevronDown, Download, MessageCircle, Send, Sparkles, X } from 'lucide-react';
 
 import bezalelImage from '../../assets/bezalel/bezalel.png';
 import type { BezalelMessage } from '../../services/bezalel';
+import { downloadBezalelSession, type BezalelActionRecord } from './bezalelExport';
 
 export type BezalelActivity = 'idle' | 'thinking' | 'acting' | 'success' | 'error';
 
@@ -38,6 +39,9 @@ export default function BezalelChat({
   travelRequest,
   onPrepareTravelTarget,
   onTravelComplete,
+  participant,
+  participantRole,
+  actionLog = [],
 }: {
   title: string;
   subtitle: string;
@@ -48,6 +52,9 @@ export default function BezalelChat({
   travelRequest?: BezalelTravelRequest;
   onPrepareTravelTarget?: (target: BezalelTravelTarget) => void;
   onTravelComplete?: (requestId: number) => void;
+  participant: string;
+  participantRole: string;
+  actionLog?: BezalelActionRecord[];
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -158,10 +165,13 @@ export default function BezalelChat({
       locateTimer = window.setTimeout(() => locateTarget(targetIndex, 0), 100);
     };
 
-    setOpen(false);
-    setJourney(null);
-    setJourneyActive(true);
-    locateTimer = window.setTimeout(() => prepareTarget(0), 0);
+    locateTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      setOpen(false);
+      setJourney(null);
+      setJourneyActive(true);
+      prepareTarget(0);
+    }, 0);
 
     return () => {
       cancelled = true;
@@ -169,7 +179,7 @@ export default function BezalelChat({
       window.clearTimeout(travelTimer);
       window.clearTimeout(castTimer);
     };
-  }, [travelRequest?.id]);
+  }, [travelRequest]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -191,13 +201,15 @@ export default function BezalelChat({
               {(activity === 'thinking' || activity === 'acting') && <span className="bezalel-orbit" aria-hidden="true"><Sparkles size={14} /></span>}
             </div>
             <div className="min-w-0 flex-1"><h2 className="font-serif text-2xl font-semibold">{title}</h2><p className="truncate text-[11px] text-stone-300">{subtitle}</p></div>
+            <button type="button" onClick={() => downloadBezalelSession({ participant, participantRole, context: subtitle, messages, actions: actionLog })} className="rounded-xl bg-white/10 p-2 text-stone-200" aria-label="Export Bezalel chat"><Download size={17} /></button>
             <button type="button" onClick={() => setOpen(false)} className="rounded-xl bg-white/10 p-2 text-stone-200" aria-label="Close Bezalel"><X size={17} /></button>
           </header>
 
           <div className="flex-1 space-y-3 overflow-y-auto p-4">
             {messages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'ms-auto bg-[#7a1717] text-white' : 'bg-[#f1e8dc] text-stone-800'}`}>
-                {message.content}
+                <div>{message.content}</div>
+                <time className={`mt-1 block text-[9px] ${message.role === 'user' ? 'text-white/60' : 'text-stone-400'}`} dateTime={message.timestamp}>{formatChatTime(message.timestamp)}</time>
               </div>
             ))}
             {busy && <div className="inline-flex items-center gap-2 rounded-2xl bg-[#f1e8dc] px-4 py-3 text-sm font-bold text-[#7a1717]"><Sparkles size={15} className="animate-pulse" /> {activity === 'acting' ? 'Working on the calendar…' : 'Considering your request…'}</div>}
@@ -248,4 +260,10 @@ export default function BezalelChat({
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+}
+
+function formatChatTime(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
 }
