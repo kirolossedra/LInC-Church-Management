@@ -224,7 +224,7 @@ export default function PeopleDevelopmentMeetingsCalendar({
               return (
                 <div
                   key={day.dateKey}
-                  className={`min-h-[86px] border-b border-e border-[#f0e5df] p-1.5 sm:min-h-[118px] sm:p-2 ${
+                  className={`min-w-0 overflow-hidden min-h-[86px] border-b border-e border-[#f0e5df] p-1.5 sm:min-h-[118px] sm:p-2 ${
                     day.inCurrentMonth
                       ? 'bg-white'
                       : 'bg-stone-50/70 text-gray-400'
@@ -244,6 +244,12 @@ export default function PeopleDevelopmentMeetingsCalendar({
                       const eventClass = getPeopleDevelopmentMeetingColorClass(
                         occurrence.group,
                         occurrence.audience,
+                      );
+
+                      const mobileEventClass = getPeopleDevelopmentMeetingColorClass(
+                        occurrence.group,
+                        occurrence.audience,
+                        'solid',
                       );
 
                       const content = (
@@ -284,10 +290,12 @@ export default function PeopleDevelopmentMeetingsCalendar({
                             onClick={() =>
                               onScheduleSelect(schedule)
                             }
-                            className={`block w-full rounded-lg border px-1.5 py-1 text-start text-[9px] leading-tight transition hover:-translate-y-0.5 hover:shadow-sm sm:px-2 sm:text-[11px] ${eventClass}`}
+                            className={`pastor-group-calendar-ribbon block h-2 w-full overflow-hidden rounded-full border p-0 text-start transition hover:shadow-sm sm:h-auto sm:rounded-lg sm:px-2 sm:py-1 sm:hover:-translate-y-0.5 ${eventClass}`}
                             title={occurrence.title}
+                            aria-label={`${occurrence.title}, ${formatPeopleDevelopmentMeetingTime(occurrence.startTime, locale)} to ${formatPeopleDevelopmentMeetingTime(occurrence.endTime, locale)}`}
                           >
-                            {content}
+                            <span className={`block h-full w-full sm:hidden ${mobileEventClass}`} aria-hidden="true" />
+                            <span className="hidden sm:block">{content}</span>
                           </button>
                         );
                       }
@@ -295,10 +303,12 @@ export default function PeopleDevelopmentMeetingsCalendar({
                       return (
                         <div
                           key={occurrence.scheduleId}
-                          className={`rounded-lg border px-1.5 py-1 text-[9px] leading-tight sm:px-2 sm:text-[11px] ${eventClass}`}
+                          className={`pastor-group-calendar-ribbon h-2 w-full overflow-hidden rounded-full border p-0 sm:h-auto sm:rounded-lg sm:px-2 sm:py-1 ${eventClass}`}
                           title={occurrence.title}
+                          aria-label={`${occurrence.title}, ${formatPeopleDevelopmentMeetingTime(occurrence.startTime, locale)} to ${formatPeopleDevelopmentMeetingTime(occurrence.endTime, locale)}`}
                         >
-                          {content}
+                          <span className={`block h-full w-full sm:hidden ${mobileEventClass}`} aria-hidden="true" />
+                          <span className="hidden sm:block">{content}</span>
                         </div>
                       );
                     })}

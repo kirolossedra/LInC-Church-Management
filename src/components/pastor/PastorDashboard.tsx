@@ -466,6 +466,12 @@ export default function PastorDashboard() {
           line-height: 1 !important;
         }
 
+        .pastor-calendar-ui .pastor-group-ribbon-label,
+        .pastor-calendar-ui .pastor-group-calendar-ribbon {
+          font-size: 11px !important;
+          line-height: 1.2 !important;
+        }
+
         .pastor-calendar-ui .pastor-popup-panel {
           background: #fffdf9;
           border-color: #ead9d0;
@@ -956,7 +962,7 @@ export default function PastorDashboard() {
                 type="button"
                 data-calendar-date={dateStr}
                 onClick={() => setSelectedSlotDay(day)}
-                className={`pastor-day-card min-h-[92px] sm:min-h-[112px] rounded-2xl border-2 p-2 sm:p-3 text-center transition-all hover:-translate-y-0.5 hover:shadow-md font-bold ${
+                className={`pastor-day-card min-w-0 overflow-hidden min-h-[92px] sm:min-h-[112px] rounded-2xl border-2 p-2 sm:p-3 text-center transition-all hover:-translate-y-0.5 hover:shadow-md font-bold ${
                   bezalelFocusDate === dateStr
                     ? 'bezalel-date-focus border-sky-400 bg-sky-50 text-sky-900'
                     : isSelected
@@ -986,18 +992,25 @@ export default function PastorDashboard() {
                 </div>
 
                 {dayGroupMeetings.length > 0 && (
-                  <div className="mt-2 space-y-1" aria-label={`${dayGroupMeetings.length} group meetings`}>
+                  <div className="pastor-group-ribbons mt-2 hidden space-y-1 sm:block" aria-label={`${dayGroupMeetings.length} group meetings`}>
                     {dayGroupMeetings.slice(0, 3).map(occurrence => (
-                      <span key={occurrence.scheduleId} className={`block w-full truncate rounded-md px-1.5 py-1 text-[9px] font-black leading-tight ${getPeopleDevelopmentMeetingColorClass(occurrence.group, occurrence.audience, 'solid')}`} title={`${occurrence.title} · ${formatPeopleDevelopmentMeetingTime(occurrence.startTime, displayLocale)}`}>
+                      <span key={occurrence.scheduleId} className={`pastor-group-ribbon-label block w-full truncate rounded-md px-1.5 py-1 font-black ${getPeopleDevelopmentMeetingColorClass(occurrence.group, occurrence.audience, 'solid')}`} title={`${occurrence.title} · ${formatPeopleDevelopmentMeetingTime(occurrence.startTime, displayLocale)}`}>
                         {occurrence.title} · {formatPeopleDevelopmentMeetingTime(occurrence.startTime, displayLocale)}
                       </span>
                     ))}
-                    {dayGroupMeetings.length > 3 && <span className={`block text-[9px] font-black ${isSelected ? 'text-white' : 'text-[#7a1717]'}`}>+{dayGroupMeetings.length - 3}</span>}
+                    {dayGroupMeetings.length > 3 && <span className={`pastor-group-ribbon-label block font-black ${isSelected ? 'text-white' : 'text-[#7a1717]'}`}>+{dayGroupMeetings.length - 3}</span>}
                   </div>
                 )}
 
                 <div className="pastor-day-markers mt-1 hidden items-center justify-center gap-1" aria-label={`${dayMeetings.length} meetings, ${dayGroupMeetings.length} group meetings, ${pendingRequests.length} pending requests`}>
                   {dayMeetings.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-white' : 'bg-[#7a1717]'}`} />}
+                  {dayGroupMeetings.slice(0, 3).map(occurrence => (
+                    <span
+                      key={`group-marker-${occurrence.scheduleId}`}
+                      className={`h-2 w-2 rounded-full ${getPeopleDevelopmentMeetingColorClass(occurrence.group, occurrence.audience, 'solid')}`}
+                      title={occurrence.title}
+                    />
+                  ))}
                   {pendingRequests.length > 0 && <span className={`h-2 w-2 rounded-full ${isSelected ? 'bg-amber-200' : 'bg-amber-500'}`} />}
                 </div>
 
