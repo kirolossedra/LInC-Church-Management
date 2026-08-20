@@ -196,7 +196,7 @@ export function AdminAreaNavigation({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.18 }}
-          className="fixed inset-0 z-[100] grid place-items-center overflow-hidden bg-[#100909]/72 px-2 py-4 backdrop-blur-2xl sm:px-6"
+          className="fixed inset-0 z-[100] grid place-items-center overflow-hidden bg-[#100909]/82 p-0 backdrop-blur-2xl"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setIsOpen(false);
           }}
@@ -212,9 +212,9 @@ export function AdminAreaNavigation({
             <X size={19} />
           </button>
 
-          <div className="relative h-[min(92vw,760px)] w-[min(92vw,760px)] max-h-[82vh] max-w-[82vh]">
-            <div className="pointer-events-none absolute inset-[12%] rounded-full border border-white/10 bg-black/20 shadow-[0_0_90px_rgba(0,0,0,0.42),inset_0_0_80px_rgba(255,255,255,0.025)] backdrop-blur-md" />
-            <div className="pointer-events-none absolute inset-[28%] rounded-full border border-[#f2a900]/25 bg-[#1d0d0d]/75 shadow-[0_0_80px_rgba(118,27,27,0.28)]" />
+          <div className="relative h-[min(82vmin,760px)] w-[min(82vmin,760px)]">
+            <div className="pointer-events-none absolute inset-[12%] rounded-full border border-white/10 bg-[#160d0d] shadow-[0_0_90px_rgba(0,0,0,0.42),inset_0_0_80px_rgba(255,255,255,0.025)]" />
+            <div className="pointer-events-none absolute inset-[28%] rounded-full border border-[#f2a900]/25 bg-[#1d0d0d] shadow-[0_0_80px_rgba(118,27,27,0.28)]" />
 
             {areas.map(({ id, label, eyebrow, icon: Icon }, index) => {
               const angle = -90 + (360 / areas.length) * index;
@@ -225,33 +225,36 @@ export function AdminAreaNavigation({
               const active = id === activeSection;
 
               return (
-                <motion.div
+                <div
                   key={id}
-                  initial={prefersReducedMotion ? undefined : { opacity: 0, scale: 0.78 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: prefersReducedMotion ? 0 : index * 0.025, duration: 0.22 }}
-                  className="absolute z-10"
-                  style={{ left: `${left}%`, top: `${top}%`, transform: 'translate(-50%, -50%)' }}
+                  className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: `${left}%`, top: `${top}%` }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => selectArea(id)}
-                    className={`group flex h-[4.7rem] w-[5.7rem] flex-col items-center justify-center rounded-[1.45rem] border px-2 text-center shadow-2xl backdrop-blur-xl transition duration-200 sm:h-[5.8rem] sm:w-[7.4rem] sm:rounded-[1.8rem] ${
-                      active
-                        ? 'border-[#f2a900]/70 bg-[#761b1b]/95 text-white shadow-[0_0_32px_rgba(242,169,0,0.2)]'
-                        : 'border-white/12 bg-[#211515]/88 text-white/72 hover:-translate-y-1 hover:border-white/25 hover:bg-[#3a1717]/95 hover:text-white'
-                    }`}
-                    aria-current={active ? 'page' : undefined}
+                  <motion.div
+                    initial={prefersReducedMotion ? undefined : { opacity: 0, scale: 0.78 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: prefersReducedMotion ? 0 : index * 0.025, duration: 0.22 }}
                   >
-                    <Icon size={20} className={active ? 'text-[#f2a900]' : 'text-white/70 group-hover:text-[#f2a900]'} />
-                    <span className="mt-1.5 line-clamp-2 text-[9px] font-extrabold leading-tight sm:text-[11px]">{label}</span>
-                    <span className="mt-0.5 hidden text-[7px] font-bold uppercase tracking-[0.09em] text-white/35 sm:block">{eyebrow}</span>
-                  </button>
-                </motion.div>
+                    <button
+                      type="button"
+                      onClick={() => selectArea(id)}
+                      className={`group flex h-[4.7rem] w-[5.7rem] flex-col items-center justify-center rounded-[1.45rem] border px-2 text-center shadow-2xl transition duration-200 sm:h-[5.8rem] sm:w-[7.4rem] sm:rounded-[1.8rem] ${
+                        active
+                          ? 'border-[#f2a900]/70 bg-[#761b1b] text-white shadow-[0_0_32px_rgba(242,169,0,0.2)]'
+                          : 'border-white/16 bg-[#211515] text-white/72 hover:-translate-y-1 hover:border-white/30 hover:bg-[#3a1717] hover:text-white'
+                      }`}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      <Icon size={20} className={active ? 'text-[#f2a900]' : 'text-white/70 group-hover:text-[#f2a900]'} />
+                      <span className="mt-1.5 line-clamp-2 text-[9px] font-extrabold leading-tight sm:text-[11px]">{label}</span>
+                      <span className="mt-0.5 hidden text-[7px] font-bold uppercase tracking-[0.09em] text-white/35 sm:block">{eyebrow}</span>
+                    </button>
+                  </motion.div>
+                </div>
               );
             })}
 
-            <div className="absolute left-1/2 top-1/2 z-10 flex h-[27%] w-[27%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-[#f2a900]/30 bg-[#160c0c]/95 p-3 text-center text-white shadow-[0_0_60px_rgba(0,0,0,0.5)]">
+            <div className="absolute left-1/2 top-1/2 z-10 flex h-[27%] w-[27%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-[#f2a900]/30 bg-[#160c0c] p-3 text-center text-white shadow-[0_0_60px_rgba(0,0,0,0.5)]">
               {activeArea && (
                 <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f2a900] text-[#2b1805] sm:h-12 sm:w-12">
                   <activeArea.icon size={20} />
